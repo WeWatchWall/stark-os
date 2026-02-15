@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createApiClient, requireAuth, loadConfig } from '../config.js';
+import { createApiClient, requireAuth, loadConfig, resolveNodeId } from '../config.js';
 import {
   success,
   error,
@@ -87,6 +87,8 @@ async function createHandler(
     expose?: string;
     secret?: string[];
     enableEphemeral?: boolean;
+    node?: string;
+    volume?: string[];
   }
 ): Promise<void> {
   const name = nameArg || options.name;
@@ -218,6 +220,37 @@ async function createHandler(
       }
       serviceRequest.ingressPort = port;
       info(`Ingress: exposing port ${port} on orchestrator`);
+    }
+
+    // Set target node (resolve name to UUID if necessary)
+    if (options.node) {
+      try {
+        serviceRequest.nodeId = await resolveNodeId(options.node, api);
+      } catch (err) {
+        error(err instanceof Error ? err.message : `Node not found: ${options.node}`);
+        process.exit(1);
+      }
+    }
+
+    // Parse volume mounts (name:mountPath format)
+    if (options.volume && options.volume.length > 0) {
+      if (!options.node) {
+        error('--volume requires --node to be specified (volumes are node-local)');
+        process.exit(1);
+      }
+      const volumeMounts: Array<{ name: string; mountPath: string }> = [];
+      for (const v of options.volume) {
+        const colonIndex = v.indexOf(':');
+        if (colonIndex < 1) {
+          error(`Invalid --volume format: "${v}". Expected <name>:<mount-path>`);
+          process.exit(1);
+        }
+        const volName = v.substring(0, colonIndex);
+        const mountPath = v.substring(colonIndex + 1);
+        volumeMounts.push({ name: volName, mountPath });
+      }
+      serviceRequest.volumeMounts = volumeMounts;
+      info(`Volumes: ${options.volume.join(', ')}`);
     }
 
     const response = await api.post('/api/services', serviceRequest);
@@ -717,6 +750,8 @@ export function createServiceCommand(): Command {
     .option('--expose <port>', 'Expose ingress port on orchestrator server')
     .option('--secret <name...>', 'Secret name to attach (can be repeated)')
     .option('--enable-ephemeral', 'Enable EphemeralDataPlane for pods in this service')
+    .option('-n, --node <nodeId>', 'Target node ID (required for volume mounts)')
+    .option('--volume <name:path>', 'Volume mount (name:/mount/path, can be repeated)', (v: string, prev: string[]) => [...prev, v], [] as string[])
     .action(createHandler);
 
   // List services

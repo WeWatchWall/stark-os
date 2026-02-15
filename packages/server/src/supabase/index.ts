@@ -244,3 +244,11 @@ export {
   resolveDbSecrets,
   loadSecretsByNamespace,
 } from './secrets.js';
+
+// Volume queries (node-local named storage)
+export {
+  type VolumeResult,
+  VolumeQueries,
+  getVolumeQueries,
+  resetVolumeQueries,
+} from './volumes.js';

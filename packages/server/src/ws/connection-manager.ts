@@ -33,6 +33,7 @@ import {
 import type { RegisterNodeInput, NodeHeartbeat, UserRole, SignallingMessage, RoutingRequest } from '@stark-o/shared';
 import { getServiceRegistry } from '@stark-o/shared';
 import { getIngressManager } from '../services/ingress-manager.js';
+import { handleVolumeDownloadResponse, handleVolumeDownloadError } from '../services/volume-download-service.js';
 import { getSupabaseServiceClient } from '../supabase/client.js';
 import { getUserById } from '../supabase/auth.js';
 import { getChaosIntegration, isChaosIntegrationAttached } from '../chaos/integration.js';
@@ -581,6 +582,22 @@ export class ConnectionManager {
             return;
           }
           await routeMetricsMessage(wsConnection, message);
+          return;
+        }
+
+        // Handle volume download responses from runtimes
+        if (message.type === 'volume:download:response' && message.correlationId) {
+          handleVolumeDownloadResponse(
+            message.correlationId,
+            message.payload as { volumeName: string; files: Array<{ path: string; data: string }> }
+          );
+          return;
+        }
+        if (message.type === 'volume:download:error' && message.correlationId) {
+          handleVolumeDownloadError(
+            message.correlationId,
+            message.payload as { volumeName: string; error: string }
+          );
           return;
         }
 

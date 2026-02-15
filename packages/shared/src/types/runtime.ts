@@ -10,6 +10,7 @@
 import type { RuntimeTag, PackNamespace } from './pack.js';
 import type { Labels, Annotations } from './labels.js';
 import type { ResourceRequirements } from './pod.js';
+import type { VolumeMount } from './volume.js';
 import type { Capability } from './capabilities.js';
 import type { EphemeralDataPlane } from '../network/ephemeral-data-plane.js';
 
@@ -93,6 +94,7 @@ export interface PodDeployPayload {
   };
   resourceRequests?: ResourceRequirements;
   resourceLimits?: ResourceRequirements;
+  volumeMounts?: VolumeMount[];
   labels?: Labels;
   annotations?: Annotations;
   namespace?: string;
@@ -259,6 +261,33 @@ export interface PackExecutionContext {
    * ```
    */
   ephemeral?: EphemeralDataPlane;
+
+  /**
+   * Volume mounts for this pod.
+   * Each entry maps a named volume to a mount path inside the runtime.
+   */
+  volumeMounts?: VolumeMount[];
+
+  /**
+   * Read a file from a volume-backed path.
+   * Only available when the pod has volume mounts and the runtime provides
+   * file I/O for those paths.
+   */
+  readFile?: (path: string) => Promise<string>;
+
+  /**
+   * Write a file to a volume-backed path.
+   * Only available when the pod has volume mounts and the runtime provides
+   * file I/O for those paths.
+   */
+  writeFile?: (path: string, content: string) => Promise<void>;
+
+  /**
+   * Append content to a file at a volume-backed path.
+   * Only available when the pod has volume mounts and the runtime provides
+   * file I/O for those paths.
+   */
+  appendFile?: (path: string, content: string) => Promise<void>;
 
   /**
    * Browser-only: register inbound request handlers.

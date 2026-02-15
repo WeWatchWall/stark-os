@@ -10,6 +10,7 @@ import type { ServiceStatus, CreateServiceInput, ServiceVisibility } from '@star
 import { validateCreateServiceInput, validateUpdateServiceInput, createServiceLogger, generateCorrelationId, VALID_SERVICE_VISIBILITY_VALUES } from '@stark-o/shared';
 import { getServiceQueriesAdmin, getServiceQueries } from '../supabase/services.js';
 import { getPackQueriesAdmin } from '../supabase/packs.js';
+import { getVolumeQueries } from '../supabase/volumes.js';
 import { getIngressManager } from '../services/ingress-manager.js';
 import { getServiceNetworkMetaStore } from '@stark-o/shared';
 import {
@@ -133,6 +134,30 @@ async function createService(req: Request, res: Response): Promise<void> {
     } else {
       sendError(res, 'VALIDATION_ERROR', 'Either packId or packName is required', 400);
       return;
+    }
+
+    // Auto-provision volume DB records for any volumeMounts.
+    // Volumes are node-local, so nodeId is required when mounts are specified.
+    if (input.volumeMounts && input.volumeMounts.length > 0 && input.nodeId) {
+      const volumeQueries = getVolumeQueries();
+      for (const mount of input.volumeMounts) {
+        const exists = await volumeQueries.volumeExists(mount.name, input.nodeId);
+        if (!exists) {
+          const volResult = await volumeQueries.createVolume({ name: mount.name, nodeId: input.nodeId });
+          if (volResult.error) {
+            requestLogger.warn('Failed to auto-provision volume', {
+              volumeName: mount.name,
+              nodeId: input.nodeId,
+              error: volResult.error.message,
+            });
+          } else {
+            requestLogger.info('Auto-provisioned volume for service', {
+              volumeName: mount.name,
+              nodeId: input.nodeId,
+            });
+          }
+        }
+      }
     }
 
     // Create service

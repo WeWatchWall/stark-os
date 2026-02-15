@@ -994,3 +994,153 @@ describe('Service Validation', () => {
     });
   });
 });
+
+// =========================================================================
+// Volume Validation
+// =========================================================================
+
+import {
+  validateVolumeName,
+  validateVolumeMount,
+  validateVolumeMounts,
+  validateCreateVolumeInput,
+} from '../../src/validation';
+
+describe('Volume Validation', () => {
+  describe('validateVolumeName', () => {
+    it('should accept valid volume names', () => {
+      expect(validateVolumeName('data')).toBeNull();
+      expect(validateVolumeName('shared-data')).toBeNull();
+      expect(validateVolumeName('vol123')).toBeNull();
+      expect(validateVolumeName('a')).toBeNull();
+    });
+
+    it('should reject missing names', () => {
+      expect(validateVolumeName(null)?.code).toBe('REQUIRED');
+      expect(validateVolumeName(undefined)?.code).toBe('REQUIRED');
+    });
+
+    it('should reject non-string names', () => {
+      expect(validateVolumeName(123)?.code).toBe('INVALID_TYPE');
+    });
+
+    it('should reject empty names', () => {
+      expect(validateVolumeName('')?.code).toBe('INVALID_LENGTH');
+    });
+
+    it('should reject names that are too long', () => {
+      expect(validateVolumeName('a'.repeat(64))?.code).toBe('INVALID_LENGTH');
+    });
+
+    it('should reject invalid format', () => {
+      expect(validateVolumeName('-bad')?.code).toBe('INVALID_FORMAT');
+      expect(validateVolumeName('BAD')?.code).toBe('INVALID_FORMAT');
+      expect(validateVolumeName('has spaces')?.code).toBe('INVALID_FORMAT');
+    });
+  });
+
+  describe('validateVolumeMount', () => {
+    it('should accept valid mount', () => {
+      expect(validateVolumeMount({ name: 'data', mountPath: '/app/data' }, 0)).toEqual([]);
+    });
+
+    it('should require name', () => {
+      const errors = validateVolumeMount({ mountPath: '/data' }, 0);
+      expect(errors.some(e => e.code === 'REQUIRED' && e.field.includes('name'))).toBe(true);
+    });
+
+    it('should require mountPath', () => {
+      const errors = validateVolumeMount({ name: 'data' }, 0);
+      expect(errors.some(e => e.code === 'REQUIRED' && e.field.includes('mountPath'))).toBe(true);
+    });
+
+    it('should reject non-absolute mount paths', () => {
+      const errors = validateVolumeMount({ name: 'data', mountPath: 'relative/path' }, 0);
+      expect(errors.some(e => e.code === 'INVALID_FORMAT' && e.field.includes('mountPath'))).toBe(true);
+    });
+
+    it('should reject non-object mounts', () => {
+      const errors = validateVolumeMount('not-an-object', 0);
+      expect(errors.some(e => e.code === 'INVALID_TYPE')).toBe(true);
+    });
+  });
+
+  describe('validateVolumeMounts', () => {
+    it('should accept undefined (optional)', () => {
+      expect(validateVolumeMounts(undefined)).toEqual([]);
+    });
+
+    it('should accept empty array', () => {
+      expect(validateVolumeMounts([])).toEqual([]);
+    });
+
+    it('should accept valid mounts', () => {
+      const mounts = [
+        { name: 'data', mountPath: '/app/data' },
+        { name: 'logs', mountPath: '/app/logs' },
+      ];
+      expect(validateVolumeMounts(mounts)).toEqual([]);
+    });
+
+    it('should reject non-array', () => {
+      const errors = validateVolumeMounts('not-array');
+      expect(errors.some(e => e.code === 'INVALID_TYPE')).toBe(true);
+    });
+
+    it('should detect duplicate mount paths', () => {
+      const mounts = [
+        { name: 'data', mountPath: '/app/data' },
+        { name: 'other', mountPath: '/app/data' },
+      ];
+      const errors = validateVolumeMounts(mounts);
+      expect(errors.some(e => e.code === 'DUPLICATE')).toBe(true);
+    });
+
+    it('should reject too many mounts', () => {
+      const mounts = Array.from({ length: 21 }, (_, i) => ({
+        name: `vol${i}`,
+        mountPath: `/mnt/${i}`,
+      }));
+      const errors = validateVolumeMounts(mounts);
+      expect(errors.some(e => e.code === 'TOO_MANY_ENTRIES')).toBe(true);
+    });
+  });
+
+  describe('validateCreateVolumeInput', () => {
+    it('should accept valid input', () => {
+      const result = validateCreateVolumeInput({
+        name: 'shared-data',
+        nodeId: '11111111-1111-4111-8111-111111111111',
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject missing name', () => {
+      const result = validateCreateVolumeInput({
+        nodeId: '11111111-1111-4111-8111-111111111111',
+      });
+      expect(result.valid).toBe(false);
+    });
+
+    it('should reject missing nodeId', () => {
+      const result = validateCreateVolumeInput({
+        name: 'shared-data',
+      });
+      expect(result.valid).toBe(false);
+    });
+
+    it('should reject invalid nodeId format', () => {
+      const result = validateCreateVolumeInput({
+        name: 'shared-data',
+        nodeId: 'not-a-uuid',
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.field === 'nodeId')).toBe(true);
+    });
+
+    it('should reject non-object input', () => {
+      const result = validateCreateVolumeInput('not-an-object');
+      expect(result.valid).toBe(false);
+    });
+  });
+});

@@ -6,6 +6,7 @@
 import type { Labels, Annotations } from './labels';
 import type { Toleration } from './taints';
 import type { PodSchedulingConfig, ResourceRequirements } from './pod';
+import type { VolumeMount } from './volume.js';
 
 /**
  * Service status values
@@ -70,6 +71,11 @@ export interface Service {
   followLatest: boolean;
   /** Namespace */
   namespace: string;
+  /**
+   * Target node ID. When set, all replicas are scheduled on this node.
+   * Required when volumeMounts are specified (volumes are node-local).
+   */
+  nodeId?: string;
   /** 
    * Number of desired replicas:
    * - 0 = deploy to all matching nodes (DaemonSet-like)
@@ -100,6 +106,8 @@ export interface Service {
   resourceLimits: ResourceRequirements;
   /** Scheduling configuration for pods */
   scheduling?: PodSchedulingConfig;
+  /** Volume mounts for pods in this service */
+  volumeMounts: VolumeMount[];
   /** Observed generation (for reconciliation) */
   observedGeneration: number;
   /** Number of ready replicas */
@@ -199,6 +207,11 @@ export interface CreateServiceInput {
   followLatest?: boolean;
   /** Target namespace */
   namespace?: string;
+  /**
+   * Target node ID. When set, all replicas are scheduled on this node.
+   * Required when volumeMounts are specified (volumes are node-local).
+   */
+  nodeId?: string;
   /** 
    * Number of replicas:
    * - 0 = deploy to all matching nodes
@@ -224,6 +237,8 @@ export interface CreateServiceInput {
   resourceLimits?: Partial<ResourceRequirements>;
   /** Scheduling configuration */
   scheduling?: PodSchedulingConfig;
+  /** Volume mounts for pods */
+  volumeMounts?: VolumeMount[];
   /**
    * Ingress port to expose on the orchestrator server.
    * The orchestrator will open an HTTP listener on this port
@@ -271,6 +286,8 @@ export interface UpdateServiceInput {
   packVersion?: string;
   /** Enable or disable follow latest */
   followLatest?: boolean;
+  /** Target node update */
+  nodeId?: string | null;
   /** New replica count */
   replicas?: number;
   /** New status */
@@ -295,6 +312,8 @@ export interface UpdateServiceInput {
   resourceLimits?: Partial<ResourceRequirements>;
   /** Scheduling configuration update */
   scheduling?: PodSchedulingConfig;
+  /** Volume mounts update */
+  volumeMounts?: VolumeMount[];
   /** Metadata update */
   metadata?: Record<string, unknown>;
   /** Last successful version (for auto-rollback tracking) */

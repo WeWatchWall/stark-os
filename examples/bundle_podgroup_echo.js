@@ -1,5 +1,5 @@
-// Example: PodGroup Echo Service Pack — Browser variant
-// Demonstrates the ephemeral PodGroup messaging feature in the browser.
+// Example: PodGroup Echo Service Pack (Isomorphic)
+// Demonstrates the ephemeral PodGroup messaging feature.
 //
 // This pack:
 //   1. Joins a shared PodGroup ("demo:podgroup-chat")
@@ -7,26 +7,29 @@
 //   3. Waits for incoming ephemeral queries from the greeter-service
 //   4. Logs all incoming queries and responses for networking diagnostics
 //
-// Unlike the network_echo example (which uses context.listen),
+// Unlike the network_echo example (which uses an HTTP server / context.listen),
 // this pack uses the EphemeralDataPlane for lightweight, in-memory, TTL-scoped
 // pod-to-pod messaging within a shared PodGroup.
 //
 // Usage:
-//   1. Register this as a pack:   stark pack register --name podgroup-echo-pack-browser --file examples/podgroup_echo/bundle_podgroup_echo_browser.js
-//   2. Create a service:          stark service create podgroup-echo-service --pack podgroup-echo-pack-browser --replicas 2
+//   1. Register this as a pack:   stark pack register --name podgroup-echo-pack --file examples/bundle_podgroup_echo.js
+//   2. Create a service:          stark service create podgroup-echo-service --pack podgroup-echo-pack --replicas 2
 //   3. The podgroup-greeter-service must also be running in the same PodGroup.
 //
-// Browser only — see bundle_podgroup_echo_node.js for the Node.js variant.
+// Works in both Node.js and browser (Web Worker) environments.
 module.exports.default = async function(context) {
   const podId = context.podId || 'unknown-pod';
   const serviceId = 'podgroup-echo-service';
   const groupId = 'demo:podgroup-chat';
   const startTime = Date.now();
+  const runtime = typeof require !== 'undefined' ? 'node' : 'browser';
   let requestCount = 0;
 
-  console.log(`[${serviceId}] Starting on pod ${podId}`);
+  console.log(`[${serviceId}] Starting on pod ${podId} (runtime: ${runtime})`);
 
   // ── Obtain the EphemeralDataPlane from context ──
+  // The orchestrator injects context.ephemeral (an EphemeralDataPlane instance)
+  // for packs that opt into PodGroup messaging.
   const plane = context.ephemeral;
   if (!plane) {
     console.error(`[${serviceId}] No EphemeralDataPlane found on context — PodGroup messaging unavailable`);
@@ -34,7 +37,7 @@ module.exports.default = async function(context) {
   }
 
   // ── Join the shared PodGroup ──
-  const group = await plane.joinGroup(groupId, { ttl: 300_000, metadata: { role: 'echo', runtime: 'browser' } });
+  const group = await plane.joinGroup(groupId, { ttl: 300_000, metadata: { role: 'echo' } });
   console.log(`[${serviceId}] Joined PodGroup "${groupId}" (ttl=${group.membership.ttl}ms, ${group.podIds.length} member(s))`);
 
   // ── Register /echo handler — responds to ephemeral queries ──
@@ -63,6 +66,7 @@ module.exports.default = async function(context) {
         uptimeMs: now - startTime,
         receivedAt: now,
         networkLatencyMs: networkLatencyMs,
+        runtime: runtime,
       },
     };
   });
@@ -77,6 +81,7 @@ module.exports.default = async function(context) {
         service: serviceId,
         uptimeMs: Date.now() - startTime,
         totalRequests: requestCount,
+        runtime: runtime,
       },
     };
   });
@@ -88,7 +93,7 @@ module.exports.default = async function(context) {
     if (context.lifecycle?.isShuttingDown) return;
     await group.refresh();
 
-    console.log(`[${serviceId}] Membership refresh — ${group.podIds.length} pod(s) in group "${groupId}" | handled ${requestCount} queries`);
+    console.log(`[${serviceId}] Membership refresh — ${group.podIds.length} pod(s) in group "${groupId}" | handled ${requestCount} queries so far`);
   }, 3_000);
 
   console.log(`[${serviceId}] Ready on pod ${podId} — waiting for PodGroup queries`);

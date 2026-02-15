@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createApiClient, requireAuth, loadConfig } from '../config.js';
+import { createApiClient, requireAuth, loadConfig, resolveNodeId } from '../config.js';
 import {
   success,
   error,
@@ -88,6 +88,7 @@ async function createHandler(
     toleration?: string[];
     cpu?: string;
     memory?: string;
+    volume?: string[];
   }
 ): Promise<void> {
   // Support both positional argument and --pack option
@@ -114,7 +115,12 @@ async function createHandler(
     };
 
     if (options.node) {
-      podRequest.nodeId = options.node;
+      try {
+        podRequest.nodeId = await resolveNodeId(options.node, api);
+      } catch (err) {
+        error(err instanceof Error ? err.message : `Node not found: ${options.node}`);
+        process.exit(1);
+      }
     }
 
     if (options.priority) {
@@ -173,6 +179,22 @@ async function createHandler(
         cpu: options.cpu ? parseInt(options.cpu, 10) : 100,
         memory: options.memory ? parseInt(options.memory, 10) : 128,
       };
+    }
+
+    // Parse volume mounts (name:mountPath format)
+    if (options.volume && options.volume.length > 0) {
+      const volumeMounts: Array<{ name: string; mountPath: string }> = [];
+      for (const v of options.volume) {
+        const colonIndex = v.indexOf(':');
+        if (colonIndex < 1) {
+          error(`Invalid --volume format: "${v}". Expected <name>:<mount-path>`);
+          process.exit(1);
+        }
+        const volName = v.substring(0, colonIndex);
+        const mountPath = v.substring(colonIndex + 1);
+        volumeMounts.push({ name: volName, mountPath });
+      }
+      podRequest.volumeMounts = volumeMounts;
     }
 
     const replicas = parseInt(options.replicas ?? '1', 10);
@@ -545,6 +567,7 @@ export function createPodCommand(): Command {
     .option('-t, --toleration <key=value:effect...>', 'Toleration (can be repeated)')
     .option('--cpu <millicores>', 'CPU request in millicores')
     .option('--memory <mb>', 'Memory request in MB')
+    .option('--volume <name:path>', 'Volume mount (name:/mount/path, can be repeated)', (v: string, prev: string[]) => [...prev, v], [] as string[])
     .action(createHandler);
 
   // List pods

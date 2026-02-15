@@ -22,6 +22,7 @@ import {
   type PodStopPayload,
   type WsMessage,
   type SignallingMessage,
+  type VolumeDownloadRequest,
 } from '@stark-o/shared';
 import { PodHandler, createPodHandler } from './pod-handler.js';
 import { PackExecutor } from '../executor/pack-executor.js';
@@ -700,6 +701,28 @@ export class BrowserAgent {
         if (deadPodId && this.networkManager) {
           this.networkManager.handlePeerGone(deadPodId);
           this.logger.debug('Handled network:peer-gone', { deadPodId });
+        }
+        break;
+      }
+
+      case 'volume:download': {
+        const dlPayload = message.payload as VolumeDownloadRequest;
+        this.logger.info('Received volume:download request', { volumeName: dlPayload.volumeName });
+        try {
+          const files = await this.executor.collectVolumeFiles(dlPayload.volumeName);
+          this.send({
+            type: 'volume:download:response',
+            payload: { volumeName: dlPayload.volumeName, files },
+            correlationId: message.correlationId,
+          });
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          this.logger.error('Volume download failed', { volumeName: dlPayload.volumeName, error: errorMessage });
+          this.send({
+            type: 'volume:download:error',
+            payload: { volumeName: dlPayload.volumeName, error: errorMessage },
+            correlationId: message.correlationId,
+          });
         }
         break;
       }

@@ -365,6 +365,7 @@ export class ServiceModel {
       packVersion,
       followLatest: input.followLatest ?? false,
       namespace: input.namespace ?? 'default',
+      nodeId: input.nodeId,
       replicas: input.replicas ?? 1, // Default to 1 replica
       status: 'active',
       statusMessage: undefined,
@@ -384,6 +385,7 @@ export class ServiceModel {
         ...input.resourceLimits,
       },
       scheduling: input.scheduling,
+      volumeMounts: input.volumeMounts ?? [],
       observedGeneration: 0,
       readyReplicas: 0,
       availableReplicas: 0,

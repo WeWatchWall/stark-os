@@ -40,7 +40,10 @@ interface WorkerRequest {
     env: Record<string, string>;
     timeout: number;
     metadata: Record<string, unknown>;
-    // lifecycle and onShutdown are NOT serializable — they live in the parent
+    // lifecycle, onShutdown, readFile, writeFile are NOT serializable — they live in the parent
+    // ── Volumes ──
+    /** Volume mounts for this pod */
+    volumeMounts?: Array<{ name: string; mountPath: string }>;
     // ── Networking ──
     /** Service ID this pod belongs to (for network policy checks) */
     serviceId?: string;
@@ -177,7 +180,51 @@ async function executePack(request: WorkerRequest): Promise<void> {
     );
   }
 
-  // 4b. Recreate EphemeralDataPlane inside the worker if enabled
+  // 4b. Recreate volume readFile/writeFile inside the worker
+  // These closures cannot be serialized over IPC, so we recreate them here
+  // using the volumeMounts metadata passed via the serializable context.
+  if (context.volumeMounts && context.volumeMounts.length > 0) {
+    const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
+    const { join, dirname } = await import('node:path');
+    // Volume data lives alongside the agent's working directory
+    const baseDir = join(process.cwd(), 'volumes');
+
+    (context as Record<string, unknown>).readFile = async (filePath: string): Promise<string> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const volumeRoot = join(baseDir, mount.name);
+      const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+      return readFileSync(join(volumeRoot, relative), 'utf-8');
+    };
+
+    (context as Record<string, unknown>).writeFile = async (filePath: string, content: string): Promise<void> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const volumeRoot = join(baseDir, mount.name);
+      const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+      const fullPath = join(volumeRoot, relative);
+      mkdirSync(dirname(fullPath), { recursive: true });
+      writeFileSync(fullPath, content, 'utf-8');
+    };
+
+    (context as Record<string, unknown>).appendFile = async (filePath: string, content: string): Promise<void> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const volumeRoot = join(baseDir, mount.name);
+      const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+      const fullPath = join(volumeRoot, relative);
+      mkdirSync(dirname(fullPath), { recursive: true });
+      const { appendFileSync } = await import('node:fs');
+      appendFileSync(fullPath, content, 'utf-8');
+    };
+
+    originalConsole.log(
+      `[${new Date().toISOString()}][${podId}:out]`,
+      `Volume I/O enabled for ${context.volumeMounts.length} mount(s)`,
+    );
+  }
+
+  // 4c. Recreate EphemeralDataPlane inside the worker if enabled
   // The EphemeralDataPlane cannot be serialized over IPC (it contains closures,
   // NodeCache event listeners, Maps, etc.), so the parent strips it and we
   // recreate a fresh instance here with the same podId/serviceId.

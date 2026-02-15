@@ -8,6 +8,7 @@ import type { ValidationResult, ValidationError } from './pack-validation';
 import { validateLabels, validateAnnotations } from './node-validation';
 import { validateTolerations, validateResourceRequirements } from './pod-validation';
 import { validateSchedulingConfig } from './scheduling-validation';
+import { validateVolumeMounts } from './volume-validation';
 
 /**
  * Valid service statuses
@@ -428,6 +429,11 @@ export function validateCreateServiceInput(input: unknown): ValidationResult {
     }
   }
 
+  // Optional: volumeMounts
+  if (data.volumeMounts !== undefined) {
+    errors.push(...validateVolumeMounts(data.volumeMounts));
+  }
+
   // Optional: metadata
   const metadataError = validateServiceMetadata(data.metadata);
   if (metadataError) errors.push(metadataError);
@@ -525,6 +531,11 @@ export function validateUpdateServiceInput(input: unknown): ValidationResult {
     if (!schedulingResult.valid) {
       errors.push(...schedulingResult.errors.map((e: ValidationError) => ({ ...e, field: `scheduling.${e.field}` })));
     }
+  }
+
+  // Optional: volumeMounts
+  if (data.volumeMounts !== undefined) {
+    errors.push(...validateVolumeMounts(data.volumeMounts));
   }
 
   // Optional: metadata

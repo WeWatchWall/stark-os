@@ -16,3 +16,4 @@ export { createServerCommand } from './server.js';
 export { createChaosCommand } from './chaos.js';
 export { createNetworkCommand } from './network.js';
 export { createSecretCommand } from './secret.js';
+export { createVolumeCommand } from './volume.js';

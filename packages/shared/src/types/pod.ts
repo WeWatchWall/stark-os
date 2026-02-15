@@ -7,6 +7,7 @@ import type { Labels, Annotations } from './labels';
 import type { Toleration } from './taints';
 import type { NodeAffinity, PodAffinity, PodAntiAffinity } from './scheduling';
 import type { Capability } from './capabilities.js';
+import type { VolumeMount } from './volume.js';
 
 /**
  * Pod status values
@@ -173,6 +174,8 @@ export interface Pod {
   resourceLimits: ResourceRequirements;
   /** Scheduling configuration */
   scheduling?: PodSchedulingConfig;
+  /** Volume mounts for this pod */
+  volumeMounts: VolumeMount[];
   /** User who created the pod */
   createdBy: string;
   /** When pod was scheduled */
@@ -223,6 +226,10 @@ export interface CreatePodInput {
   resourceLimits?: Partial<ResourceRequirements>;
   /** Scheduling configuration */
   scheduling?: PodSchedulingConfig;
+  /** Target node ID (optional — used for volume auto-provisioning and pinned scheduling) */
+  nodeId?: string;
+  /** Volume mounts */
+  volumeMounts?: VolumeMount[];
   /** Additional metadata */
   metadata?: Record<string, unknown>;
 }

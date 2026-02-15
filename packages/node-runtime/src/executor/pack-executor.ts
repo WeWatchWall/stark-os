@@ -34,6 +34,7 @@ import {
   type PodLifecyclePhase,
   type ShutdownHandler,
   type PodLogSink,
+  type VolumeFileEntry,
 } from '@stark-o/shared';
 
 // Re-export for convenience
@@ -344,6 +345,43 @@ export class PackExecutor {
       authToken: options.podToken,
       refreshToken: options.podRefreshToken,
       tokenExpiresAt: options.podTokenExpiresAt,
+      // Volume mounts — expose to pack code so it can detect mounted volumes
+      volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
+      // Volume I/O helpers — scoped to mounted paths only
+      // Uses native node:fs to avoid ZenFS Passthrough Windows path bugs.
+      // The pack-worker also uses native fs, so collectVolumeFiles sees the same data.
+      ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
+        readFile: async (filePath: string): Promise<string> => {
+          const { readFileSync } = await import('node:fs');
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = join(process.cwd(), 'volumes', mount.name);
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          return readFileSync(join(volumeRoot, relative), 'utf-8');
+        },
+        writeFile: async (filePath: string, content: string): Promise<void> => {
+          const { writeFileSync, mkdirSync } = await import('node:fs');
+          const { dirname } = await import('node:path');
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = join(process.cwd(), 'volumes', mount.name);
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = join(volumeRoot, relative);
+          mkdirSync(dirname(fullPath), { recursive: true });
+          writeFileSync(fullPath, content, 'utf-8');
+        },
+        appendFile: async (filePath: string, content: string): Promise<void> => {
+          const { appendFileSync, mkdirSync } = await import('node:fs');
+          const { dirname } = await import('node:path');
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = join(process.cwd(), 'volumes', mount.name);
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = join(volumeRoot, relative);
+          mkdirSync(dirname(fullPath), { recursive: true });
+          appendFileSync(fullPath, content, 'utf-8');
+        },
+      } : {}),
       // Ephemeral data plane: opt-in via pack metadata
       ...(pack.metadata?.enableEphemeral ? {
         ephemeral: createEphemeralDataPlane({
@@ -613,7 +651,7 @@ export class PackExecutor {
       // NodeCache event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
       // Add networking config for direct pod-to-orchestrator WebRTC signaling.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, ...serializableContext } = context;
       const workerContext = {
         ...serializableContext,
         // Networking: pod connects directly to orchestrator for signaling
@@ -1058,6 +1096,47 @@ export class PackExecutor {
     }
 
     return cleaned;
+  }
+
+  /**
+   * Collect all files from a named volume using native node:fs.
+   * Uses the same path convention as the pack-worker and in-process volume
+   * helpers: join(process.cwd(), 'volumes', name). We bypass ZenFS here
+   * because its Passthrough backend mangles Windows drive-letter paths.
+   * Returns serializable file entries with base64-encoded content.
+   */
+  async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
+    const { readdir, stat, readFile } = await import('node:fs/promises');
+    const volumeRoot = join(process.cwd(), 'volumes', volumeName);
+    const files: VolumeFileEntry[] = [];
+
+    const walk = async (dir: string, prefix: string): Promise<void> => {
+      let entries: string[];
+      try {
+        entries = await readdir(dir);
+      } catch {
+        return; // Directory doesn't exist or not readable
+      }
+      for (const entry of entries) {
+        const fullPath = join(dir, entry);
+        const relativePath = prefix ? `${prefix}/${entry}` : entry;
+        try {
+          const info = await stat(fullPath);
+          if (info.isDirectory()) {
+            await walk(fullPath, relativePath);
+          } else {
+            const bytes = await readFile(fullPath);
+            const data = bytes.toString('base64');
+            files.push({ path: relativePath, data });
+          }
+        } catch {
+          // Skip unreadable entries
+        }
+      }
+    };
+
+    await walk(volumeRoot, '');
+    return files;
   }
 
   /**

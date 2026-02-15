@@ -32,6 +32,7 @@ import {
   type PodLifecyclePhase,
   type ShutdownHandler,
   type PodLogSink,
+  type VolumeFileEntry,
 } from '@stark-o/shared';
 
 // Re-export for convenience
@@ -278,6 +279,8 @@ export class PackExecutor {
     }
   }
 
+
+
   /**
    * Execute a pack for a pod.
    *
@@ -388,6 +391,37 @@ export class PackExecutor {
       onShutdown: (handler: ShutdownHandler) => {
         shutdownHandlers.push(handler);
       },
+      // Volume mounts — expose to pack code so it can detect mounted volumes
+      volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
+      // Volume I/O helpers — backed by ZenFS via StorageAdapter
+      // Uses storageAdapter consistently so collectVolumeFiles sees the same data.
+      ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
+        readFile: async (filePath: string): Promise<string> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = `/volumes/${mount.name}`;
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          return this.storageAdapter.readFile(`${volumeRoot}/${relative}`);
+        },
+        writeFile: async (filePath: string, content: string): Promise<void> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = `/volumes/${mount.name}`;
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = `${volumeRoot}/${relative}`;
+          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          await this.storageAdapter.writeFile(fullPath, content);
+        },
+        appendFile: async (filePath: string, content: string): Promise<void> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = `/volumes/${mount.name}`;
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = `${volumeRoot}/${relative}`;
+          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          await this.storageAdapter.appendFile(fullPath, content);
+        },
+      } : {}),
       // Ephemeral data plane: opt-in via pack metadata
       ...(pack.metadata?.enableEphemeral ? {
         ephemeral: createEphemeralDataPlane({
@@ -643,7 +677,7 @@ export class PackExecutor {
       // The ephemeral data plane (EphemeralDataPlane) contains a PodGroupStore with
       // event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, ...serializableContext } = context;
       
       // Add networking config for pack-worker
       const workerContext = {
@@ -1147,6 +1181,152 @@ export class PackExecutor {
     }
 
     return cleaned;
+  }
+
+  /**
+   * Collect all files from a named volume.
+   *
+   * Volume data may live in two places depending on whether the pack ran on
+   * the main thread (ZenFS → `stark-orchestrator` IndexedDB) or inside a
+   * Web Worker (`stark-volumes` raw IndexedDB, object-store `files`).
+   *
+   * This method checks both stores and merges the results, preferring the
+   * raw IndexedDB entry when a path exists in both.
+   */
+  async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
+    this.ensureInitialized();
+
+    // ── 1. ZenFS (main-thread volume writes) ──────────────────────────
+    const zenFiles = new Map<string, VolumeFileEntry>();
+    const volumeRoot = `/volumes/${volumeName}`;
+
+    const walk = async (dir: string, prefix: string): Promise<void> => {
+      let entries: string[];
+      try {
+        entries = (await this.storageAdapter.readdir(dir)) as unknown as string[];
+      } catch {
+        return; // Directory doesn't exist or not readable
+      }
+      for (const entryName of entries) {
+        const name = typeof entryName === 'string' ? entryName : (entryName as { name: string }).name;
+        const fullPath = `${dir}/${name}`;
+        const relativePath = prefix ? `${prefix}/${name}` : name;
+        try {
+          const isDir = await this.storageAdapter.isDirectory(fullPath);
+          if (isDir) {
+            await walk(fullPath, relativePath);
+          } else {
+            const bytes = await this.storageAdapter.readFileBytes(fullPath);
+            const CHUNK = 8192;
+            const parts: string[] = [];
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+              const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+              parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
+            }
+            zenFiles.set(relativePath, { path: relativePath, data: btoa(parts.join('')) });
+          }
+        } catch {
+          // Skip unreadable entries
+        }
+      }
+    };
+
+    await walk(volumeRoot, '');
+
+    // ── 2. Raw IndexedDB (Web Worker volume writes) ───────────────────
+    //
+    // The pack-worker writes volume data into IndexedDB database
+    // "stark-volumes", object store "files", with keys of the form:
+    //   stark-volumes/<volumeName>/<relativePath>
+    //
+    // We open a cursor over that key prefix and collect matching entries.
+    const rawFiles = await this.collectRawIdbVolumeFiles(volumeName);
+
+    // ── 3. Merge — raw IDB wins on duplicate paths ────────────────────
+    const merged = new Map<string, VolumeFileEntry>(zenFiles);
+    for (const entry of rawFiles) {
+      merged.set(entry.path, entry);
+    }
+
+    return Array.from(merged.values());
+  }
+
+  /**
+   * Scan the raw `stark-volumes` IndexedDB for entries belonging to a volume.
+   * This is where the Web Worker stores volume data.
+   */
+  private async collectRawIdbVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
+    if (typeof indexedDB === 'undefined') return [];
+
+    const keyPrefix = `stark-volumes/${volumeName}/`;
+    const files: VolumeFileEntry[] = [];
+
+    try {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const req = indexedDB.open('stark-volumes', 1);
+        req.onupgradeneeded = () => {
+          const dbInner = req.result;
+          if (!dbInner.objectStoreNames.contains('files')) {
+            dbInner.createObjectStore('files');
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+
+      const tx = db.transaction('files', 'readonly');
+      const store = tx.objectStore('files');
+
+      // Use getAllKeys + getAll for efficiency (widely supported)
+      const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+        const req = store.getAllKeys();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+
+      for (const key of allKeys) {
+        const keyStr = String(key);
+        if (!keyStr.startsWith(keyPrefix)) continue;
+
+        const relativePath = keyStr.slice(keyPrefix.length);
+        if (!relativePath) continue;
+
+        const value = await new Promise<unknown>((resolve, reject) => {
+          // Open a fresh readonly transaction per get — IDB auto-commits
+          const getTx = db.transaction('files', 'readonly');
+          const getStore = getTx.objectStore('files');
+          const req = getStore.get(key);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        if (value === undefined) continue;
+
+        // Values are stored as strings by the worker
+        const str = typeof value === 'string' ? value : String(value);
+        // Encode to base64
+        const CHUNK = 8192;
+        const parts: string[] = [];
+        for (let i = 0; i < str.length; i += CHUNK) {
+          parts.push(str.slice(i, i + CHUNK));
+        }
+        // The content is plain text stored by writeFile — encode to base64
+        const encoder = new TextEncoder();
+        const bytes = encoder.encode(parts.join(''));
+        const b64Parts: string[] = [];
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+          b64Parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
+        }
+        files.push({ path: relativePath, data: btoa(b64Parts.join('')) });
+      }
+
+      db.close();
+    } catch {
+      // stark-volumes DB may not exist yet — that's fine
+    }
+
+    return files;
   }
 
   /**

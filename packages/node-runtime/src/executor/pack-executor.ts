@@ -1099,6 +1099,22 @@ export class PackExecutor {
   }
 
   /**
+   * Clear all files from a named volume.
+   * Removes the volume directory and recreates it empty.
+   */
+  async clearVolume(volumeName: string): Promise<void> {
+    const { rm, mkdir } = await import('node:fs/promises');
+    const volumeRoot = join(process.cwd(), 'volumes', volumeName);
+    try {
+      await rm(volumeRoot, { recursive: true, force: true });
+    } catch {
+      // Directory may not exist yet — that's fine
+    }
+    await mkdir(volumeRoot, { recursive: true });
+    this.config.logger.info('Cleared volume', { volumeName, volumeRoot });
+  }
+
+  /**
    * Collect all files from a named volume using native node:fs.
    * Uses the same path convention as the pack-worker and in-process volume
    * helpers: join(process.cwd(), 'volumes', name). We bypass ZenFS here

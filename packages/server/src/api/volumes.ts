@@ -134,6 +134,20 @@ async function createVolume(req: Request, res: Response): Promise<void> {
       correlationId,
     });
 
+    // Tell the agent to clear any stale data for this volume name
+    const connectionManager = getConnectionManager();
+    if (connectionManager) {
+      const sent = connectionManager.sendToNodeId(nodeId, {
+        type: 'volume:clear',
+        payload: { volumeName: name },
+      });
+      if (sent) {
+        logger.info('Sent volume:clear to node', { name, nodeId });
+      } else {
+        logger.warn('Node not connected, skipping volume:clear', { name, nodeId });
+      }
+    }
+
     sendSuccess(res, { volume: result.data }, 201);
   } catch (err) {
     logger.error('Error creating volume', err instanceof Error ? err : undefined, { correlationId });

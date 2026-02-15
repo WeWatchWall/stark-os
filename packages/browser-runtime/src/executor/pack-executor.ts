@@ -1184,6 +1184,80 @@ export class PackExecutor {
   }
 
   /**
+   * Clear all data from a named volume.
+   * Removes matching entries from both ZenFS and the raw IndexedDB store.
+   */
+  async clearVolume(volumeName: string): Promise<void> {
+    this.ensureInitialized();
+
+    // ── 1. Clear ZenFS (main-thread volume writes) ──────────────────
+    const volumeRoot = `/volumes/${volumeName}`;
+    try {
+      const walkAndDelete = async (dir: string): Promise<void> => {
+        let entries: string[];
+        try {
+          entries = (await this.storageAdapter.readdir(dir)) as unknown as string[];
+        } catch {
+          return;
+        }
+        for (const entryName of entries) {
+          const name = typeof entryName === 'string' ? entryName : (entryName as { name: string }).name;
+          const fullPath = `${dir}/${name}`;
+          const isDir = await this.storageAdapter.isDirectory(fullPath);
+          if (isDir) {
+            await walkAndDelete(fullPath);
+          } else {
+            await this.storageAdapter.unlink(fullPath);
+          }
+        }
+      };
+      await walkAndDelete(volumeRoot);
+    } catch {
+      // Volume directory may not exist yet — that's fine
+    }
+
+    // ── 2. Clear raw IndexedDB (Web Worker volume writes) ───────────
+    if (typeof indexedDB !== 'undefined') {
+      try {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const req = indexedDB.open('stark-volumes', 1);
+          req.onupgradeneeded = () => {
+            const dbInner = req.result;
+            if (!dbInner.objectStoreNames.contains('files')) {
+              dbInner.createObjectStore('files');
+            }
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        const prefix = `stark-volumes/${volumeName}/`;
+        const tx = db.transaction('files', 'readwrite');
+        const store = tx.objectStore('files');
+        const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+          const req = store.getAllKeys();
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+        for (const key of allKeys) {
+          if (typeof key === 'string' && key.startsWith(prefix)) {
+            store.delete(key);
+          }
+        }
+        await new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+      } catch {
+        // IndexedDB may not have this store yet — that's fine
+      }
+    }
+
+    this.config.logger.info('Cleared volume', { volumeName });
+  }
+
+  /**
    * Collect all files from a named volume.
    *
    * Volume data may live in two places depending on whether the pack ran on

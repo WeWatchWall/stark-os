@@ -11,6 +11,7 @@ import { validateCreateServiceInput, validateUpdateServiceInput, createServiceLo
 import { getServiceQueriesAdmin, getServiceQueries } from '../supabase/services.js';
 import { getPackQueriesAdmin } from '../supabase/packs.js';
 import { getVolumeQueries } from '../supabase/volumes.js';
+import { getConnectionManager } from '../services/connection-service.js';
 import { getIngressManager } from '../services/ingress-manager.js';
 import { getServiceNetworkMetaStore } from '@stark-o/shared';
 import {
@@ -155,6 +156,14 @@ async function createService(req: Request, res: Response): Promise<void> {
               volumeName: mount.name,
               nodeId: input.nodeId,
             });
+            // Tell the agent to clear any stale data for this volume
+            const connectionManager = getConnectionManager();
+            if (connectionManager) {
+              connectionManager.sendToNodeId(input.nodeId, {
+                type: 'volume:clear',
+                payload: { volumeName: mount.name },
+              });
+            }
           }
         }
       }

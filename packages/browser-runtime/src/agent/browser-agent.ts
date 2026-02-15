@@ -727,6 +727,32 @@ export class BrowserAgent {
         break;
       }
 
+      case 'volume:clear': {
+        const clearPayload = message.payload as { volumeName: string };
+        this.logger.info('Received volume:clear request', { volumeName: clearPayload.volumeName });
+        try {
+          await this.executor.clearVolume(clearPayload.volumeName);
+          if (message.correlationId) {
+            this.send({
+              type: 'volume:clear:success',
+              payload: { volumeName: clearPayload.volumeName },
+              correlationId: message.correlationId,
+            });
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          this.logger.error('Volume clear failed', { volumeName: clearPayload.volumeName, error: errorMessage });
+          if (message.correlationId) {
+            this.send({
+              type: 'volume:clear:error',
+              payload: { volumeName: clearPayload.volumeName, error: errorMessage },
+              correlationId: message.correlationId,
+            });
+          }
+        }
+        break;
+      }
+
       default:
         this.logger.debug('Unhandled message type', { type: message.type });
     }

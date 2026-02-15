@@ -184,23 +184,10 @@ async function executePack(request: WorkerRequest): Promise<void> {
   // These closures cannot be serialized over IPC, so we recreate them here
   // using the volumeMounts metadata passed via the serializable context.
   if (context.volumeMounts && context.volumeMounts.length > 0) {
-    const { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } = await import('node:fs');
+    const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
     const { join, dirname } = await import('node:path');
     // Volume data lives alongside the agent's working directory
     const baseDir = join(process.cwd(), 'volumes');
-
-    // Clear existing volume folders so each pod starts fresh
-    for (const mount of context.volumeMounts) {
-      const volumeRoot = join(baseDir, mount.name);
-      if (existsSync(volumeRoot)) {
-        rmSync(volumeRoot, { recursive: true, force: true });
-        originalConsole.log(
-          `[${new Date().toISOString()}][${podId}:out]`,
-          `Cleared existing volume folder: ${volumeRoot}`,
-        );
-      }
-      mkdirSync(volumeRoot, { recursive: true });
-    }
 
     (context as Record<string, unknown>).readFile = async (filePath: string): Promise<string> => {
       const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));

@@ -12,7 +12,7 @@ import { getPodQueriesAdmin } from '../supabase/pods.js';
 import { getPackQueries } from '../supabase/packs.js';
 import { getNodeQueries } from '../supabase/nodes.js';
 import { getVolumeQueries } from '../supabase/volumes.js';
-import { sendToNode } from '../services/connection-service.js';
+import { sendToNode, getConnectionManager } from '../services/connection-service.js';
 import {
   authMiddleware,
   abilityMiddleware,
@@ -301,6 +301,14 @@ async function createPod(req: Request, res: Response): Promise<void> {
               volumeName: mount.name,
               nodeId: input.nodeId,
             });
+            // Tell the agent to clear any stale data for this volume
+            const connectionManager = getConnectionManager();
+            if (connectionManager) {
+              connectionManager.sendToNodeId(input.nodeId, {
+                type: 'volume:clear',
+                payload: { volumeName: mount.name },
+              });
+            }
           }
         }
       }

@@ -116,10 +116,13 @@ export class Logger {
       return;
     }
 
+    // Sanitize message to prevent log injection via newlines/control characters
+    const sanitizedMessage = message.replace(/[\r\n]/g, ' ').replace(/[\x00-\x1f\x7f]/g, '');
+
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
-      message,
+      message: sanitizedMessage,
     };
 
     // Merge metadata

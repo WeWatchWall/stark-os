@@ -200,6 +200,10 @@ export class WorkerNetworkProxy {
    * Handle messages from the main thread.
    */
   private handleMainThreadMessage(event: MessageEvent): void {
+    // In dedicated workers, origin is always empty string; validate message structure instead
+    if (event.origin !== '' && event.origin !== self.location?.origin) {
+      return;
+    }
     const msg = event.data as NetworkProxyFromMain;
     if (!msg || typeof msg.type !== 'string' || !msg.type.startsWith('network:proxy:')) {
       return;

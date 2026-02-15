@@ -125,6 +125,10 @@ let registrationContext: {
 // ── Main message handler ────────────────────────────────────────────
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
+  // In dedicated workers, origin is always empty string; validate message structure instead
+  if (event.origin !== '' && event.origin !== self.location?.origin) {
+    return;
+  }
   const msg = event.data;
   if (msg.type !== 'execute') return;
 

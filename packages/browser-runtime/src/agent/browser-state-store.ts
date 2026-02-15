@@ -258,6 +258,14 @@ export function saveRegisteredBrowserNode(
   const nodes = loadRegisteredBrowserNodes();
   const normalizedUrl = normalizeOrchestratorUrl(orchestratorUrl);
   
+  // Prevent prototype pollution via malicious keys
+  if (normalizedUrl === '__proto__' || normalizedUrl === 'constructor' || normalizedUrl === 'prototype') {
+    return;
+  }
+  if (node.name === '__proto__' || node.name === 'constructor' || node.name === 'prototype') {
+    return;
+  }
+  
   if (!nodes[normalizedUrl]) {
     nodes[normalizedUrl] = {};
   }

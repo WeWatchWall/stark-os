@@ -106,12 +106,14 @@ export class IngressManager {
     const certPath = path.join(cacheDir, 'localhost.crt');
     const keyPath = path.join(cacheDir, 'localhost.key');
 
-    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-      this.sslOptions = {
-        cert: fs.readFileSync(certPath, 'utf-8'),
-        key: fs.readFileSync(keyPath, 'utf-8'),
-      };
+    // Dev path — try to read the cached self-signed cert that the main server generates
+    try {
+      const cert = fs.readFileSync(certPath, 'utf-8');
+      const key = fs.readFileSync(keyPath, 'utf-8');
+      this.sslOptions = { cert, key };
       return this.sslOptions;
+    } catch {
+      // Cert files don't exist yet — generate them below
     }
 
     // Generate self-signed cert if none exists yet

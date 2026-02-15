@@ -1,6 +1,6 @@
 {
   "name": "stark-os",
-  "version": "0.11.4",
+  "version": "0.11.5",
   "description": "JavaScript operating system and orchestration platform for Node.js and browser runtimes",
    "keywords": [
     "cloud",
@@ -95,6 +95,12 @@
     "tsup": "^8.5.1",
     "typescript": "^5.5.0",
     "vitest": "^2.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "tar": ">=7.5.7",
+      "h3": ">=1.15.5"
+    }
   },
   "license": "MIT"
 }

@@ -11,9 +11,26 @@
  * This is for development/test environments only.
  */
 
-import { spawn, exec, ChildProcess } from 'child_process';
+import { spawn, exec, execFile, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { platform } from 'os';
+
+/**
+ * Sanitize a process name pattern to prevent shell injection.
+ * Only allows alphanumeric characters, dashes, underscores, dots, and spaces.
+ */
+function sanitizeNamePattern(pattern: string): string {
+  return pattern.replace(/[^a-zA-Z0-9\-_.]/g, '');
+}
+
+/**
+ * Validate that a value is a safe positive integer (for PIDs and ports).
+ */
+function validatePositiveInt(value: number, name: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${name}: must be a positive integer, got ${value}`);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -93,6 +110,8 @@ export class ExternalChaosRunner extends EventEmitter {
     const logPrefix = '[ExternalChaos]';
 
     try {
+      validatePositiveInt(pid, 'PID');
+
       if (this.isWindows) {
         const forceFlag = signal === 'SIGKILL' ? '/F' : '';
         const cmd = `taskkill ${forceFlag} /PID ${pid}`;
@@ -169,11 +188,12 @@ export class ExternalChaosRunner extends EventEmitter {
    */
   async findProcesses(namePattern: string): Promise<ProcessInfo[]> {
     const processes: ProcessInfo[] = [];
+    const safePattern = sanitizeNamePattern(namePattern);
 
     try {
       if (this.isWindows) {
         const output = await this.execCommand(
-          `wmic process where "name like '%${namePattern}%'" get processid,name,commandline /format:csv`
+          `wmic process where "name like '%${safePattern}%'" get processid,name,commandline /format:csv`
         );
         const lines = output.split('\n').filter((l) => l.trim());
         for (const line of lines.slice(1)) {
@@ -188,7 +208,7 @@ export class ExternalChaosRunner extends EventEmitter {
           }
         }
       } else {
-        const output = await this.execCommand(`pgrep -f "${namePattern}" || true`);
+        const output = await this.execCommand(`pgrep -f "${safePattern}" || true`);
         const pids = output
           .split('\n')
           .map((p) => parseInt(p.trim(), 10))
@@ -303,6 +323,11 @@ export class ExternalChaosRunner extends EventEmitter {
   async blockPort(port: number, durationMs: number = 10000): Promise<ChaosResult> {
     if (!this.enabled) {
       return { success: false, message: 'External chaos not enabled' };
+    }
+
+    validatePositiveInt(port, 'port');
+    if (port > 65535) {
+      throw new Error(`Invalid port: must be between 1 and 65535, got ${port}`);
     }
 
     console.log(`[ExternalChaos] ⚡ Blocking port ${port} for ${durationMs}ms`);

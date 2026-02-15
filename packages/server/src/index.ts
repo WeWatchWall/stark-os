@@ -285,12 +285,12 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
         let cert: string;
         let key: string;
         
-        if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-          // Reuse cached certificate
+        try {
+          // Try to reuse cached certificate
           cert = fs.readFileSync(certPath, 'utf-8');
           key = fs.readFileSync(keyPath, 'utf-8');
           logger.info('Using cached self-signed certificate from .cache/');
-        } else {
+        } catch {
           // Generate new certificate and cache it
           logger.warn('No SSL certificates provided. Generating self-signed certificate for development.');
           logger.warn('For production, set SSL_CERT and SSL_KEY environment variables.');
@@ -327,9 +327,8 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
           key = pems.private;
           
           // Cache the certificate for future restarts
-          if (!fs.existsSync(cacheDir)) {
-            fs.mkdirSync(cacheDir, { recursive: true });
-          }
+          // Use recursive:true which is safe even if dir already exists
+          fs.mkdirSync(cacheDir, { recursive: true });
           fs.writeFileSync(certPath, cert);
           fs.writeFileSync(keyPath, key);
           

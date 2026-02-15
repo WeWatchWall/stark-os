@@ -157,13 +157,18 @@ function getUserId(req: Request): string | null {
  * Format: "key1=value1,key2=value2"
  */
 function parseLabelSelector(selectorStr: string): Record<string, string> {
-  const result: Record<string, string> = {};
+  const result = Object.create(null) as Record<string, string>;
   const pairs = selectorStr.split(',');
 
   for (const pair of pairs) {
     const [key, value] = pair.split('=');
     if (key && value !== undefined) {
-      result[key.trim()] = value.trim();
+      const trimmedKey = key.trim();
+      // Prevent prototype pollution via malicious label keys
+      if (trimmedKey === '__proto__' || trimmedKey === 'constructor' || trimmedKey === 'prototype') {
+        continue;
+      }
+      result[trimmedKey] = value.trim();
     }
   }
 

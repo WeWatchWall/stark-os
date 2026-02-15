@@ -226,6 +226,8 @@ export interface CreatePodInput {
   resourceLimits?: Partial<ResourceRequirements>;
   /** Scheduling configuration */
   scheduling?: PodSchedulingConfig;
+  /** Target node ID (optional — used for volume auto-provisioning and pinned scheduling) */
+  nodeId?: string;
   /** Volume mounts */
   volumeMounts?: VolumeMount[];
   /** Additional metadata */

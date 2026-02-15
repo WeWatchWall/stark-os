@@ -1231,12 +1231,14 @@ export class PackExecutor {
             await walk(fullPath, relativePath);
           } else {
             const bytes = await this.storageAdapter.readFileBytes(fullPath);
-            // Convert Uint8Array to base64 in the browser
-            let binary = '';
-            for (let i = 0; i < bytes.length; i++) {
-              binary += String.fromCharCode(bytes[i]);
+            // Convert Uint8Array to base64 in the browser (chunked to avoid stack overflow)
+            const CHUNK = 8192;
+            const parts: string[] = [];
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+              const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+              parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
             }
-            files.push({ path: relativePath, data: btoa(binary) });
+            files.push({ path: relativePath, data: btoa(parts.join('')) });
           }
         } catch {
           // Skip unreadable entries

@@ -182,7 +182,7 @@ async function createHandler(
       for (const v of options.volume) {
         const colonIndex = v.indexOf(':');
         if (colonIndex < 1) {
-          error(`Invalid --volume format: "${v}". Expected name:/mount/path`);
+          error(`Invalid --volume format: "${v}". Expected <name>:<mount-path>`);
           process.exit(1);
         }
         const volName = v.substring(0, colonIndex);

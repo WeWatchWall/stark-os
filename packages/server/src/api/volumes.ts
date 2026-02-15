@@ -244,10 +244,10 @@ async function downloadVolume(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // V1 placeholder: return empty tar header (512 zero bytes = end-of-archive)
+    // V1 placeholder: return empty tar (1024 zero bytes = two end-of-archive markers)
     logger.info('Volume download requested', { volumeName: name, nodeId });
     res.setHeader('Content-Type', 'application/x-tar');
-    res.setHeader('Content-Disposition', `attachment; filename="${name}.tar"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(name)}.tar"`);
     res.status(200).send(Buffer.alloc(1024, 0));
   } catch (err) {
     logger.error('Error downloading volume', err instanceof Error ? err : undefined);

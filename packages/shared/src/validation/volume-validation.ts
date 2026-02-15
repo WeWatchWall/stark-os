@@ -8,7 +8,7 @@ import type { ValidationResult, ValidationError } from './pack-validation';
 /**
  * Volume name pattern (DNS-like: lowercase, alphanumeric, hyphens)
  */
-const VOLUME_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
+const VOLUME_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
 /**
  * Maximum volume name length
@@ -23,7 +23,7 @@ const MAX_VOLUME_MOUNTS = 20;
 /**
  * Mount path pattern (must be absolute)
  */
-const MOUNT_PATH_PATTERN = /^\/[^\0]*$/;
+const MOUNT_PATH_PATTERN = /^\/[a-zA-Z0-9_./-]+$/;
 
 /**
  * UUID pattern for IDs

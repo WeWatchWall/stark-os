@@ -20,7 +20,7 @@ import { platform } from 'os';
  * Only allows alphanumeric characters, dashes, underscores, dots, and spaces.
  */
 function sanitizeNamePattern(pattern: string): string {
-  return pattern.replace(/[^a-zA-Z0-9\-_.\s]/g, '');
+  return pattern.replace(/[^a-zA-Z0-9\-_.]/g, '');
 }
 
 /**

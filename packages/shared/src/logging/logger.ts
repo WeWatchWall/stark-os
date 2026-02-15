@@ -156,9 +156,7 @@ export class Logger {
    * Default output to console
    */
   private defaultOutput(entry: LogEntry): void {
-    // JSON mode already escapes newlines; pretty mode output is sanitized to prevent log injection
-    const rawOutput = this.config.pretty ? this.formatPretty(entry) : JSON.stringify(entry);
-    const output = this.config.pretty ? rawOutput : rawOutput.replace(/[\r\n]/g, ' ');
+    const output = this.config.pretty ? this.formatPretty(entry) : JSON.stringify(entry);
 
     switch (entry.level) {
       case 'debug':

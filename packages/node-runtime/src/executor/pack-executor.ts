@@ -821,9 +821,7 @@ export class PackExecutor {
       if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
         continue;
       }
-      if (Object.prototype.hasOwnProperty.call(process.env, key) || process.env[key] !== undefined) {
-        originalEnv[key] = process.env[key];
-      }
+      originalEnv[key] = process.env[key];
       process.env[key] = value;
     }
 

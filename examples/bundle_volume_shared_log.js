@@ -9,7 +9,7 @@
 //
 // Usage:
 //   1. Create a volume:            stark volume create shared-log --node production-node-1
-//   2. Register this pack:         stark pack register --name shared-log --file examples/volume_shared_log/bundle_volume_shared_log.js
+//   2. Register this pack:         stark pack register --name shared-log --file examples/bundle_volume_shared_log.js
 //   3. Create a service (3 replicas sharing the volume on the same node):
 //      stark service create shared-log-svc --pack shared-log --replicas 3 --node production-node-1 --volume shared-log:/app/logs
 //   4. Download the shared log:    stark volume download shared-log --node production-node-1 --output ./shared-log.tar

@@ -12,7 +12,7 @@
 // pod-to-pod messaging within a shared PodGroup.
 //
 // Usage:
-//   1. Register this as a pack:   stark pack register --name podgroup-echo-pack --file examples/podgroup_echo/bundle_podgroup_echo.js
+//   1. Register this as a pack:   stark pack register --name podgroup-echo-pack --file examples/bundle_podgroup_echo.js
 //   2. Create a service:          stark service create podgroup-echo-service --pack podgroup-echo-pack --replicas 2
 //   3. The podgroup-greeter-service must also be running in the same PodGroup.
 //

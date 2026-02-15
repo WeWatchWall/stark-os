@@ -8,7 +8,7 @@
 // through the WebRTC-based pod-to-pod transport. No special API needed.
 //
 // Usage:
-//   1. Register this as a pack:   stark pack register --name greeter-pack --file examples/network_greeter/bundle_network_greeter.js
+//   1. Register this as a pack:   stark pack register --name greeter-pack --file examples/bundle_network_greeter.js
 //   2. Create a service:          stark service create greeter-service --pack greeter-pack --replicas 1
 //   3. The echo-service must be running to receive calls.
 //   4. Allow traffic:             stark network allow greeter-service echo-service

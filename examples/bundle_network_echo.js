@@ -6,7 +6,7 @@
 // Tracks request counts, latency, and caller metadata for networking diagnostics.
 //
 // Usage:
-//   1. Register this as a pack:   stark pack register --name echo-pack --file examples/network_echo/bundle_network_echo.js
+//   1. Register this as a pack:   stark pack register --name echo-pack --file examples/bundle_network_echo.js
 //   2. Create a service:          stark service create echo-service --pack echo-pack --replicas 2
 //   3. Allow traffic:             stark network allow greeter-service echo-service
 //   4. The greeter-service will automatically call this service on an interval.

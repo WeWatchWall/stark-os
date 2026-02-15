@@ -285,12 +285,12 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
         let cert: string;
         let key: string;
         
-        if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-          // Reuse cached certificate
+        try {
+          // Try to reuse cached certificate
           cert = fs.readFileSync(certPath, 'utf-8');
           key = fs.readFileSync(keyPath, 'utf-8');
           logger.info('Using cached self-signed certificate from .cache/');
-        } else {
+        } catch {
           // Generate new certificate and cache it
           logger.warn('No SSL certificates provided. Generating self-signed certificate for development.');
           logger.warn('For production, set SSL_CERT and SSL_KEY environment variables.');

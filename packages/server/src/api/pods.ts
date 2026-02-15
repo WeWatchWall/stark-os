@@ -157,7 +157,7 @@ function getUserId(req: Request): string | null {
  * Format: "key1=value1,key2=value2"
  */
 function parseLabelSelector(selectorStr: string): Record<string, string> {
-  const result: Record<string, string> = {};
+  const result = Object.create(null) as Record<string, string>;
   const pairs = selectorStr.split(',');
 
   for (const pair of pairs) {

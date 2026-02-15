@@ -32,7 +32,7 @@ module.exports.default = async function(context) {
         const callerTimestamp = parsed?.timestamp || null;
         const networkLatencyMs = callerTimestamp ? now - callerTimestamp : null;
 
-        console.log(`[${serviceId}] #${requestCount} ${req.method} ${req.url} from ${parsed?.from || 'unknown'} (pod ${parsed?.podId || '?'}) | seq=${parsed?.seq ?? '?'} | network latency=${networkLatencyMs !== null ? networkLatencyMs + 'ms' : 'n/a'} | on pod ${podId}`);
+        console.log('[%s] #%d %s %s from %s (pod %s) | seq=%s | network latency=%s | on pod %s', serviceId, requestCount, req.method, req.url, parsed?.from || 'unknown', parsed?.podId || '?', parsed?.seq ?? '?', networkLatencyMs !== null ? networkLatencyMs + 'ms' : 'n/a', podId);
 
         const response = {
           message: `Hello back from Echo service`,

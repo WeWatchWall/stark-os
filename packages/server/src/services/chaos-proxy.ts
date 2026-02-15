@@ -243,7 +243,8 @@ export class ChaosProxyService extends EventEmitter {
                    : 'both';
     const safeNodeId = String(rule.nodeId ?? 'all').replace(/[\r\n]/g, '');
     console.log(
-      `[ChaosProxy] Added message rule: direction=${dirLabel}, dropRate=${rule.dropRate}, delay=${rule.delayMs ?? 0}ms, jitter=${rule.delayJitterMs ?? 0}ms, nodeId=${safeNodeId}`
+      '[ChaosProxy] Added message rule: direction=%s, dropRate=%d, delay=%dms, jitter=%dms, nodeId=%s',
+      dirLabel, rule.dropRate, rule.delayMs ?? 0, rule.delayJitterMs ?? 0, safeNodeId
     );
     return ruleId;
   }
@@ -392,7 +393,8 @@ export class ChaosProxyService extends EventEmitter {
     this.heartbeatRules.set(rule.nodeId, rule);
     const safeNodeId = String(rule.nodeId).replace(/[\r\n]/g, '');
     console.log(
-      `[ChaosProxy] Added heartbeat rule for node ${safeNodeId}: delay=${rule.delayMs}ms, dropRate=${rule.dropRate ?? 0}`
+      '[ChaosProxy] Added heartbeat rule for node %s: delay=%dms, dropRate=%d',
+      safeNodeId, rule.delayMs, rule.dropRate ?? 0
     );
   }
 
@@ -798,7 +800,7 @@ export class ChaosProxyService extends EventEmitter {
     this.stats.connectionsBanned++;
     this.recordEvent('connection_banned', { nodeId, durationMs, wasConnected: terminated });
 
-    console.log(`[ChaosProxy] ⚡ Node banned: ${safeLog(nodeId)}${durationMs ? ` for ${durationMs}ms` : ' indefinitely'}`);
+    console.log('[ChaosProxy] ⚡ Node banned: %s%s', safeLog(nodeId), durationMs ? ` for ${durationMs}ms` : ' indefinitely');
 
     // Auto-unban after duration
     if (durationMs) {
@@ -933,7 +935,7 @@ export class ChaosProxyService extends EventEmitter {
     this.stats.latencyRulesActive = this.latencyRules.size;
     this.recordEvent('latency_injected', { ruleId: id, ...config });
 
-    console.log(`[ChaosProxy] ⚡ Latency injection configured: ${safeLog(id)} (${config.latencyMs}ms ± ${config.jitterMs || 0}ms)`);
+    console.log('[ChaosProxy] ⚡ Latency injection configured: %s (%dms ± %dms)', safeLog(id), config.latencyMs, config.jitterMs || 0);
 
     // Auto-remove after duration
     if (config.durationMs) {

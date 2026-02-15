@@ -279,27 +279,7 @@ export class PackExecutor {
     }
   }
 
-  /**
-   * Open (or create) the IndexedDB database used for volume-backed file I/O.
-   */
-  private _volumeDB: IDBDatabase | null = null;
-  private openVolumeDB(): Promise<IDBDatabase> {
-    if (this._volumeDB) return Promise.resolve(this._volumeDB);
-    return new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('stark-volumes', 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains('files')) {
-          db.createObjectStore('files');
-        }
-      };
-      req.onsuccess = () => {
-        this._volumeDB = req.result;
-        resolve(req.result);
-      };
-      req.onerror = () => reject(req.error);
-    });
-  }
+
 
   /**
    * Execute a pack for a pod.
@@ -413,35 +393,33 @@ export class PackExecutor {
       },
       // Volume mounts — expose to pack code so it can detect mounted volumes
       volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
-      // Volume I/O helpers — backed by IndexedDB via StorageAdapter
+      // Volume I/O helpers — backed by ZenFS via StorageAdapter
+      // Uses storageAdapter consistently so collectVolumeFiles sees the same data.
       ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
         readFile: async (filePath: string): Promise<string> => {
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
-          const db = await this.openVolumeDB();
-          const tx = db.transaction('files', 'readonly');
-          const store = tx.objectStore('files');
-          const result = await new Promise<string | undefined>((resolve, reject) => {
-            const req = store.get(key);
-            req.onsuccess = () => resolve(req.result as string | undefined);
-            req.onerror = () => reject(req.error);
-          });
-          if (result === undefined) throw new Error(`File not found: ${filePath}`);
-          return result;
+          const volumeRoot = `/volumes/${mount.name}`;
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          return this.storageAdapter.readFile(`${volumeRoot}/${relative}`);
         },
         writeFile: async (filePath: string, content: string): Promise<void> => {
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
-          const db = await this.openVolumeDB();
-          const tx = db.transaction('files', 'readwrite');
-          const store = tx.objectStore('files');
-          await new Promise<void>((resolve, reject) => {
-            const req = store.put(content, key);
-            req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
-          });
+          const volumeRoot = `/volumes/${mount.name}`;
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = `${volumeRoot}/${relative}`;
+          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          await this.storageAdapter.writeFile(fullPath, content);
+        },
+        appendFile: async (filePath: string, content: string): Promise<void> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = `/volumes/${mount.name}`;
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = `${volumeRoot}/${relative}`;
+          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          await this.storageAdapter.appendFile(fullPath, content);
         },
       } : {}),
       // Ephemeral data plane: opt-in via pack metadata

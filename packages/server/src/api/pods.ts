@@ -11,6 +11,7 @@ import { validateCreatePodInput, validateResourceRequestsVsLimits, createService
 import { getPodQueriesAdmin } from '../supabase/pods.js';
 import { getPackQueries } from '../supabase/packs.js';
 import { getNodeQueries } from '../supabase/nodes.js';
+import { getVolumeQueries } from '../supabase/volumes.js';
 import { sendToNode } from '../services/connection-service.js';
 import {
   authMiddleware,
@@ -279,6 +280,30 @@ async function createPod(req: Request, res: Response): Promise<void> {
     if (!packResult.data) {
       sendError(res, 'NOT_FOUND', 'Pack not found', 404);
       return;
+    }
+
+    // Auto-provision volume DB records for any volumeMounts.
+    // Volumes are node-local, so nodeId is required when mounts are specified.
+    if (input.volumeMounts && input.volumeMounts.length > 0 && input.nodeId) {
+      const volumeQueries = getVolumeQueries();
+      for (const mount of input.volumeMounts) {
+        const exists = await volumeQueries.volumeExists(mount.name, input.nodeId);
+        if (!exists) {
+          const volResult = await volumeQueries.createVolume({ name: mount.name, nodeId: input.nodeId });
+          if (volResult.error) {
+            requestLogger.warn('Failed to auto-provision volume', {
+              volumeName: mount.name,
+              nodeId: input.nodeId,
+              error: volResult.error.message,
+            });
+          } else {
+            requestLogger.info('Auto-provisioned volume for pod', {
+              volumeName: mount.name,
+              nodeId: input.nodeId,
+            });
+          }
+        }
+      }
     }
 
     // Create pod

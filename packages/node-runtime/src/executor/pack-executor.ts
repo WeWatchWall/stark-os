@@ -348,26 +348,32 @@ export class PackExecutor {
       // Volume mounts — expose to pack code so it can detect mounted volumes
       volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
       // Volume I/O helpers — scoped to mounted paths only
+      // Uses fsAdapter (ZenFS) consistently so collectVolumeFiles sees the same data.
       ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
         readFile: async (filePath: string): Promise<string> => {
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const { readFileSync } = await import('node:fs');
-          const { join } = await import('node:path');
-          const volumeRoot = join(this.config.bundleDir, '..', 'volumes', mount.name);
+          const volumeRoot = join('..', 'volumes', mount.name);
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
-          return readFileSync(join(volumeRoot, relative), 'utf-8');
+          return this.fsAdapter.readFile(join(volumeRoot, relative), 'utf-8');
         },
         writeFile: async (filePath: string, content: string): Promise<void> => {
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const { writeFileSync, mkdirSync } = await import('node:fs');
-          const { join, dirname } = await import('node:path');
-          const volumeRoot = join(this.config.bundleDir, '..', 'volumes', mount.name);
+          const volumeRoot = join('..', 'volumes', mount.name);
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           const fullPath = join(volumeRoot, relative);
-          mkdirSync(dirname(fullPath), { recursive: true });
-          writeFileSync(fullPath, content, 'utf-8');
+          await this.fsAdapter.mkdir(join(volumeRoot, relative, '..'), true);
+          await this.fsAdapter.writeFile(fullPath, content, 'utf-8');
+        },
+        appendFile: async (filePath: string, content: string): Promise<void> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const volumeRoot = join('..', 'volumes', mount.name);
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = join(volumeRoot, relative);
+          await this.fsAdapter.mkdir(join(volumeRoot, relative, '..'), true);
+          await this.fsAdapter.appendFile(fullPath, content, 'utf-8');
         },
       } : {}),
       // Ephemeral data plane: opt-in via pack metadata
@@ -1091,7 +1097,7 @@ export class PackExecutor {
    * Returns serializable file entries with base64-encoded content.
    */
   async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
-    const volumeRoot = join(this.config.bundleDir, '..', 'volumes', volumeName);
+    const volumeRoot = join('..', 'volumes', volumeName);
     const files: VolumeFileEntry[] = [];
 
     const walk = async (dir: string, prefix: string): Promise<void> => {

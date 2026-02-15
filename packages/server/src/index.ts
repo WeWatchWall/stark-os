@@ -327,9 +327,8 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
           key = pems.private;
           
           // Cache the certificate for future restarts
-          if (!fs.existsSync(cacheDir)) {
-            fs.mkdirSync(cacheDir, { recursive: true });
-          }
+          // Use recursive:true which is safe even if dir already exists
+          fs.mkdirSync(cacheDir, { recursive: true });
           fs.writeFileSync(certPath, cert);
           fs.writeFileSync(keyPath, key);
           

@@ -206,7 +206,7 @@ export class ChaosController extends EventEmitter {
     this.currentScenario = options.scenario;
     const startedAt = new Date();
 
-    console.log(`\n[Chaos] Starting scenario: ${options.scenario}`);
+    console.log(`\n[Chaos] Starting scenario: ${String(options.scenario).replace(/[\r\n]/g, '')}`);
     this.emit('scenario_started', { scenario: options.scenario, options: options.options });
 
     try {

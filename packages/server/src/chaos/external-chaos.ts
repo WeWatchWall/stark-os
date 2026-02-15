@@ -188,11 +188,12 @@ export class ExternalChaosRunner extends EventEmitter {
    */
   async findProcesses(namePattern: string): Promise<ProcessInfo[]> {
     const processes: ProcessInfo[] = [];
+    const safePattern = sanitizeNamePattern(namePattern);
 
     try {
       if (this.isWindows) {
         const output = await this.execCommand(
-          `wmic process where "name like '%${namePattern}%'" get processid,name,commandline /format:csv`
+          `wmic process where "name like '%${safePattern}%'" get processid,name,commandline /format:csv`
         );
         const lines = output.split('\n').filter((l) => l.trim());
         for (const line of lines.slice(1)) {
@@ -207,7 +208,7 @@ export class ExternalChaosRunner extends EventEmitter {
           }
         }
       } else {
-        const output = await this.execCommand(`pgrep -f "${namePattern}" || true`);
+        const output = await this.execCommand(`pgrep -f "${safePattern}" || true`);
         const pids = output
           .split('\n')
           .map((p) => parseInt(p.trim(), 10))
@@ -322,6 +323,11 @@ export class ExternalChaosRunner extends EventEmitter {
   async blockPort(port: number, durationMs: number = 10000): Promise<ChaosResult> {
     if (!this.enabled) {
       return { success: false, message: 'External chaos not enabled' };
+    }
+
+    validatePositiveInt(port, 'port');
+    if (port > 65535) {
+      throw new Error(`Invalid port: must be between 1 and 65535, got ${port}`);
     }
 
     console.log(`[ExternalChaos] ⚡ Blocking port ${port} for ${durationMs}ms`);

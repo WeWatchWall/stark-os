@@ -163,7 +163,12 @@ function parseLabelSelector(selectorStr: string): Record<string, string> {
   for (const pair of pairs) {
     const [key, value] = pair.split('=');
     if (key && value !== undefined) {
-      result[key.trim()] = value.trim();
+      const trimmedKey = key.trim();
+      // Prevent prototype pollution via malicious label keys
+      if (trimmedKey === '__proto__' || trimmedKey === 'constructor' || trimmedKey === 'prototype') {
+        continue;
+      }
+      result[trimmedKey] = value.trim();
     }
   }
 

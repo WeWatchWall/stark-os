@@ -942,7 +942,7 @@ export class PackExecutor {
     // Patch console to route through pod log format.
     // We patch directly using saved original references to avoid circular
     // recursion (PodLogSink.write() calls console.log internally).
-    const podId = context.podId;
+    const podId = context.podId.replace(/[\r\n\x00-\x1f\x7f]/g, '');
     const originalConsole = {
       log: console.log.bind(console),
       info: console.info.bind(console),

@@ -190,7 +190,7 @@ export class ServiceCaller {
       try {
         this.connMgr.send(targetPodId, JSON.stringify(request));
       } catch (err) {
-        console.error(`[stark:ServiceCaller] ❌ connMgr.send() failed for ${requestId}:`, err);
+        console.error('[stark:ServiceCaller] ❌ connMgr.send() failed for %s:', requestId, err);
         clearTimeout(timer);
         this.pending.delete(requestId);
 

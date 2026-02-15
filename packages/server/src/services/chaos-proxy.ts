@@ -19,6 +19,11 @@ import { EventEmitter } from 'events';
 /** Maximum allowed duration for chaos operations (1 hour) to prevent resource exhaustion */
 const MAX_CHAOS_DURATION_MS = 3_600_000;
 
+/** Sanitize a string for safe log output (strip newlines/control chars) */
+function safeLog(value: string): string {
+  return value.replace(/[\r\n\x00-\x1f\x7f]/g, '');
+}
+
 /**
  * Validate and sanitize a duration value for use in setTimeout.
  * Returns a safe hardcoded duration value to prevent resource exhaustion.
@@ -236,8 +241,9 @@ export class ChaosProxyService extends EventEmitter {
     const dirLabel = rule.direction === 'incoming' ? 'node→orch' 
                    : rule.direction === 'outgoing' ? 'orch→node' 
                    : 'both';
+    const safeNodeId = String(rule.nodeId ?? 'all').replace(/[\r\n]/g, '');
     console.log(
-      `[ChaosProxy] Added message rule: direction=${dirLabel}, dropRate=${rule.dropRate}, delay=${rule.delayMs ?? 0}ms, jitter=${rule.delayJitterMs ?? 0}ms, nodeId=${rule.nodeId ?? 'all'}`
+      `[ChaosProxy] Added message rule: direction=${dirLabel}, dropRate=${rule.dropRate}, delay=${rule.delayMs ?? 0}ms, jitter=${rule.delayJitterMs ?? 0}ms, nodeId=${safeNodeId}`
     );
     return ruleId;
   }
@@ -384,8 +390,9 @@ export class ChaosProxyService extends EventEmitter {
 
   addHeartbeatRule(rule: HeartbeatChaosRule): void {
     this.heartbeatRules.set(rule.nodeId, rule);
+    const safeNodeId = String(rule.nodeId).replace(/[\r\n]/g, '');
     console.log(
-      `[ChaosProxy] Added heartbeat rule for node ${rule.nodeId}: delay=${rule.delayMs}ms, dropRate=${rule.dropRate ?? 0}`
+      `[ChaosProxy] Added heartbeat rule for node ${safeNodeId}: delay=${rule.delayMs}ms, dropRate=${rule.dropRate ?? 0}`
     );
   }
 
@@ -478,11 +485,11 @@ export class ChaosProxyService extends EventEmitter {
 
     const conn = this.connectionManager.getConnection(connectionId);
     if (!conn) {
-      console.warn(`[ChaosProxy] Connection ${connectionId} not found`);
+      console.warn(`[ChaosProxy] Connection ${safeLog(connectionId)} not found`);
       return false;
     }
 
-    console.log(`[ChaosProxy] ⚡ Terminating connection ${connectionId}`);
+    console.log(`[ChaosProxy] ⚡ Terminating connection ${safeLog(connectionId)}`);
     this.recordEvent('connection_terminated', { connectionId, nodeIds: Array.from(conn.nodeIds) });
     this.stats.connectionsTerminated++;
 
@@ -507,7 +514,7 @@ export class ChaosProxyService extends EventEmitter {
       }
     }
 
-    console.warn(`[ChaosProxy] No connection found for node ${nodeId}`);
+    console.warn(`[ChaosProxy] No connection found for node ${safeLog(nodeId)}`);
     return false;
   }
 
@@ -515,7 +522,7 @@ export class ChaosProxyService extends EventEmitter {
    * Simulate node disappearing (terminate + prevent reconnection briefly)
    */
   simulateNodeLoss(nodeId: string): boolean {
-    console.log(`[ChaosProxy] ⚡ Simulating node loss: ${nodeId}`);
+    console.log(`[ChaosProxy] ⚡ Simulating node loss: ${safeLog(nodeId)}`);
     this.recordEvent('node_forced_offline', { nodeId });
     this.stats.nodesForceOffline++;
     return this.terminateNodeConnection(nodeId);
@@ -672,7 +679,7 @@ export class ChaosProxyService extends EventEmitter {
     this.stats.connectionsPaused++;
     this.recordEvent('connection_paused', { connectionId: targetConnectionId, nodeId, durationMs });
 
-    console.log(`[ChaosProxy] ⚡ Connection paused: ${targetConnectionId}`);
+    console.log(`[ChaosProxy] ⚡ Connection paused: ${safeLog(targetConnectionId)}`);
 
     // Auto-resume after duration
     if (durationMs) {
@@ -730,7 +737,7 @@ export class ChaosProxyService extends EventEmitter {
     this.pausedConnections.delete(targetConnectionId);
     this.recordEvent('connection_resumed', { connectionId: targetConnectionId, nodeId, queuedMessages: paused.pendingMessages.length });
 
-    console.log(`[ChaosProxy] Connection resumed: ${targetConnectionId}`);
+    console.log(`[ChaosProxy] Connection resumed: ${safeLog(targetConnectionId)}`);
     return true;
   }
 
@@ -791,7 +798,7 @@ export class ChaosProxyService extends EventEmitter {
     this.stats.connectionsBanned++;
     this.recordEvent('connection_banned', { nodeId, durationMs, wasConnected: terminated });
 
-    console.log(`[ChaosProxy] ⚡ Node banned: ${nodeId}${durationMs ? ` for ${durationMs}ms` : ' indefinitely'}`);
+    console.log(`[ChaosProxy] ⚡ Node banned: ${safeLog(nodeId)}${durationMs ? ` for ${durationMs}ms` : ' indefinitely'}`);
 
     // Auto-unban after duration
     if (durationMs) {
@@ -818,7 +825,7 @@ export class ChaosProxyService extends EventEmitter {
     this.bannedNodes.delete(nodeId);
     this.recordEvent('connection_unbanned', { nodeId, bannedDurationMs: Date.now() - banned.bannedAt.getTime() });
 
-    console.log(`[ChaosProxy] Node unbanned: ${nodeId}`);
+    console.log(`[ChaosProxy] Node unbanned: ${safeLog(nodeId)}`);
     return true;
   }
 
@@ -880,7 +887,7 @@ export class ChaosProxyService extends EventEmitter {
     this.partitions.delete(partitionId);
     this.recordEvent('partition_removed', { partitionId, nodeIds: partition.nodeIds, connectionIds: partition.connectionIds });
 
-    console.log(`[ChaosProxy] Network partition removed: ${partitionId}`);
+    console.log(`[ChaosProxy] Network partition removed: ${safeLog(partitionId)}`);
     return true;
   }
 
@@ -926,7 +933,7 @@ export class ChaosProxyService extends EventEmitter {
     this.stats.latencyRulesActive = this.latencyRules.size;
     this.recordEvent('latency_injected', { ruleId: id, ...config });
 
-    console.log(`[ChaosProxy] ⚡ Latency injection configured: ${id} (${config.latencyMs}ms ± ${config.jitterMs || 0}ms)`);
+    console.log(`[ChaosProxy] ⚡ Latency injection configured: ${safeLog(id)} (${config.latencyMs}ms ± ${config.jitterMs || 0}ms)`);
 
     // Auto-remove after duration
     if (config.durationMs) {
@@ -948,7 +955,7 @@ export class ChaosProxyService extends EventEmitter {
     const removed = this.latencyRules.delete(ruleId);
     if (removed) {
       this.stats.latencyRulesActive = this.latencyRules.size;
-      console.log(`[ChaosProxy] Latency rule removed: ${ruleId}`);
+      console.log(`[ChaosProxy] Latency rule removed: ${safeLog(ruleId)}`);
     }
     return removed;
   }

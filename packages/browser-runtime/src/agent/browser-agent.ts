@@ -678,7 +678,10 @@ export class BrowserAgent {
         // Handle WebRTC signaling message from orchestrator
         // Forward to main thread network manager which handles actual WebRTC connections
         const signal = message.payload as SignallingMessage;
-        console.log('[BrowserAgent] 📨 Received network:signal from server:', signal?.type, 'from:', signal?.sourcePodId?.slice(0,8), 'to:', signal?.targetPodId?.slice(0,8));
+        const signalType = String(signal?.type ?? '').replace(/[\r\n]/g, '');
+        const signalSource = String(signal?.sourcePodId ?? '').replace(/[\r\n]/g, '').slice(0,8);
+        const signalTarget = String(signal?.targetPodId ?? '').replace(/[\r\n]/g, '').slice(0,8);
+        console.log('[BrowserAgent] 📨 Received network:signal from server:', signalType, 'from:', signalSource, 'to:', signalTarget);
         if (this.networkManager) {
           this.networkManager.handleSignal(signal);
         } else {

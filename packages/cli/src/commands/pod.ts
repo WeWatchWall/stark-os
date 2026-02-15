@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createApiClient, requireAuth, loadConfig } from '../config.js';
+import { createApiClient, requireAuth, loadConfig, resolveNodeId } from '../config.js';
 import {
   success,
   error,
@@ -115,7 +115,12 @@ async function createHandler(
     };
 
     if (options.node) {
-      podRequest.nodeId = options.node;
+      try {
+        podRequest.nodeId = await resolveNodeId(options.node, api);
+      } catch (err) {
+        error(err instanceof Error ? err.message : `Node not found: ${options.node}`);
+        process.exit(1);
+      }
     }
 
     if (options.priority) {

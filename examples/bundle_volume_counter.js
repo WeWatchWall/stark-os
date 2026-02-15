@@ -9,7 +9,7 @@
 //
 // Usage:
 //   1. Create a volume:            stark volume create counter-data --node production-node-1
-//   2. Register this pack:         stark pack register --name volume-counter --file examples/bundle_volume_counter.js
+//   2. Register this pack:         stark pack register examples/bundle_volume_counter.js --name volume-counter -V 0.0.1 -r universal --visibility public
 //   3. Create a pod with volume:   stark pod create volume-counter --node production-node-1 --volume counter-data:/app/data
 //
 // Works in both Node.js and browser (Web Worker) environments.

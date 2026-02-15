@@ -249,6 +249,49 @@ export function createApiClient(config?: CliConfig): {
 }
 
 /**
+ * UUID v4 pattern
+ */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolves a node name-or-UUID to a UUID.
+ * If the value is already a UUID it is returned as-is.
+ * Otherwise it is looked up via the `/api/nodes/name/:name` endpoint.
+ *
+ * @returns the node UUID
+ * @throws if the node cannot be found
+ */
+export async function resolveNodeId(
+  nameOrId: string,
+  api: ReturnType<typeof createApiClient>,
+): Promise<string> {
+  if (UUID_PATTERN.test(nameOrId)) {
+    return nameOrId;
+  }
+
+  let response: Response;
+  try {
+    response = await api.get(`/api/nodes/name/${encodeURIComponent(nameOrId)}`);
+  } catch (err) {
+    // Network / TLS error — re-throw with a helpful message
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to look up node '${nameOrId}': ${detail}`);
+  }
+
+  const result = (await response.json()) as {
+    success: boolean;
+    data?: { node: { id: string } };
+    error?: { code: string; message: string };
+  };
+
+  if (!result.success || !result.data) {
+    throw new Error(`Node not found: ${nameOrId}`);
+  }
+
+  return result.data.node.id;
+}
+
+/**
  * Requires authentication, exits with error if not authenticated
  */
 export function requireAuth(): Credentials {

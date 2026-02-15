@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createApiClient, requireAuth } from '../config.js';
+import { createApiClient, requireAuth, resolveNodeId } from '../config.js';
 import {
   success,
   error,
@@ -63,9 +63,18 @@ async function createHandler(
   try {
     const api = createApiClient();
 
+    // Resolve node name to UUID if necessary
+    let nodeId: string;
+    try {
+      nodeId = await resolveNodeId(options.node, api);
+    } catch (err) {
+      error(err instanceof Error ? err.message : `Node not found: ${options.node}`);
+      process.exit(1);
+    }
+
     const volumeRequest = {
       name,
-      nodeId: options.node,
+      nodeId,
     };
 
     const response = await api.post('/api/volumes', volumeRequest);
@@ -113,7 +122,13 @@ async function listHandler(options: {
     const params = new URLSearchParams();
 
     if (options.node) {
-      params.set('nodeId', options.node);
+      try {
+        const nodeId = await resolveNodeId(options.node, api);
+        params.set('nodeId', nodeId);
+      } catch (err) {
+        error(err instanceof Error ? err.message : `Node not found: ${options.node}`);
+        process.exit(1);
+      }
     }
 
     const url = `/api/volumes${params.toString() ? '?' + params.toString() : ''}`;
@@ -183,7 +198,17 @@ async function downloadHandler(
 
   try {
     const api = createApiClient();
-    const params = new URLSearchParams({ nodeId: options.node });
+
+    // Resolve node name to UUID if necessary
+    let nodeId: string;
+    try {
+      nodeId = await resolveNodeId(options.node, api);
+    } catch (err) {
+      error(err instanceof Error ? err.message : `Node not found: ${options.node}`);
+      process.exit(1);
+    }
+
+    const params = new URLSearchParams({ nodeId });
     const url = `/api/volumes/name/${encodeURIComponent(name)}/download?${params.toString()}`;
     const response = await api.get(url);
 
@@ -217,7 +242,7 @@ export function createVolumeCommand(): Command {
     .command('create [name]')
     .description('Create a named volume on a node')
     .option('--name <name>', 'Volume name')
-    .requiredOption('-n, --node <nodeId>', 'Target node ID')
+    .requiredOption('-n, --node <nameOrId>', 'Target node (name or UUID)')
     .action(createHandler);
 
   // List volumes
@@ -225,7 +250,7 @@ export function createVolumeCommand(): Command {
     .command('list')
     .alias('ls')
     .description('List volumes')
-    .option('-n, --node <nodeId>', 'Filter by node')
+    .option('-n, --node <nameOrId>', 'Filter by node (name or UUID)')
     .action(listHandler);
 
   // Download volume
@@ -233,7 +258,7 @@ export function createVolumeCommand(): Command {
     .command('download [name]')
     .description('Download volume contents as a tar archive')
     .option('--name <name>', 'Volume name')
-    .requiredOption('-n, --node <nodeId>', 'Node ID where the volume resides')
+    .requiredOption('-n, --node <nameOrId>', 'Node where the volume resides (name or UUID)')
     .requiredOption('-o, --output <path>', 'Output file path')
     .action(downloadHandler);
 

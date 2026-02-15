@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createApiClient, requireAuth, loadConfig } from '../config.js';
+import { createApiClient, requireAuth, loadConfig, resolveNodeId } from '../config.js';
 import {
   success,
   error,
@@ -222,9 +222,14 @@ async function createHandler(
       info(`Ingress: exposing port ${port} on orchestrator`);
     }
 
-    // Set target node
+    // Set target node (resolve name to UUID if necessary)
     if (options.node) {
-      serviceRequest.nodeId = options.node;
+      try {
+        serviceRequest.nodeId = await resolveNodeId(options.node, api);
+      } catch (err) {
+        error(err instanceof Error ? err.message : `Node not found: ${options.node}`);
+        process.exit(1);
+      }
     }
 
     // Parse volume mounts (name:mountPath format)

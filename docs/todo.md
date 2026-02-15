@@ -13,10 +13,10 @@
 | 8                                   | Add RBAC enforcement for pod capabilities               | Medium     | ✅ Done    |
 | 9                                   | Add auditing/logging hooks for sensitive actions        | Medium     | ✅ Done    |
 | **Persistence & State**             |                                                         |            |           |
-| 10                                  | Implement persistent volume abstraction for pods        | Hard       | ☐ TODO    |
+| 10                                  | Implement persistent volume abstraction for pods        | Hard       | ✅ Done    |
 | 11                                  | Support PVCs and attach/detach logic                    | Hard       | ⛔ Skipped |
 | 12                                  | Implement snapshot/restore for volumes                  | Hard       | ⛔ Skipped |
-| 13                                  | Polish volume handling and cleanup                      | Medium     | ⏳ Deferred|
+| 13                                  | Polish volume handling and cleanup                      | Medium     | ✅ Done|
 | 14                                  | Test stateful pods during node failure & reschedule     | Hard       | ⛔ Skipped |
 | **UI / Dashboard**                  |                                                         |            |  ⏳ Deferred|
 | 15                                  | Implement basic cluster overview (nodes + pods)         | Medium     | ☐ TODO    |

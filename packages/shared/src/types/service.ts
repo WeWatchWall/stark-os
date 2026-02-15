@@ -71,6 +71,11 @@ export interface Service {
   followLatest: boolean;
   /** Namespace */
   namespace: string;
+  /**
+   * Target node ID. When set, all replicas are scheduled on this node.
+   * Required when volumeMounts are specified (volumes are node-local).
+   */
+  nodeId?: string;
   /** 
    * Number of desired replicas:
    * - 0 = deploy to all matching nodes (DaemonSet-like)
@@ -202,6 +207,11 @@ export interface CreateServiceInput {
   followLatest?: boolean;
   /** Target namespace */
   namespace?: string;
+  /**
+   * Target node ID. When set, all replicas are scheduled on this node.
+   * Required when volumeMounts are specified (volumes are node-local).
+   */
+  nodeId?: string;
   /** 
    * Number of replicas:
    * - 0 = deploy to all matching nodes
@@ -276,6 +286,8 @@ export interface UpdateServiceInput {
   packVersion?: string;
   /** Enable or disable follow latest */
   followLatest?: boolean;
+  /** Target node update */
+  nodeId?: string | null;
   /** New replica count */
   replicas?: number;
   /** New status */

@@ -17,6 +17,7 @@ import type {
   Annotations,
   Toleration,
   PodSchedulingConfig,
+  VolumeMount,
 } from '@stark-o/shared';
 import { getSupabaseClient, getSupabaseServiceClient } from './client.js';
 
@@ -30,6 +31,7 @@ interface ServiceRow {
   pack_version: string;
   follow_latest: boolean;
   namespace: string;
+  node_id: string | null;
   replicas: number;
   status: ServiceStatus;
   status_message: string | null;
@@ -43,6 +45,7 @@ interface ServiceRow {
   resource_requests: ResourceRequirements;
   resource_limits: ResourceRequirements;
   scheduling: PodSchedulingConfig | null;
+  volume_mounts: VolumeMount[];
   observed_generation: number;
   ready_replicas: number;
   available_replicas: number;
@@ -82,6 +85,7 @@ function rowToService(row: ServiceRow): Service {
     packVersion: row.pack_version,
     followLatest: row.follow_latest ?? false,
     namespace: row.namespace,
+    nodeId: row.node_id ?? undefined,
     replicas: row.replicas,
     status: row.status,
     statusMessage: row.status_message ?? undefined,
@@ -95,6 +99,7 @@ function rowToService(row: ServiceRow): Service {
     resourceRequests: row.resource_requests ?? { cpu: 100, memory: 128 },
     resourceLimits: row.resource_limits ?? { cpu: 500, memory: 512 },
     scheduling: row.scheduling ?? undefined,
+    volumeMounts: row.volume_mounts ?? [],
     observedGeneration: row.observed_generation,
     readyReplicas: row.ready_replicas,
     availableReplicas: row.available_replicas,
@@ -160,6 +165,7 @@ export class ServiceQueries {
         pack_version: packVersion,
         follow_latest: input.followLatest ?? false,
         namespace: input.namespace ?? 'default',
+        node_id: input.nodeId ?? null,
         replicas: input.replicas ?? 1, // Default to 1 replica
         status: 'active',
         labels: input.labels ?? {},
@@ -178,6 +184,7 @@ export class ServiceQueries {
           memory: input.resourceLimits?.memory ?? 512,
         },
         scheduling: input.scheduling ?? null,
+        volume_mounts: input.volumeMounts ?? [],
         ingress_port: input.ingressPort ?? null,
         visibility: input.visibility ?? 'private',
         exposed: input.exposed ?? false,
@@ -349,6 +356,9 @@ export class ServiceQueries {
     if (input.followLatest !== undefined) {
       updates.follow_latest = input.followLatest;
     }
+    if (input.nodeId !== undefined) {
+      updates.node_id = input.nodeId;
+    }
     if (input.replicas !== undefined) {
       updates.replicas = input.replicas;
     }
@@ -384,6 +394,9 @@ export class ServiceQueries {
     }
     if (input.scheduling !== undefined) {
       updates.scheduling = input.scheduling;
+    }
+    if (input.volumeMounts !== undefined) {
+      updates.volume_mounts = input.volumeMounts;
     }
     if (input.metadata !== undefined) {
       updates.metadata = input.metadata;

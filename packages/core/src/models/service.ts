@@ -365,6 +365,7 @@ export class ServiceModel {
       packVersion,
       followLatest: input.followLatest ?? false,
       namespace: input.namespace ?? 'default',
+      nodeId: input.nodeId,
       replicas: input.replicas ?? 1, // Default to 1 replica
       status: 'active',
       statusMessage: undefined,

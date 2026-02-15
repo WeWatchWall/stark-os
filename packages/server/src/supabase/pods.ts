@@ -19,6 +19,7 @@ import type {
   Labels,
   Annotations,
   Capability,
+  VolumeMount,
 } from '@stark-o/shared';
 import type { Toleration } from '@stark-o/shared';
 import type { NodeAffinity, PodAffinity, PodAntiAffinity } from '@stark-o/shared';
@@ -48,6 +49,7 @@ interface PodRow {
   pod_anti_affinity: PodAntiAffinity | null;
   resource_requests: ResourceRequirements;
   resource_limits: ResourceRequirements;
+  volume_mounts: VolumeMount[];
   granted_capabilities: string[];
   incarnation: number;
   created_by: string;
@@ -114,6 +116,7 @@ function rowToPod(row: PodRow): Pod {
       podAffinity: row.pod_affinity ?? undefined,
       podAntiAffinity: row.pod_anti_affinity ?? undefined,
     },
+    volumeMounts: row.volume_mounts ?? [],
     grantedCapabilities: (row.granted_capabilities ?? []) as Capability[],
     incarnation: row.incarnation ?? 1,
     createdBy: row.created_by,
@@ -212,6 +215,7 @@ export class PodQueries {
         cpu: input.resourceLimits?.cpu ?? defaultResourceLimits.cpu,
         memory: input.resourceLimits?.memory ?? defaultResourceLimits.memory,
       },
+      volume_mounts: input.volumeMounts ?? [],
       created_by: createdBy,
       metadata: input.metadata ?? {},
     };

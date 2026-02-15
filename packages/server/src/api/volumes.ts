@@ -12,8 +12,8 @@ import {
   validateCreateVolumeInput,
   createServiceLogger,
   generateCorrelationId,
-  generateUUID,
 } from '@stark-o/shared';
+import { getVolumeQueries } from '../supabase/volumes.js';
 import {
   authMiddleware,
   abilityMiddleware,
@@ -49,19 +49,6 @@ interface ApiErrorResponse {
     details?: Record<string, unknown>;
   };
 }
-
-/**
- * In-memory volume store (production would use persistent storage)
- */
-interface VolumeRecord {
-  id: string;
-  name: string;
-  nodeId: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-const volumeStore: Map<string, VolumeRecord> = new Map();
 
 /**
  * Helper to send success response
@@ -120,32 +107,32 @@ async function createVolume(req: Request, res: Response): Promise<void> {
     const { name, nodeId } = input as { name: string; nodeId: string };
 
     // Check uniqueness (name + nodeId)
-    for (const vol of volumeStore.values()) {
-      if (vol.name === name && vol.nodeId === nodeId) {
-        sendError(res, 'CONFLICT', `Volume '${name}' already exists on node '${nodeId}'`, 409);
-        return;
-      }
+    const queries = getVolumeQueries();
+    const exists = await queries.volumeExists(name, nodeId);
+    if (exists) {
+      sendError(res, 'CONFLICT', `Volume '${name}' already exists on node '${nodeId}'`, 409);
+      return;
     }
 
-    const now = new Date();
-    const volume: VolumeRecord = {
-      id: generateUUID(),
-      name,
-      nodeId,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const result = await queries.createVolume({ name, nodeId });
 
-    volumeStore.set(volume.id, volume);
+    if (result.error) {
+      logger.error('Failed to create volume', undefined, {
+        error: result.error,
+        correlationId,
+      });
+      sendError(res, 'INTERNAL_ERROR', 'Failed to create volume', 500);
+      return;
+    }
 
     logger.info('Volume created', {
-      volumeId: volume.id,
+      volumeId: result.data!.id,
       name,
       nodeId,
       correlationId,
     });
 
-    sendSuccess(res, { volume }, 201);
+    sendSuccess(res, { volume: result.data }, 201);
   } catch (err) {
     logger.error('Error creating volume', err instanceof Error ? err : undefined, { correlationId });
     sendError(res, 'INTERNAL_ERROR', 'Internal server error', 500);
@@ -167,13 +154,15 @@ async function listVolumes(req: Request, res: Response): Promise<void> {
   try {
     const nodeId = req.query.nodeId as string | undefined;
 
-    let volumes = Array.from(volumeStore.values());
+    const queries = getVolumeQueries();
+    const result = await queries.listVolumes({ nodeId });
 
-    if (nodeId) {
-      volumes = volumes.filter(v => v.nodeId === nodeId);
+    if (result.error) {
+      sendError(res, 'INTERNAL_ERROR', 'Failed to list volumes', 500);
+      return;
     }
 
-    sendSuccess(res, { volumes });
+    sendSuccess(res, { volumes: result.data ?? [] });
   } catch (err) {
     logger.error('Error listing volumes', err instanceof Error ? err : undefined);
     sendError(res, 'INTERNAL_ERROR', 'Internal server error', 500);
@@ -200,20 +189,20 @@ async function getVolumeByName(req: Request, res: Response): Promise<void> {
     }
     const nodeId = req.query.nodeId as string | undefined;
 
-    let volume: VolumeRecord | undefined;
-    for (const v of volumeStore.values()) {
-      if (v.name === name && (!nodeId || v.nodeId === nodeId)) {
-        volume = v;
-        break;
-      }
-    }
-
-    if (!volume) {
-      sendError(res, 'NOT_FOUND', `Volume '${name}' not found`, 404);
+    if (!nodeId) {
+      sendError(res, 'VALIDATION_ERROR', 'nodeId query parameter is required', 400);
       return;
     }
 
-    sendSuccess(res, { volume });
+    const queries = getVolumeQueries();
+    const result = await queries.getVolumeByNameAndNode(name, nodeId);
+
+    if (result.error || !result.data) {
+      sendError(res, 'NOT_FOUND', `Volume '${name}' not found on node '${nodeId}'`, 404);
+      return;
+    }
+
+    sendSuccess(res, { volume: result.data });
   } catch (err) {
     logger.error('Error getting volume', err instanceof Error ? err : undefined);
     sendError(res, 'INTERNAL_ERROR', 'Internal server error', 500);
@@ -247,15 +236,10 @@ async function downloadVolume(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    let volume: VolumeRecord | undefined;
-    for (const v of volumeStore.values()) {
-      if (v.name === name && v.nodeId === nodeId) {
-        volume = v;
-        break;
-      }
-    }
+    const queries = getVolumeQueries();
+    const result = await queries.getVolumeByNameAndNode(name, nodeId);
 
-    if (!volume) {
+    if (result.error || !result.data) {
       sendError(res, 'NOT_FOUND', `Volume '${name}' not found on node '${nodeId}'`, 404);
       return;
     }

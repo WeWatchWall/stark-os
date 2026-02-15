@@ -90,6 +90,11 @@ export {
   validateIngressPort,
   validateCreateServiceInput,
   validateUpdateServiceInput,
+  // Volume validation
+  validateVolumeName,
+  validateVolumeMount,
+  validateVolumeMounts,
+  validateCreateVolumeInput,
   // Secret validation
   validateSecretName,
   validateSecretType,

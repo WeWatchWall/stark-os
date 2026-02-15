@@ -207,6 +207,17 @@ async function executePack(request: WorkerRequest): Promise<void> {
       writeFileSync(fullPath, content, 'utf-8');
     };
 
+    (context as Record<string, unknown>).appendFile = async (filePath: string, content: string): Promise<void> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const volumeRoot = join(baseDir, mount.name);
+      const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+      const fullPath = join(volumeRoot, relative);
+      mkdirSync(dirname(fullPath), { recursive: true });
+      const { appendFileSync } = await import('node:fs');
+      appendFileSync(fullPath, content, 'utf-8');
+    };
+
     originalConsole.log(
       `[${new Date().toISOString()}][${podId}:out]`,
       `Volume I/O enabled for ${context.volumeMounts.length} mount(s)`,

@@ -645,7 +645,7 @@ export class PackExecutor {
       // NodeCache event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
       // Add networking config for direct pod-to-orchestrator WebRTC signaling.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, ...serializableContext } = context;
       const workerContext = {
         ...serializableContext,
         // Networking: pod connects directly to orchestrator for signaling

@@ -677,7 +677,7 @@ export class PackExecutor {
       // The ephemeral data plane (EphemeralDataPlane) contains a PodGroupStore with
       // event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, ...serializableContext } = context;
       
       // Add networking config for pack-worker
       const workerContext = {

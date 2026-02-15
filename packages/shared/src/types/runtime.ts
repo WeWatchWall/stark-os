@@ -283,6 +283,13 @@ export interface PackExecutionContext {
   writeFile?: (path: string, content: string) => Promise<void>;
 
   /**
+   * Append content to a file at a volume-backed path.
+   * Only available when the pod has volume mounts and the runtime provides
+   * file I/O for those paths.
+   */
+  appendFile?: (path: string, content: string) => Promise<void>;
+
+  /**
    * Browser-only: register inbound request handlers.
    *
    * In Node.js, use standard HTTP servers (Express, Fastify, Koa, etc.) —

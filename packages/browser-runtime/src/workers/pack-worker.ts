@@ -318,6 +318,26 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
       });
     };
 
+    (context as Record<string, unknown>).appendFile = async (filePath: string, content: string): Promise<void> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
+      const db = await openVolumeDB();
+      // Use a single readwrite transaction for atomic read-then-append
+      const tx = db.transaction('files', 'readwrite');
+      const store = tx.objectStore('files');
+      const existing = await new Promise<string>((resolve, reject) => {
+        const r = store.get(key);
+        r.onsuccess = () => resolve((r.result as string) ?? '');
+        r.onerror = () => reject(r.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const r = store.put(existing + content, key);
+        r.onsuccess = () => resolve();
+        r.onerror = () => reject(r.error);
+      });
+    };
+
     originalConsole.log(
       `[${new Date().toISOString()}][${podId}:out]`,
       `Volume I/O enabled for ${context.volumeMounts.length} mount(s)`,

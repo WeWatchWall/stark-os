@@ -51,3 +51,32 @@ export interface VolumeListItem {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * A single file entry in a volume download response.
+ * Content is base64-encoded so it can be serialized over JSON/WebSocket.
+ */
+export interface VolumeFileEntry {
+  /** Relative path within the volume (e.g. "subdir/file.txt") */
+  path: string;
+  /** File content, base64-encoded */
+  data: string;
+}
+
+/**
+ * Payload sent by the orchestrator to a runtime to request volume contents.
+ */
+export interface VolumeDownloadRequest {
+  /** Name of the volume to download */
+  volumeName: string;
+}
+
+/**
+ * Payload returned by a runtime with the volume's file contents.
+ */
+export interface VolumeDownloadResponse {
+  /** Volume name */
+  volumeName: string;
+  /** All files in the volume, with base64-encoded content */
+  files: VolumeFileEntry[];
+}

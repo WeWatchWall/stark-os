@@ -39,6 +39,11 @@ interface Volume {
   updatedAt: string;
 }
 
+interface VolumeFileEntry {
+  path: string;
+  data: string; // base64
+}
+
 /**
  * Create command handler
  */
@@ -175,7 +180,11 @@ async function listHandler(options: {
 }
 
 /**
- * Download command handler — exports volume contents as a tar archive
+ * Download command handler — exports volume contents as a tar archive.
+ *
+ * 1. Requests the file list (base64-encoded) from the orchestrator API.
+ * 2. The orchestrator in turn asks the runtime via WebSocket.
+ * 3. CLI receives JSON file entries and uses `tar` to write a tar archive.
  */
 async function downloadHandler(
   nameArg: string | undefined,
@@ -218,12 +227,57 @@ async function downloadHandler(
       process.exit(1);
     }
 
-    // Write the response body to the output file
-    const { writeFileSync } = await import('fs');
-    const buffer = Buffer.from(await response.arrayBuffer());
-    writeFileSync(options.output, buffer);
+    const result = (await response.json()) as ApiResponse<{
+      volumeName: string;
+      files: VolumeFileEntry[];
+    }>;
 
-    success(`Volume '${name}' downloaded to ${options.output}`);
+    if (!result.success || !result.data) {
+      error('Failed to download volume', result.error);
+      process.exit(1);
+    }
+
+    const { files } = result.data;
+
+    if (files.length === 0) {
+      info('Volume is empty — writing empty tar archive');
+    }
+
+    // Write files to a temporary directory, then create tar archive
+    const { mkdirSync, writeFileSync, rmSync } = await import('fs');
+    const { join, dirname } = await import('path');
+    const { tmpdir } = await import('os');
+    const { randomUUID } = await import('crypto');
+    const tar = await import('tar');
+
+    const tmpDir = join(tmpdir(), `stark-volume-${randomUUID()}`);
+    const volumeDir = join(tmpDir, name);
+    mkdirSync(volumeDir, { recursive: true });
+
+    try {
+      // Write decoded files to the temp directory
+      for (const entry of files) {
+        const filePath = join(volumeDir, entry.path);
+        mkdirSync(dirname(filePath), { recursive: true });
+        const content = Buffer.from(entry.data, 'base64');
+        writeFileSync(filePath, content);
+      }
+
+      // Create tar archive using tar@7.5.7
+      await tar.create(
+        {
+          file: options.output,
+          cwd: tmpDir,
+          gzip: false,
+        },
+        [name]
+      );
+
+      success(`Volume '${name}' downloaded to ${options.output} (${files.length} file(s))`);
+    } finally {
+      // Clean up temp directory
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   } catch (err) {
     error('Failed to download volume', err instanceof Error ? { message: err.message } : undefined);
     process.exit(1);

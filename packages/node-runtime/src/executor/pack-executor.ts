@@ -34,6 +34,7 @@ import {
   type PodLifecyclePhase,
   type ShutdownHandler,
   type PodLogSink,
+  type VolumeFileEntry,
 } from '@stark-o/shared';
 
 // Re-export for convenience
@@ -1083,6 +1084,43 @@ export class PackExecutor {
     }
 
     return cleaned;
+  }
+
+  /**
+   * Collect all files from a named volume using the ZenFS-backed FsAdapter.
+   * Returns serializable file entries with base64-encoded content.
+   */
+  async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
+    const volumeRoot = join(this.config.bundleDir, '..', 'volumes', volumeName);
+    const files: VolumeFileEntry[] = [];
+
+    const walk = async (dir: string, prefix: string): Promise<void> => {
+      let entries: string[];
+      try {
+        entries = await this.fsAdapter.readdir(dir);
+      } catch {
+        return; // Directory doesn't exist or not readable
+      }
+      for (const entry of entries) {
+        const fullPath = join(dir, entry);
+        const relativePath = prefix ? `${prefix}/${entry}` : entry;
+        try {
+          const isDir = await this.fsAdapter.isDirectory(fullPath);
+          if (isDir) {
+            await walk(fullPath, relativePath);
+          } else {
+            const bytes = await this.fsAdapter.readFileBytes(fullPath);
+            const data = Buffer.from(bytes).toString('base64');
+            files.push({ path: relativePath, data });
+          }
+        } catch {
+          // Skip unreadable entries
+        }
+      }
+    };
+
+    await walk(volumeRoot, '');
+    return files;
   }
 
   /**

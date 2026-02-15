@@ -14,6 +14,8 @@ import {
   generateCorrelationId,
 } from '@stark-o/shared';
 import { getVolumeQueries } from '../supabase/volumes.js';
+import { getConnectionManager } from '../services/connection-service.js';
+import { registerPendingDownload } from '../services/volume-download-service.js';
 import {
   authMiddleware,
   abilityMiddleware,
@@ -212,8 +214,10 @@ async function getVolumeByName(req: Request, res: Response): Promise<void> {
 /**
  * GET /api/volumes/name/:name/download — Download volume contents
  *
- * In V1, this is a placeholder that returns an empty tar as actual
- * volume content retrieval depends on the node runtime implementation.
+ * Sends a `volume:download` message to the target node via WebSocket,
+ * waits for the runtime to collect and return all files, then responds
+ * with a JSON payload of base64-encoded file entries. The CLI uses
+ * the `tar` library to assemble the archive locally.
  */
 async function downloadVolume(req: Request, res: Response): Promise<void> {
   const authReq = req as AuthenticatedRequest;
@@ -236,6 +240,7 @@ async function downloadVolume(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Verify volume exists
     const queries = getVolumeQueries();
     const result = await queries.getVolumeByNameAndNode(name, nodeId);
 
@@ -244,14 +249,40 @@ async function downloadVolume(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // V1 placeholder: return empty tar (1024 zero bytes = two end-of-archive markers)
-    logger.info('Volume download requested', { volumeName: name, nodeId });
-    res.setHeader('Content-Type', 'application/x-tar');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(name)}.tar"`);
-    res.status(200).send(Buffer.alloc(1024, 0));
+    // Send download request to the runtime via WebSocket
+    const connectionManager = getConnectionManager();
+    if (!connectionManager) {
+      sendError(res, 'SERVICE_UNAVAILABLE', 'WebSocket connection manager not available', 503);
+      return;
+    }
+
+    const correlationId = generateCorrelationId();
+    const downloadPromise = registerPendingDownload(correlationId);
+
+    const sent = connectionManager.sendToNodeId(nodeId, {
+      type: 'volume:download',
+      payload: { volumeName: name },
+      correlationId,
+    });
+
+    if (!sent) {
+      sendError(res, 'SERVICE_UNAVAILABLE', `Node '${nodeId}' is not connected`, 503);
+      return;
+    }
+
+    logger.info('Volume download requested from node', { volumeName: name, nodeId, correlationId });
+
+    // Wait for the runtime to respond with file data
+    const files = await downloadPromise;
+
+    logger.info('Volume download complete', { volumeName: name, nodeId, fileCount: files.length });
+
+    // Return the file list as JSON — the CLI will create the tar archive
+    sendSuccess(res, { volumeName: name, files });
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
     logger.error('Error downloading volume', err instanceof Error ? err : undefined);
-    sendError(res, 'INTERNAL_ERROR', 'Internal server error', 500);
+    sendError(res, 'DOWNLOAD_ERROR', message, 500);
   }
 }
 

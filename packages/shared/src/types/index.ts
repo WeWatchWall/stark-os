@@ -288,6 +288,9 @@ export type {
   Volume,
   CreateVolumeInput,
   VolumeListItem,
+  VolumeFileEntry,
+  VolumeDownloadRequest,
+  VolumeDownloadResponse,
 } from './volume.js';
 
 // Secret types

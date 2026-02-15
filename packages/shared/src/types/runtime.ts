@@ -263,6 +263,26 @@ export interface PackExecutionContext {
   ephemeral?: EphemeralDataPlane;
 
   /**
+   * Volume mounts for this pod.
+   * Each entry maps a named volume to a mount path inside the runtime.
+   */
+  volumeMounts?: VolumeMount[];
+
+  /**
+   * Read a file from a volume-backed path.
+   * Only available when the pod has volume mounts and the runtime provides
+   * file I/O for those paths.
+   */
+  readFile?: (path: string) => Promise<string>;
+
+  /**
+   * Write a file to a volume-backed path.
+   * Only available when the pod has volume mounts and the runtime provides
+   * file I/O for those paths.
+   */
+  writeFile?: (path: string, content: string) => Promise<void>;
+
+  /**
    * Browser-only: register inbound request handlers.
    *
    * In Node.js, use standard HTTP servers (Express, Fastify, Koa, etc.) —

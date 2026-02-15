@@ -279,6 +279,28 @@ export class PackExecutor {
   }
 
   /**
+   * Open (or create) the IndexedDB database used for volume-backed file I/O.
+   */
+  private _volumeDB: IDBDatabase | null = null;
+  private openVolumeDB(): Promise<IDBDatabase> {
+    if (this._volumeDB) return Promise.resolve(this._volumeDB);
+    return new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('stark-volumes', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('files')) {
+          db.createObjectStore('files');
+        }
+      };
+      req.onsuccess = () => {
+        this._volumeDB = req.result;
+        resolve(req.result);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /**
    * Execute a pack for a pod.
    *
    * @param pack - Pack to execute
@@ -388,6 +410,39 @@ export class PackExecutor {
       onShutdown: (handler: ShutdownHandler) => {
         shutdownHandlers.push(handler);
       },
+      // Volume mounts — expose to pack code so it can detect mounted volumes
+      volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
+      // Volume I/O helpers — backed by IndexedDB via StorageAdapter
+      ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
+        readFile: async (filePath: string): Promise<string> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
+          const db = await this.openVolumeDB();
+          const tx = db.transaction('files', 'readonly');
+          const store = tx.objectStore('files');
+          const result = await new Promise<string | undefined>((resolve, reject) => {
+            const req = store.get(key);
+            req.onsuccess = () => resolve(req.result as string | undefined);
+            req.onerror = () => reject(req.error);
+          });
+          if (result === undefined) throw new Error(`File not found: ${filePath}`);
+          return result;
+        },
+        writeFile: async (filePath: string, content: string): Promise<void> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
+          const db = await this.openVolumeDB();
+          const tx = db.transaction('files', 'readwrite');
+          const store = tx.objectStore('files');
+          await new Promise<void>((resolve, reject) => {
+            const req = store.put(content, key);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+          });
+        },
+      } : {}),
       // Ephemeral data plane: opt-in via pack metadata
       ...(pack.metadata?.enableEphemeral ? {
         ephemeral: createEphemeralDataPlane({
@@ -643,7 +698,7 @@ export class PackExecutor {
       // The ephemeral data plane (EphemeralDataPlane) contains a PodGroupStore with
       // event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, ...serializableContext } = context;
       
       // Add networking config for pack-worker
       const workerContext = {

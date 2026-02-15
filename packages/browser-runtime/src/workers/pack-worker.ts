@@ -57,6 +57,9 @@ interface WorkerRequest {
     env: Record<string, string>;
     timeout: number;
     metadata: Record<string, unknown>;
+    // ── Volumes ──
+    /** Volume mounts for this pod */
+    volumeMounts?: Array<{ name: string; mountPath: string }>;
     // ── Networking ──
     /** Service ID this pod belongs to (for network policy checks) */
     serviceId?: string;
@@ -264,6 +267,60 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
       `[${new Date().toISOString()}][${podId}:net:warn]`,
       '⚠️ NETWORKING DISABLED — missing orchestratorUrl or serviceId. fetch() calls to *.internal will fail!',
       { orchestratorUrl: context.orchestratorUrl ?? '(missing)', serviceId: context.serviceId ?? '(missing)' }
+    );
+  }
+
+  // Recreate volume readFile/writeFile inside the worker
+  // These closures cannot be serialized via postMessage, so we recreate them here
+  // using the volumeMounts metadata and IndexedDB for persistence.
+  if (context.volumeMounts && context.volumeMounts.length > 0) {
+    const openVolumeDB = (): Promise<IDBDatabase> => {
+      return new Promise<IDBDatabase>((resolve, reject) => {
+        const req = indexedDB.open('stark-volumes', 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('files')) {
+            db.createObjectStore('files');
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    };
+
+    (context as Record<string, unknown>).readFile = async (filePath: string): Promise<string> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
+      const db = await openVolumeDB();
+      const tx = db.transaction('files', 'readonly');
+      const store = tx.objectStore('files');
+      const result = await new Promise<string | undefined>((resolve, reject) => {
+        const r = store.get(key);
+        r.onsuccess = () => resolve(r.result as string | undefined);
+        r.onerror = () => reject(r.error);
+      });
+      if (result === undefined) throw new Error(`File not found: ${filePath}`);
+      return result;
+    };
+
+    (context as Record<string, unknown>).writeFile = async (filePath: string, content: string): Promise<void> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
+      const db = await openVolumeDB();
+      const tx = db.transaction('files', 'readwrite');
+      const store = tx.objectStore('files');
+      await new Promise<void>((resolve, reject) => {
+        const r = store.put(content, key);
+        r.onsuccess = () => resolve();
+        r.onerror = () => reject(r.error);
+      });
+    };
+
+    originalConsole.log(
+      `[${new Date().toISOString()}][${podId}:out]`,
+      `Volume I/O enabled for ${context.volumeMounts.length} mount(s)`,
     );
   }
 

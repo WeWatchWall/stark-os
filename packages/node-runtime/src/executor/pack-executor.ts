@@ -344,6 +344,31 @@ export class PackExecutor {
       authToken: options.podToken,
       refreshToken: options.podRefreshToken,
       tokenExpiresAt: options.podTokenExpiresAt,
+      // Volume mounts — expose to pack code so it can detect mounted volumes
+      volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
+      // Volume I/O helpers — scoped to mounted paths only
+      ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
+        readFile: async (filePath: string): Promise<string> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const { readFileSync } = await import('node:fs');
+          const { join } = await import('node:path');
+          const volumeRoot = join(this.config.bundleDir, '..', 'volumes', mount.name);
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          return readFileSync(join(volumeRoot, relative), 'utf-8');
+        },
+        writeFile: async (filePath: string, content: string): Promise<void> => {
+          const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+          if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+          const { writeFileSync, mkdirSync } = await import('node:fs');
+          const { join, dirname } = await import('node:path');
+          const volumeRoot = join(this.config.bundleDir, '..', 'volumes', mount.name);
+          const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+          const fullPath = join(volumeRoot, relative);
+          mkdirSync(dirname(fullPath), { recursive: true });
+          writeFileSync(fullPath, content, 'utf-8');
+        },
+      } : {}),
       // Ephemeral data plane: opt-in via pack metadata
       ...(pack.metadata?.enableEphemeral ? {
         ephemeral: createEphemeralDataPlane({
@@ -613,7 +638,7 @@ export class PackExecutor {
       // NodeCache event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
       // Add networking config for direct pod-to-orchestrator WebRTC signaling.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, ...serializableContext } = context;
       const workerContext = {
         ...serializableContext,
         // Networking: pod connects directly to orchestrator for signaling

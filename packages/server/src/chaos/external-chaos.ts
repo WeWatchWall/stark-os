@@ -11,9 +11,26 @@
  * This is for development/test environments only.
  */
 
-import { spawn, exec, ChildProcess } from 'child_process';
+import { spawn, exec, execFile, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { platform } from 'os';
+
+/**
+ * Sanitize a process name pattern to prevent shell injection.
+ * Only allows alphanumeric characters, dashes, underscores, dots, and spaces.
+ */
+function sanitizeNamePattern(pattern: string): string {
+  return pattern.replace(/[^a-zA-Z0-9\-_.\s]/g, '');
+}
+
+/**
+ * Validate that a value is a safe positive integer (for PIDs and ports).
+ */
+function validatePositiveInt(value: number, name: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${name}: must be a positive integer, got ${value}`);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -93,6 +110,8 @@ export class ExternalChaosRunner extends EventEmitter {
     const logPrefix = '[ExternalChaos]';
 
     try {
+      validatePositiveInt(pid, 'PID');
+
       if (this.isWindows) {
         const forceFlag = signal === 'SIGKILL' ? '/F' : '';
         const cmd = `taskkill ${forceFlag} /PID ${pid}`;

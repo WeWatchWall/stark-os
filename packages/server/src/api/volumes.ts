@@ -240,13 +240,18 @@ async function downloadVolume(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Verify volume exists
+    // Check if volume is registered in the database (best-effort).
+    // The node runtime is the source of truth — the volume may exist on disk
+    // even if no database record is present (e.g. created implicitly via a
+    // pod volume mount).  We log a warning but still proceed to ask the node.
     const queries = getVolumeQueries();
     const result = await queries.getVolumeByNameAndNode(name, nodeId);
 
     if (result.error || !result.data) {
-      sendError(res, 'NOT_FOUND', `Volume '${name}' not found on node '${nodeId}'`, 404);
-      return;
+      logger.warn('Volume not found in database, attempting download from node anyway', {
+        volumeName: name,
+        nodeId,
+      });
     }
 
     // Send download request to the runtime via WebSocket

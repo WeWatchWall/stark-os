@@ -191,7 +191,7 @@ async function downloadHandler(
   options: {
     name?: string;
     node: string;
-    output: string;
+    outFile: string;
   }
 ): Promise<void> {
   const name = nameArg || options.name;
@@ -203,7 +203,7 @@ async function downloadHandler(
 
   requireAuth();
 
-  info(`Downloading volume '${name}' from node ${options.node} to ${options.output}`);
+  info(`Downloading volume '${name}' from node ${options.node} to ${options.outFile}`);
 
   try {
     const api = createApiClient();
@@ -266,14 +266,14 @@ async function downloadHandler(
       // Create tar archive using tar@7.5.7
       await tar.create(
         {
-          file: options.output,
+          file: options.outFile,
           cwd: tmpDir,
           gzip: false,
         },
         [name]
       );
 
-      success(`Volume '${name}' downloaded to ${options.output} (${files.length} file(s))`);
+      success(`Volume '${name}' downloaded to ${options.outFile} (${files.length} file(s))`);
     } finally {
       // Clean up temp directory
       rmSync(tmpDir, { recursive: true, force: true });
@@ -313,7 +313,7 @@ export function createVolumeCommand(): Command {
     .description('Download volume contents as a tar archive')
     .option('--name <name>', 'Volume name')
     .requiredOption('-n, --node <nameOrId>', 'Node where the volume resides (name or UUID)')
-    .requiredOption('-o, --output <path>', 'Output file path')
+    .requiredOption('-O, --out-file <path>', 'Output file path')
     .action(downloadHandler);
 
   return volume;

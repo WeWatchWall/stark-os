@@ -108,6 +108,14 @@ export {
   validateUpdateServiceInput,
 } from './service-validation';
 
+// Volume validation
+export {
+  validateVolumeName,
+  validateVolumeMount,
+  validateVolumeMounts,
+  validateCreateVolumeInput,
+} from './volume-validation';
+
 // Secret validation
 export {
   validateSecretName,

@@ -6,6 +6,7 @@
 import type { Labels, Annotations } from './labels';
 import type { Toleration } from './taints';
 import type { PodSchedulingConfig, ResourceRequirements } from './pod';
+import type { VolumeMount } from './volume.js';
 
 /**
  * Service status values
@@ -100,6 +101,8 @@ export interface Service {
   resourceLimits: ResourceRequirements;
   /** Scheduling configuration for pods */
   scheduling?: PodSchedulingConfig;
+  /** Volume mounts for pods in this service */
+  volumeMounts: VolumeMount[];
   /** Observed generation (for reconciliation) */
   observedGeneration: number;
   /** Number of ready replicas */
@@ -224,6 +227,8 @@ export interface CreateServiceInput {
   resourceLimits?: Partial<ResourceRequirements>;
   /** Scheduling configuration */
   scheduling?: PodSchedulingConfig;
+  /** Volume mounts for pods */
+  volumeMounts?: VolumeMount[];
   /**
    * Ingress port to expose on the orchestrator server.
    * The orchestrator will open an HTTP listener on this port
@@ -295,6 +300,8 @@ export interface UpdateServiceInput {
   resourceLimits?: Partial<ResourceRequirements>;
   /** Scheduling configuration update */
   scheduling?: PodSchedulingConfig;
+  /** Volume mounts update */
+  volumeMounts?: VolumeMount[];
   /** Metadata update */
   metadata?: Record<string, unknown>;
   /** Last successful version (for auto-rollback tracking) */

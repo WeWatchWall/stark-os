@@ -157,6 +157,7 @@ export function createPod(input: InternalCreatePodInput): Pod {
     resourceRequests,
     resourceLimits,
     scheduling: input.scheduling,
+    volumeMounts: input.volumeMounts ?? [],
     incarnation: 1,
     createdBy: input.createdBy ?? 'system',
     metadata: input.metadata ?? {},

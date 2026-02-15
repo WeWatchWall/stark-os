@@ -10,6 +10,7 @@
 import type { RuntimeTag, PackNamespace } from './pack.js';
 import type { Labels, Annotations } from './labels.js';
 import type { ResourceRequirements } from './pod.js';
+import type { VolumeMount } from './volume.js';
 import type { Capability } from './capabilities.js';
 import type { EphemeralDataPlane } from '../network/ephemeral-data-plane.js';
 
@@ -93,6 +94,7 @@ export interface PodDeployPayload {
   };
   resourceRequests?: ResourceRequirements;
   resourceLimits?: ResourceRequirements;
+  volumeMounts?: VolumeMount[];
   labels?: Labels;
   annotations?: Annotations;
   namespace?: string;

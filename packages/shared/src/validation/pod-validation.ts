@@ -7,6 +7,7 @@ import type { PodStatus, ResourceRequirements } from '../types/pod';
 import type { ValidationResult, ValidationError } from './pack-validation';
 import { validateLabels, validateAnnotations } from './node-validation';
 import { validateSchedulingConfig } from './scheduling-validation';
+import { validateVolumeMounts } from './volume-validation';
 
 /**
  * Valid pod statuses
@@ -432,6 +433,9 @@ export function validateCreatePodInput(input: unknown): ValidationResult {
   if (!schedulingResult.valid) {
     errors.push(...schedulingResult.errors);
   }
+
+  // Validate volume mounts
+  errors.push(...validateVolumeMounts(data.volumeMounts));
 
   const metadataError = validatePodMetadata(data.metadata);
   if (metadataError) errors.push(metadataError);

@@ -384,6 +384,7 @@ export class ServiceModel {
         ...input.resourceLimits,
       },
       scheduling: input.scheduling,
+      volumeMounts: input.volumeMounts ?? [],
       observedGeneration: 0,
       readyReplicas: 0,
       availableReplicas: 0,

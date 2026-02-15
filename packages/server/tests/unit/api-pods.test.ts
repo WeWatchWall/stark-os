@@ -76,6 +76,7 @@ const samplePod: Pod = {
   tolerations: [],
   resourceRequests: { cpu: 100, memory: 128 },
   resourceLimits: { cpu: 500, memory: 512 },
+  volumeMounts: [],
   createdBy: 'test-user-id',
   metadata: {},
   createdAt: new Date(),

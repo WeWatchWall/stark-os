@@ -88,6 +88,7 @@ const sampleService: Service = {
   tolerations: [],
   resourceRequests: { cpu: 100, memory: 128 },
   resourceLimits: { cpu: 500, memory: 512 },
+  volumeMounts: [],
   observedGeneration: 1,
   readyReplicas: 3,
   availableReplicas: 3,

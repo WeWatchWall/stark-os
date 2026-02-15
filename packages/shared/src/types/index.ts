@@ -282,6 +282,14 @@ export {
   VALID_SERVICE_VISIBILITY_VALUES,
 } from './service.js';
 
+// Volume types
+export type {
+  VolumeMount,
+  Volume,
+  CreateVolumeInput,
+  VolumeListItem,
+} from './volume.js';
+
 // Secret types
 export type {
   SecretType,

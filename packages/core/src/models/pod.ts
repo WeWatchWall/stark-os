@@ -431,6 +431,7 @@ export class PodModel {
         ...input.resourceLimits,
       },
       scheduling: input.scheduling,
+      volumeMounts: input.volumeMounts ?? [],
       incarnation: 1,
       createdBy,
       scheduledAt: undefined,

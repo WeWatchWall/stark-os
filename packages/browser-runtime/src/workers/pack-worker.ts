@@ -288,6 +288,34 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
       });
     };
 
+    // Clear existing IndexedDB entries for each volume so each pod starts fresh
+    const clearDB = await openVolumeDB();
+    for (const mount of context.volumeMounts) {
+      const prefix = `stark-volumes/${mount.name}/`;
+      await new Promise<void>((resolve, reject) => {
+        const tx = clearDB.transaction('files', 'readwrite');
+        const store = tx.objectStore('files');
+        const cursorReq = store.openCursor();
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (cursor) {
+            if (typeof cursor.key === 'string' && cursor.key.startsWith(prefix)) {
+              cursor.delete();
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      });
+      originalConsole.log(
+        `[${new Date().toISOString()}][${podId}:out]`,
+        `Cleared existing IndexedDB entries for volume: ${mount.name}`,
+      );
+    }
+    clearDB.close();
+
     (context as Record<string, unknown>).readFile = async (filePath: string): Promise<string> => {
       const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
       if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);

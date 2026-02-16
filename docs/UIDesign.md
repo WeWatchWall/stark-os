@@ -1,265 +1,258 @@
-# Stark OS UI Roadmap (Integrated Runtime + UI Foundation Plan)
-
-This document merges:
-
-- A clean UI-first foundation
-- Stark-native runtime alignment
-- Existing orchestrator capabilities
-- Future ecosystem expansion
-
-Stark is not a desktop clone.
-It is a distributed runtime rendered as an operating system.
+# Stark OS UI Roadmap
 
 ---
 
-# Core Design Principle
+# Core Principle
 
-Stark OS = Identity + Runtime + Visual Surface
+Stark OS is:
 
-The UI must:
+Identity → Runtime → Visual Surface → Control Interface
 
-1. Stand on its own as a usable OS surface
-2. Accurately reflect distributed runtime state
-3. Never fake infrastructure abstractions
-4. Stay aligned with orchestrator semantics
+The UI is both:
+- A visual control plane
+- A programmable command environment
 
 ---
-# Phase 1 — Identity Binding Layer
 
-Now bind UI to runtime authority.
+# Phase 1 — Identity First (Non-Negotiable)
+
+Login is the root of authority.
 
 | Step | Description |
 |------|------------|
-| 2.1 | Login UI |
-| 2.2 | Token refresh without UI reload |
-| 2.3 | Session persistence |
-| 2.4 | Node/environment context indicator |
-| 2.5 | Workspace restoration on login |
+| 1.1 | Login UI |
+| 1.2 | Token refresh without UI reload |
+| 1.3 | Session persistence |
+| 1.4 | Node binding awareness (which node am I connected to?) |
+| 1.5 | Workspace restore after login |
+| 1.6 | Environment indicator (production / staging / local) |
 
-Identity is the root of Stark.
+Nothing renders without identity.
 
-User → Authority → Node → Pod
+This binds:
+User → Authority → Node → Pod lifecycle.
 
 ---
 
-# Phase 2 — UI Core Foundation (Before Infra Surfaces)
+# Phase 2 — UI Shell Foundation
 
-This phase builds structural UI primitives independent of orchestrator features.
+Build the structural UI before exposing runtime.
 
 | Step | Description |
 |------|------------|
-| 1.1 | Shell Layout Engine (root container, responsive layout system) |
-| 1.2 | Window Manager Core (open, close, focus, z-index, resize) |
-| 1.3 | Surface Mount Engine (iframe/container abstraction) |
-| 1.4 | Global State Store (UI-only state: focus, layout, active workspace) |
-| 1.5 | Mobile/Desktop Mode Switch |
-| 1.6 | Workspace Model (multiple desktops) |
+| 2.1 | Root shell layout engine |
+| 2.2 | Window manager core (open, close, focus, z-index) |
+| 2.3 | Surface mount abstraction (iframe/container isolation) |
+| 2.4 | Global UI state store (focus, layout, workspace) |
+| 2.5 | Desktop vs Mobile layout modes |
+| 2.6 | Multi-workspace model |
 
-Nothing here depends on pods yet.
-
-This prevents orchestrator coupling from corrupting UI architecture.
+This prevents orchestrator logic from corrupting UI design.
 
 ---
 
 # Phase 3 — Visual Pod Rendering Core
 
-Now integrate runtime into UI foundation.
+Integrate runtime safely into the UI.
 
 | Step | Description |
 |------|------------|
-| 3.1 | Visual pack contract (visual flag in manifest) |
+| 3.1 | Visual pack contract (visual property in manifest) |
 | 3.2 | Pod mount lifecycle integration |
 | 3.3 | Multi-instance rendering (multiple pods of same pack) |
 | 3.4 | Safe unmount on pod termination |
-| 3.5 | Crash containment (UI never dies if pod dies) |
+| 3.5 | Crash containment (UI survives pod failure) |
 
-This is the OS kernel boundary for UI.
+This is the Stark UI kernel boundary.
 
 ---
 
-# Phase 4 — Runtime Viewer (Pod-First UX)
+# Phase 4 — Terminal Pack (Early, Not Late)
 
-Instead of desktop-first metaphors, build runtime awareness.
+The Terminal is not optional.
+It is the power surface of Stark.
+
+It should be implemented early.
+
+## Terminal Responsibilities
+
+| Feature | Description |
+|----------|------------|
+| Stark CLI Integration | Translate stark commands into orchestrator API calls |
+| Real-time Output | Stream responses from pods/services |
+| Command History | Persistent per user |
+| Tab Completion | Pack names, pod IDs, nodes, services |
+| Context Awareness | Current node / workspace context |
+| Structured Output Mode | JSON mode for advanced users |
+
+---
+
+## Stark Command Mode
+
+Examples:
+- stark pod create
+- stark service create
+- stark volume attach
+- stark pod restart
+- stark group join
+
+The Terminal Pack becomes the official command surface for Stark.
+
+---
+
+## Linux Command Support (Optional Layer)
+
+Two possible models:
+
+### Model A — Pure Stark Mode
+Terminal only supports Stark commands.
+
+### Model B — Hybrid Mode
+Terminal supports:
+- Stark commands
+- Linux commands executed in:
+  - A system utility pod
+  - Or a local node execution context
+
+Recommendation:
+Start with Stark mode only.
+Add Linux execution later through a utility/system pod.
+
+This keeps architecture clean.
+
+---
+
+# Phase 5 — Runtime Viewer (Pod-First UX)
+
+Now expose runtime state visually.
 
 | Step | Description |
 |------|------------|
-| 4.1 | Running pods selector (mobile-style switcher) |
-| 4.2 | Pod status indicator (running, restarting, degraded) |
-| 4.3 | Replica visibility for services |
-| 4.4 | Kill/restart pod controls |
-| 4.5 | Focus switching across pods |
+| 5.1 | Running pods selector (mobile-style switcher) |
+| 5.2 | Pod status indicator (running, restarting, degraded) |
+| 5.3 | Replica visibility for services |
+| 5.4 | Kill/restart controls |
+| 5.5 | Quick jump from pod to logs |
 
-This is your Task Manager equivalent.
+The Terminal + Runtime Viewer together form control parity.
 
 ---
 
-# Phase 5 — System Packs (Validating the Pack Model)
+# Phase 6 — System Packs (First-Class)
 
-All system features must be packs.
+All system features must be implemented as packs.
 
 | Pack | Purpose |
 |------|---------|
-| File Explorer | Volume surface |
-| Node Manager | Node status & lifecycle |
-| Logs Viewer | JSON log viewer |
-| Settings | User & workspace config |
+| Terminal | Command surface |
+| File Explorer | Volume browser |
+| Node Manager | Node lifecycle viewer |
+| Pod Manager | Pod lifecycle control |
+| Logs Viewer | Structured JSON log viewer |
+| Settings | User + workspace config |
 
-System packs must:
-
-- Follow same lifecycle as user packs
-- Use same mount engine
-- Use same permission model
-
-No hardcoded privileges.
+Nothing should be hardcoded into the shell.
 
 ---
 
-# Phase 6 — Storage & Volume Surface
+# Phase 7 — Storage & Volume Surface
 
-Expose storage without abstracting it incorrectly.
+Expose volumes without faking a global filesystem.
 
 | Step | Description |
 |------|------------|
-| 6.1 | Show volumes attached per pod |
-| 6.2 | Volume browser (node-local) |
-| 6.3 | Show shared volume relationships |
-| 6.4 | Export/download volume |
-| 6.5 | Indicate node ownership constraints |
-
-This aligns UI with your node-local volume model.
+| 7.1 | Volume attachment visibility per pod |
+| 7.2 | Node-local volume browser |
+| 7.3 | Shared volume relationship view |
+| 7.4 | Download/export volume |
+| 7.5 | Indicate node affinity constraints |
 
 ---
 
-# Phase 7 — Ephemeral Data Plane Integration
+# Phase 8 — Ephemeral Data Plane Surface
 
-Surface PodGroup and TTL-based ephemeral state.
+You built PodGroup and TTL ephemeral state.
+Surface it optionally.
 
 | Step | Description |
 |------|------------|
-| 7.1 | PodGroup membership viewer |
-| 7.2 | Live membership update indicators |
-| 7.3 | Ephemeral state inspector (debug mode) |
-| 7.4 | TTL expiration visualization (optional dev view) |
+| 8.1 | PodGroup membership viewer |
+| 8.2 | Live membership update indicators |
+| 8.3 | Debug view for ephemeral state |
+| 8.4 | TTL expiration visibility (dev mode) |
 
 This is uniquely Stark.
 
-Most browser OS clones don’t expose runtime grouping.
-
 ---
 
-# Phase 8 — Network & Policy Surface
+# Phase 9 — Network & Policy Debug Surface
 
-Your orchestrator routes and enforces policy.
-The UI should optionally surface it.
+Optional but powerful.
 
 | Step | Description |
 |------|------------|
-| 8.1 | Ingress endpoint visibility |
-| 8.2 | WS vs WebRTC connection status |
-| 8.3 | Active connection viewer |
-| 8.4 | Policy decision debug panel |
-| 8.5 | Contact-tracing visual surface (future use case) |
+| 9.1 | Ingress endpoint visibility |
+| 9.2 | WS vs WebRTC status indicators |
+| 9.3 | Active connection viewer |
+| 9.4 | Policy decision debug panel |
 
-Default users don’t need this.
-Dev mode should expose it.
+This makes Stark feel like a living distributed system.
 
 ---
 
-# Phase 9 — Inter-Pack Interaction Layer
+# Phase 10 — Inter-Pack Interaction Layer
 
-Now Stark becomes composable.
+Now enable composability.
 
 | Step | Description |
 |------|------------|
-| 9.1 | Global event bus |
-| 9.2 | Structured drag & drop |
-| 9.3 | Intent system ("open with") |
-| 9.4 | Capability linking between packs |
+| 10.1 | Global event bus |
+| 10.2 | Structured drag & drop |
+| 10.3 | Intent system |
+| 10.4 | Capability linking |
 
-This is where Stark stops being a dashboard
-and becomes a composable runtime OS.
+Terminal should also be able to trigger these interactions.
 
 ---
 
-# Phase 10 — Desktop Chrome & Experience Polish
+# Phase 11 — Desktop Chrome & Experience Polish
 
-Only after runtime is stable.
+Only after runtime and terminal stability.
 
 | Step | Description |
 |------|------------|
-| 10.1 | Desktop canvas |
-| 10.2 | App launcher |
-| 10.3 | Taskbar (running + pinned pods) |
-| 10.4 | Notification center |
-| 10.5 | Theme engine |
-| 10.6 | Multi-workspace UI |
-
-This is aesthetic + usability layer.
-Not architecture.
+| 11.1 | Desktop canvas |
+| 11.2 | App launcher |
+| 11.3 | Taskbar (running + pinned pods) |
+| 11.4 | Notification center |
+| 11.5 | Theme engine |
+| 11.6 | Multi-workspace UI |
 
 ---
 
-# Unified Pack Contract (Applies to All Packs)
+# Critical Invariants
 
-All packs — visual or headless — follow the same contract.
-
-Lifecycle hooks:
-
-| Hook | Purpose |
-|------|---------|
-| init | Pod starts |
-| mount | UI surface attaches (if visual) |
-| onFocus | Becomes active |
-| onBlur | Moves to background |
-| unmount | Surface detaches |
-| destroy | Pod terminates |
-
-Headless packs simply do not implement mount.
+- Login gates everything
+- Terminal and UI have equal authority
+- Killing a pod instantly unmounts its UI
+- Token refresh does not remount pods
+- UI never blocks orchestrator routing
+- System packs follow same lifecycle as user packs
+- Ephemeral state never pollutes control plane state
 
 ---
 
-# Critical System Invariants
+# What This Architecture Achieves
 
-These must hold true across UI and orchestrator:
+You end up with:
 
-- UI never blocks routing or policy engine
-- Killing a pod immediately unmounts its UI
-- Token refresh does not remount visual pods
-- Service replicas are distinct runtime instances
-- Workspace restore is deterministic
-- System packs follow same rules as user packs
-- Ephemeral state never corrupts control plane state
+- A login-gated distributed runtime
+- A visual pod surface
+- A powerful command terminal
+- A composable pack ecosystem
+- A runtime-aware OS — not a web desktop clone
 
-If these hold, Stark is stable.
+Stark becomes:
 
----
-
-# What This Plan Avoids
-
-- Marketplace complexity
-- Third-party sandboxing
-- Over-abstracted filesystem metaphors
-- Fake desktop illusions disconnected from runtime
-
----
-
-# Final Order For You (Practical Execution)
-
-1. Shell layout + window manager
-2. Login + token stability
-3. Pod mount/unmount correctness
-4. Running pods selector
-5. Pod status + restart visualization
-6. Convert Pod Manager into a real system pack
-7. Volume browser
-8. Logs viewer
-9. Inter-pack event bus
-10. Desktop chrome polish
-
----
-
-Stark OS should feel like:
-
-A live distributed system you can touch.
-
-Not a web page pretending to be Windows.
+A programmable operating system
+for distributed compute.

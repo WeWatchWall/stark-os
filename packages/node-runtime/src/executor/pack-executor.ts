@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { createRequire } from 'module';
 import { join, isAbsolute } from 'path';
 import { Script, createContext } from 'vm';
 import {
@@ -900,38 +901,35 @@ export class PackExecutor {
       // Use vm.Script for controlled code execution - this is the standard
       // Node.js API for executing dynamically loaded pack bundles.
       // Use string concatenation to safely wrap the bundle code in a function.
-      const wrappedCode = '(function(exports, module, context, args) {\n' + bundleCode + '\n})';
+      const wrappedCode = '(function(exports, module, require, context, args) {\n' + bundleCode + '\n})';
       const script = new Script(wrappedCode, {
         filename: 'pack-' + safePackId + '-' + safePackVersion + '.js',
       });
-      // Provide a restricted sandbox with only the APIs pack bundles need.
-      // process is limited to env (read-only copy) and basic info — no exit/kill/spawn.
-      const restrictedProcess = {
-        env: { ...process.env },
-        version: process.version,
-        versions: process.versions,
-        platform: process.platform,
-        arch: process.arch,
-        cwd: process.cwd.bind(process),
-        nextTick: process.nextTick.bind(process),
-      };
-      const sandbox = createContext({
-        console,
-        process: restrictedProcess,
-        setTimeout, setInterval, clearTimeout, clearInterval,
-        Buffer, URL, TextEncoder, TextDecoder,
-        Promise, Error, TypeError, RangeError, SyntaxError,
-        JSON, Math, Date, RegExp, Map, Set, WeakMap, WeakSet,
-        Array, Object, String, Number, Boolean, Symbol,
-        parseInt, parseFloat, isNaN, isFinite,
-        encodeURIComponent, decodeURIComponent, encodeURI, decodeURI,
-        atob: typeof atob !== 'undefined' ? atob : undefined,
-        btoa: typeof btoa !== 'undefined' ? btoa : undefined,
-      });
-      const moduleFactory = script.runInContext(sandbox) as (exports: Record<string, unknown>, module: { exports: Record<string, unknown> }, context: PackExecutionContext, args: unknown[]) => void;
+      // Build sandbox with full Node.js API access.
+      // We copy all globalThis properties so pack code can access Node.js built-ins
+      // (fs, http, crypto, fetch, AbortController, streams, etc.).
+      // TODO: Tighten sandboxing in a future release — for now, packs need full access.
+      const sandboxGlobals: Record<string, unknown> = {};
+      for (const key of Object.getOwnPropertyNames(globalThis)) {
+        try {
+          sandboxGlobals[key] = (globalThis as Record<string, unknown>)[key];
+        } catch {
+          // Skip inaccessible properties (e.g. some getters may throw)
+        }
+      }
+      // Override console with our pod-log-patched version
+      sandboxGlobals.console = console;
+      // Provide require so pack code can load Node.js built-in modules
+      const bundleRequire = createRequire(import.meta.url);
+      sandboxGlobals.require = bundleRequire;
+      const sandbox = createContext(sandboxGlobals);
+      // Wire up globalThis/global self-references inside the sandbox
+      sandbox.globalThis = sandbox;
+      sandbox.global = sandbox;
+      const moduleFactory = script.runInContext(sandbox) as (exports: Record<string, unknown>, module: { exports: Record<string, unknown> }, require: NodeRequire, context: PackExecutionContext, args: unknown[]) => void;
 
       // Execute the bundle
-      moduleFactory(moduleExports, module, context, args);
+      moduleFactory(moduleExports, module, bundleRequire, context, args);
 
       // Get the entrypoint function
       const entrypoint = (context.metadata.entrypoint as string | undefined) ?? 'default';

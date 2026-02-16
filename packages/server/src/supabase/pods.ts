@@ -220,6 +220,11 @@ export class PodQueries {
       metadata: input.metadata ?? {},
     };
 
+    // Persist target node when explicitly specified (pinned scheduling)
+    if (input.nodeId) {
+      insertData.node_id = input.nodeId;
+    }
+
     if (serviceId) {
       insertData.service_id = serviceId;
     }

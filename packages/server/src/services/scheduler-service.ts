@@ -190,7 +190,7 @@ export class SchedulerService {
    * Schedule a single pod to an available node
    */
   private async schedulePod(
-    podListItem: { id: string; packId: string },
+    podListItem: { id: string; packId: string; nodeId?: string | null },
     onlineNodes: NodeListItem[],
     packQueries: ReturnType<typeof getPackQueriesAdmin>,
     _nodeQueries: ReturnType<typeof getNodeQueries>,
@@ -205,6 +205,57 @@ export class SchedulerService {
     }
 
     const pack = packResult.data;
+
+    // If the pod was created with a pinned nodeId, honour it instead of
+    // running the normal scoring/selection logic.
+    if (podListItem.nodeId) {
+      const pinnedNode = onlineNodes.find(n => n.id === podListItem.nodeId);
+      if (!pinnedNode) {
+        logger.debug('Pinned node not online yet, skipping pod', {
+          podId,
+          pinnedNodeId: podListItem.nodeId,
+        });
+        return;
+      }
+      if (!pinnedNode.connectionId) {
+        logger.warn('Pinned node has no connection', {
+          podId,
+          nodeId: pinnedNode.id,
+          nodeName: pinnedNode.name,
+        });
+        return;
+      }
+
+      // Schedule to pinned node
+      const scheduleResult = await schedulePodWithHistory(
+        podId,
+        pinnedNode.id,
+        {
+          message: `Scheduled to pinned node ${pinnedNode.name}`,
+          reason: 'scheduler_pinned',
+          useAdmin: true,
+        }
+      );
+
+      if (scheduleResult.error) {
+        logger.error('Failed to schedule pod to pinned node', undefined, {
+          podId,
+          nodeId: pinnedNode.id,
+          error: scheduleResult.error,
+        });
+        return;
+      }
+
+      logger.info('Pod scheduled to pinned node', {
+        podId,
+        nodeId: pinnedNode.id,
+        nodeName: pinnedNode.name,
+        packName: pack.name,
+      });
+
+      await this.deployPodToNode(podId, pinnedNode.id, pinnedNode.connectionId, pack);
+      return;
+    }
 
     // Filter nodes by pack access (ownership check)
     const accessibleNodes: NodeListItem[] = [];

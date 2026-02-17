@@ -90,6 +90,12 @@ export interface PackExecutorConfig {
   gracefulShutdownTimeout?: number;
   /** Logger instance */
   logger?: Logger;
+  /**
+   * Callback invoked before a root-capability pack executes on the main thread.
+   * Returns a container element ID where the pack should render its UI.
+   * If not provided, the pack will use its built-in default container ID.
+   */
+  containerIdProvider?: (podId: string, packName: string) => string | undefined;
 }
 
 /**
@@ -127,7 +133,7 @@ interface ExecutionState {
  */
 export class PackExecutor {
   private readonly config: Required<
-    Omit<PackExecutorConfig, 'workerConfig' | 'storageConfig' | 'httpConfig' | 'orchestratorUrl' | 'orchestratorWsUrl' | 'workerScriptUrl' | 'authToken' | 'logger'>
+    Omit<PackExecutorConfig, 'workerConfig' | 'storageConfig' | 'httpConfig' | 'orchestratorUrl' | 'orchestratorWsUrl' | 'workerScriptUrl' | 'authToken' | 'logger' | 'containerIdProvider'>
   > & {
     workerConfig?: BrowserWorkerAdapterConfig;
     storageConfig?: BrowserStorageConfig;
@@ -137,6 +143,7 @@ export class PackExecutor {
     workerScriptUrl?: string;
     authToken?: string;
     logger: Logger;
+    containerIdProvider?: (podId: string, packName: string) => string | undefined;
   };
   private workerAdapter: WorkerAdapter;
   private storageAdapter: StorageAdapter;
@@ -158,6 +165,7 @@ export class PackExecutor {
       defaultTimeout: config.defaultTimeout ?? 0,
       maxConcurrent: config.maxConcurrent ?? 4, // Lower default for browsers
       gracefulShutdownTimeout: config.gracefulShutdownTimeout ?? 5000,
+      containerIdProvider: config.containerIdProvider,
       logger: config.logger ?? createServiceLogger({
         component: 'pack-executor',
         service: 'stark-browser-runtime',
@@ -1036,6 +1044,15 @@ export class PackExecutor {
           `Pack entrypoint '${entrypoint}' is not a function. ` +
           `Available exports: ${Object.keys(packExports).join(', ')}`
         );
+      }
+
+      // Inject containerId for UI packs when a containerIdProvider is configured.
+      // The bundled entry function checks context.containerId to know where to render.
+      if (this.config.containerIdProvider) {
+        const cid = this.config.containerIdProvider(context.podId, context.packName);
+        if (cid) {
+          (context as Record<string, unknown>).containerId = cid;
+        }
       }
 
       // Execute the entrypoint

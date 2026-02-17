@@ -35,6 +35,7 @@ const MOBILE_BREAKPOINT = 768;
 const DEFAULT_WINDOW_W = 800;
 const DEFAULT_WINDOW_H = 500;
 const TASKBAR_HEIGHT = 48;
+let idCounter = 0;
 
 /* ─── Store ─── */
 
@@ -70,7 +71,7 @@ export const useShellStore = defineStore('shell', () => {
   );
 
   function addWorkspace(name?: string) {
-    const id = `ws-${Date.now()}`;
+    const id = `ws-${++idCounter}`;
     workspaces.value.push({ id, name: name ?? `Workspace ${workspaces.value.length + 1}` });
     return id;
   }
@@ -103,7 +104,7 @@ export const useShellStore = defineStore('shell', () => {
     width?: number;
     height?: number;
   }): ShellWindow {
-    const id = `win-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const id = `win-${++idCounter}`;
     const containerId = `stark-container-${id}`;
     const w = opts.width ?? DEFAULT_WINDOW_W;
     const h = opts.height ?? DEFAULT_WINDOW_H;
@@ -188,6 +189,10 @@ export const useShellStore = defineStore('shell', () => {
     focusWindow(id);
   }
 
+  function clearFocus() {
+    focusedWindowId.value = null;
+  }
+
   return {
     /* Layout */
     layoutMode,
@@ -214,6 +219,7 @@ export const useShellStore = defineStore('shell', () => {
     moveWindow,
     resizeWindow,
     setMobileSnap,
+    clearFocus,
     TASKBAR_HEIGHT,
   };
 });

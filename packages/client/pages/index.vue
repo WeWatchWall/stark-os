@@ -123,6 +123,7 @@ import {
   type ConnectionState,
   type BrowserNodeCredentials,
 } from '@stark-o/browser-runtime';
+import { useShellStore } from '~/stores/shell';
 
 const connectionState = ref<ConnectionState>('disconnected');
 const isAuthenticated = ref(false);
@@ -133,6 +134,7 @@ const confirmPassword = ref('');
 const authError = ref('');
 const isLoading = ref(false);
 const registrationEnabled = ref(false);
+const shell = useShellStore();
 let agent: BrowserAgent | null = null;
 
 /**
@@ -296,6 +298,10 @@ async function startAgent(authToken: string): Promise<void> {
     autoRegister: false,
     authToken,
     resumeExisting: true,
+    containerIdProvider: (podId: string, packName: string) => {
+      const win = shell.openWindow({ podId, title: packName });
+      return win.containerId;
+    },
   });
 
   agent.on((event, _data) => {
@@ -305,6 +311,11 @@ async function startAgent(authToken: string): Promise<void> {
     else if (event === 'registered') connectionState.value = 'registered';
     else if (event === 'disconnected') connectionState.value = 'disconnected';
     else if (event === 'reconnecting') connectionState.value = 'connecting';
+    else if (event === 'pod:stopped' && _data && typeof _data === 'object' && 'podId' in _data) {
+      const podId = (_data as { podId: string }).podId;
+      const win = shell.windows.find((w) => w.podId === podId);
+      if (win) shell.closeWindow(win.id);
+    }
   });
 
   try {
@@ -321,6 +332,10 @@ async function handleLogout(): Promise<void> {
   if (agent) {
     await agent.stop();
     agent = null;
+  }
+  // Close all shell windows
+  for (const w of [...shell.windows]) {
+    shell.closeWindow(w.id);
   }
   clearBrowserCredentials();
   connectionState.value = 'disconnected';

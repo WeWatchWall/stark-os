@@ -245,3 +245,21 @@ export function requiresMainThread(capabilities: Capability[]): boolean {
 export function validateCapabilities(requested: string[]): string[] {
   return requested.filter((cap) => !isValidCapability(cap));
 }
+
+/**
+ * Compute effective capabilities: the intersection of requested and granted.
+ * If no requested capabilities are specified, all granted capabilities are effective.
+ *
+ * @param requested - Capabilities the pack declared it needs (may be undefined)
+ * @param granted - Capabilities the orchestrator actually granted
+ * @returns The capabilities that are both requested and granted
+ */
+export function effectiveCapabilities(
+  requested: Capability[] | undefined,
+  granted: Capability[]
+): Capability[] {
+  if (!requested || requested.length === 0) {
+    return granted;
+  }
+  return granted.filter((cap) => requested.includes(cap));
+}

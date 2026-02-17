@@ -38,7 +38,7 @@ function onResize() {
 function onDesktopClick(e: MouseEvent) {
   // If click is on the desktop background (not on a window), clear focus
   if ((e.target as HTMLElement).classList.contains('desktop')) {
-    shell.focusedWindowId = null;
+    shell.clearFocus();
   }
 }
 

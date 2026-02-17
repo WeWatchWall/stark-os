@@ -18,7 +18,7 @@
     <div
       class="title-bar"
       @mousedown.prevent="startDrag"
-      @dblclick="shell.toggleMaximize(win.id)"
+      @dblclick="toggleMax"
     >
       <span class="title-text">{{ win.title }}</span>
       <div class="title-controls">
@@ -32,7 +32,7 @@
         <!-- Desktop controls -->
         <template v-else>
           <button class="ctrl-btn" title="Minimize" aria-label="Minimize" @mousedown.stop @click="shell.minimizeWindow(win.id)">─</button>
-          <button class="ctrl-btn" title="Maximize" aria-label="Maximize" @mousedown.stop @click="shell.toggleMaximize(win.id)">☐</button>
+          <button class="ctrl-btn" title="Maximize" aria-label="Maximize" @mousedown.stop @click="toggleMax">☐</button>
         </template>
         <button class="ctrl-btn close" title="Close" aria-label="Close window" @mousedown.stop @click="shell.closeWindow(win.id)">✕</button>
       </div>
@@ -78,6 +78,29 @@ const secondHalfIcon = computed(() => shell.isPortrait ? '⬇' : '➡');
 
 const interacting = ref(false);
 
+/**
+ * Force the iframe inside the surface container to re-layout after a size change.
+ * Mirrors the mitigation from examples/nuxt-pack/test.html:
+ * temporarily reset iframe height to a small value and scroll to (0,0),
+ * then restore height:100% so the content recalculates its layout.
+ */
+function nudgeIframe() {
+  const surface = document.getElementById(props.win.containerId);
+  if (!surface) return;
+  const iframe = surface.querySelector('iframe') as HTMLIFrameElement | null;
+  if (!iframe) return;
+  iframe.style.height = '100px';
+  try { iframe.contentWindow?.scrollTo(0, 0); } catch (_) { /* cross-origin */ }
+  // Restore after a tick so the content re-layouts
+  requestAnimationFrame(() => { iframe.style.height = '100%'; });
+}
+
+function toggleMax() {
+  shell.toggleMaximize(props.win.id);
+  // Nudge iframe after Vue flushes the size change
+  setTimeout(nudgeIframe, 0);
+}
+
 /* ── Computed style ── */
 const frameStyle = computed(() => {
   const w = props.win;
@@ -86,10 +109,10 @@ const frameStyle = computed(() => {
   }
   if (w.maximized) {
     return {
-      top: shell.TASKBAR_HEIGHT + 'px',
+      top: '0px',
       left: '0px',
-      width: '100vw',
-      height: `calc(100vh - ${shell.TASKBAR_HEIGHT}px)`,
+      width: '100%',
+      height: '100%',
       zIndex: w.zIndex,
     };
   }
@@ -113,7 +136,7 @@ function startDrag(e: MouseEvent) {
     shell.moveWindow(
       props.win.id,
       Math.max(0, ev.clientX - startX),
-      Math.max(shell.TASKBAR_HEIGHT, ev.clientY - startY),
+      Math.max(0, ev.clientY - startY),
     );
   };
   const onUp = () => {
@@ -160,6 +183,7 @@ function startResize(e: MouseEvent, edge: Edge) {
     interacting.value = false;
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
+    nudgeIframe();
   };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);

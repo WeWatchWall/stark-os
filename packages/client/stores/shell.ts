@@ -148,7 +148,7 @@ export const useShellStore = defineStore('shell', () => {
       podId: opts.podId,
       containerId,
       x: 60 + (windows.value.length % 8) * 30,
-      y: TASKBAR_HEIGHT + 20 + (windows.value.length % 8) * 30,
+      y: 20 + (windows.value.length % 8) * 30,
       width: w,
       height: h,
       zIndex: nextZIndex++,

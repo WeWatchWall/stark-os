@@ -110,15 +110,21 @@ function createCorsConfig(origins: string[]): CorsOptions {
         return;
       }
 
-      // Check if origin matches any allowed pattern
-      const isAllowed = origins.some((pattern) => {
-        if (pattern.includes('*')) {
-          // Convert wildcard pattern to regex
-          const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-          return regex.test(origin);
-        }
-        return pattern === origin;
-      });
+      // Allow private-network origins (LAN) automatically
+      const privateNetworkPattern =
+        /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1)(:\d+)?$/;
+
+      // Check if origin matches any allowed pattern or is a private network address
+      const isAllowed =
+        privateNetworkPattern.test(origin) ||
+        origins.some((pattern) => {
+          if (pattern.includes('*')) {
+            // Convert wildcard pattern to regex
+            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+            return regex.test(origin);
+          }
+          return pattern === origin;
+        });
 
       if (isAllowed) {
         callback(null, true);

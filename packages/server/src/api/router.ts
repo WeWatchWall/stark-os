@@ -239,12 +239,8 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     logger.debug('Rate limiting enabled for API routes');
   }
 
-  // Auth routes with progressive throttling always enabled, plus optional hard rate limit (no /api prefix - directly at /auth)
-  if (enableRateLimiting) {
-    router.use('/auth', authThrottleMiddleware, authRateLimiter, createAuthRouter());
-  } else {
-    router.use('/auth', authThrottleMiddleware, createAuthRouter());
-  }
+  // Auth routes with progressive throttling always enabled, plus hard rate limit (no /api prefix - directly at /auth)
+  router.use('/auth', authThrottleMiddleware, authRateLimiter, createAuthRouter());
 
   // Protected API routes
   apiRouter.use('/packs', createPacksRouter());

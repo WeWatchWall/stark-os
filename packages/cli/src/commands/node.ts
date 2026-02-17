@@ -8,8 +8,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as os from 'node:os';
-import { createApiClient, requireAuth, loadConfig, createCliSupabaseClient, saveCredentials, type Credentials } from '../config.js';
-import { randomBytes, randomInt } from 'node:crypto';
+import { createApiClient, requireAuth, loadConfig, createCliSupabaseClient, saveCredentials, loadCredentials, type Credentials } from '../config.js';
 import {
   error,
   info,
@@ -24,10 +23,6 @@ import {
 import { 
   NodeAgent, 
   type NodeAgentConfig, 
-  saveNodeCredentials,
-  loadNodeCredentials,
-  areNodeCredentialsValid,
-  type NodeCredentials,
   getRegisteredNode,
 } from '@stark-o/node-runtime';
 import type { RuntimeType, NodeStatus, TaintEffect } from '@stark-o/shared';
@@ -656,43 +651,56 @@ export function createNodeCommand(): Command {
 }
 
 /**
- * Generates a random string for email/password
+ * Refresh CLI credentials using the stored refresh token.
+ * Returns the new access token on success, or null on failure.
  */
-function generateRandomString(length: number): string {
-  return randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
-}
-
-/**
- * Generates a secure random password meeting requirements
- */
-function generateRandomPassword(): string {
-  // Ensure we have uppercase, lowercase, digit, and sufficient length
-  const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const lower = 'abcdefghijklmnopqrstuvwxyz';
-  const digits = '0123456789';
-  const all = upper + lower + digits;
-
-  // Use cryptographically secure random for password generation
-  const secureRandomIndex = (max: number): number => randomInt(max);
-  
-  // Start with one of each required type
-  const chars: string[] = [
-    upper[secureRandomIndex(upper.length)]!,
-    lower[secureRandomIndex(lower.length)]!,
-    digits[secureRandomIndex(digits.length)]!,
-  ];
-  
-  // Fill to 16 characters
-  for (let i = 0; i < 13; i++) {
-    chars.push(all[secureRandomIndex(all.length)]!);
+async function refreshCliCredentials(orchestratorUrl: string): Promise<string | null> {
+  const creds = loadCredentials();
+  if (!creds?.refreshToken) {
+    return null;
   }
-  
-  // Shuffle the password using Fisher-Yates with secure randomness
-  for (let i = chars.length - 1; i > 0; i--) {
-    const j = secureRandomIndex(i + 1);
-    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+
+  try {
+    const httpUrl = orchestratorUrl
+      .replace(/^wss:\/\//, 'https://')
+      .replace(/^ws:\/\//, 'http://')
+      .replace(/\/ws\/?$/, '');
+
+    const response = await fetch(`${httpUrl}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: creds.refreshToken }),
+    });
+
+    const result = await response.json() as {
+      success: boolean;
+      data?: {
+        accessToken: string;
+        refreshToken?: string;
+        expiresAt: string;
+        user: { id: string; email: string };
+      };
+      error?: { code: string; message: string };
+    };
+
+    if (!result.success || !result.data) {
+      return null;
+    }
+
+    // Update stored CLI credentials with new tokens
+    const updated: Credentials = {
+      accessToken: result.data.accessToken,
+      refreshToken: result.data.refreshToken ?? creds.refreshToken,
+      expiresAt: result.data.expiresAt,
+      userId: result.data.user.id,
+      email: result.data.user.email,
+    };
+    saveCredentials(updated);
+
+    return result.data.accessToken;
+  } catch {
+    return null;
   }
-  return chars.join('');
 }
 
 /**
@@ -732,7 +740,7 @@ async function agentStartHandler(options: {
 
       authToken = data.session.access_token;
 
-      // Save credentials for other CLI commands
+      // Save credentials for other CLI commands (no password stored)
       const credentials: Credentials = {
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
@@ -742,18 +750,6 @@ async function agentStartHandler(options: {
       };
       saveCredentials(credentials);
 
-      // Also save as node credentials with password for re-login on refresh token expiry
-      const nodeCredentials: NodeCredentials = {
-        accessToken: data.session.access_token,
-        refreshToken: data.session.refresh_token,
-        expiresAt: new Date(data.session.expires_at! * 1000).toISOString(),
-        userId: data.user!.id,
-        email: data.user!.email!,
-        password: options.password,
-        createdAt: new Date().toISOString(),
-      };
-      saveNodeCredentials(nodeCredentials);
-
       success(`Authenticated as ${options.email}`);
     } catch (err) {
       error('Authentication failed', err instanceof Error ? { message: err.message } : undefined);
@@ -761,100 +757,38 @@ async function agentStartHandler(options: {
     }
   }
 
-  // If still no auth token, check for stored node credentials first
+  // If still no auth token, use logged-in CLI user credentials
   if (!authToken) {
-    // Check if we have valid stored node credentials from a previous run
-    if (areNodeCredentialsValid()) {
-      const storedCreds = loadNodeCredentials();
-      if (storedCreds) {
-        info(`Using stored node credentials (${storedCreds.email})`);
-        authToken = storedCreds.accessToken;
+    const cliCreds = loadCredentials();
+    if (cliCreds) {
+      const expiresAt = new Date(cliCreds.expiresAt);
+      const now = new Date();
+      const timeRemainingMs = expiresAt.getTime() - now.getTime();
+      const REFRESH_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+
+      if (timeRemainingMs > REFRESH_THRESHOLD_MS) {
+        // Token is still valid and not near expiry
+        info(`Using logged-in credentials (${cliCreds.email})`);
+        authToken = cliCreds.accessToken;
+      } else if (timeRemainingMs > 0 || cliCreds.refreshToken) {
+        // Token is near expiry or expired but we have a refresh token - try refresh
+        info('Credentials near expiry, refreshing...');
+        const refreshed = await refreshCliCredentials(options.url);
+        if (refreshed) {
+          authToken = refreshed;
+          success('Credentials refreshed successfully');
+        } else if (timeRemainingMs > 0) {
+          // Refresh failed but token not yet expired - use it anyway
+          info(`Using logged-in credentials (${cliCreds.email})`);
+          authToken = cliCreds.accessToken;
+        }
       }
     }
   }
 
-  // If still no auth token, try auto-registration if public registration is enabled
   if (!authToken) {
-    info('No authentication provided. Checking if public registration is available...');
-    
-    try {
-      // Convert ws:// or wss:// URL to http:// or https:// for API calls
-      const httpUrl = options.url
-        .replace(/^wss:\/\//, 'https://')
-        .replace(/^ws:\/\//, 'http://')
-        .replace(/\/ws\/?$/, '');
-
-      // Check setup status
-      const statusResponse = await fetch(`${httpUrl}/auth/setup/status`);
-      const statusResult = await statusResponse.json() as {
-        success: boolean;
-        data?: { needsSetup: boolean; registrationEnabled: boolean };
-        error?: { message: string };
-      };
-
-      if (!statusResult.success || !statusResult.data) {
-        error('Failed to check registration status', statusResult.error);
-        process.exit(1);
-      }
-
-      if (!statusResult.data.registrationEnabled) {
-        error('Authentication required and public registration is disabled. Provide --token or --email and --password');
-        process.exit(1);
-      }
-
-      // Generate random credentials for auto-registration
-      const randomId = generateRandomString(8);
-      const autoEmail = `node-${randomId}@stark.com`;
-      const autoPassword = generateRandomPassword();
-
-      info(`Public registration is enabled. Auto-registering as ${autoEmail}...`);
-
-      // Register the user with node role
-      const registerResponse = await fetch(`${httpUrl}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: autoEmail,
-          password: autoPassword,
-          displayName: `Node Agent ${options.name}`,
-          roles: ['node'], // Request node role for node agents
-        }),
-      });
-
-      const registerResult = await registerResponse.json() as {
-        success: boolean;
-        data?: {
-          accessToken: string;
-          refreshToken?: string;
-          expiresAt: string;
-          user: { id: string; email: string };
-        };
-        error?: { code: string; message: string };
-      };
-
-      if (!registerResult.success || !registerResult.data) {
-        error('Auto-registration failed', registerResult.error);
-        process.exit(1);
-      }
-
-      authToken = registerResult.data.accessToken;
-
-      // Save node credentials for reuse across restarts (separate from CLI user credentials)
-      const nodeCredentials: NodeCredentials = {
-        accessToken: registerResult.data.accessToken,
-        refreshToken: registerResult.data.refreshToken,
-        expiresAt: registerResult.data.expiresAt,
-        userId: registerResult.data.user.id,
-        email: registerResult.data.user.email,
-        password: autoPassword,
-        createdAt: new Date().toISOString(),
-      };
-      saveNodeCredentials(nodeCredentials);
-      success(`Auto-registered and authenticated as ${autoEmail}`);
-    } catch (err) {
-      error('Auto-registration failed', err instanceof Error ? { message: err.message } : undefined);
-      process.exit(1);
-    }
+    error('Authentication required. Run `stark auth login` first, or provide --token or --email and --password');
+    process.exit(1);
   }
 
   // Parse labels
@@ -984,8 +918,8 @@ async function agentStartHandler(options: {
         info('Attempting to reconnect...');
         break;
       case 'credentials_invalid':
-        info('Stored credentials are invalid. Will re-register with fresh credentials...');
-        shouldRestartOnStop = true;
+        info('Credentials are invalid. Please run `stark auth login` to re-authenticate.');
+        shouldRestartOnStop = false;
         break;
       case 'error':
         error('Agent error', data instanceof Error ? { message: data.message } : undefined);
@@ -1023,19 +957,26 @@ async function agentStartHandler(options: {
       (err instanceof Error && err.message.includes('AUTH_FAILED')) ||
       (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'AUTH_FAILED');
     
-    // If credentials were invalid (already cleared by agent), retry with auto-registration
     if (isAuthFailed) {
-      info('Retrying with fresh credentials...');
-      
-      // Stop the current agent before retrying
-      try {
-        await agent.stop();
-      } catch {
-        // Ignore errors when stopping
+      // Try refreshing credentials before giving up
+      info('Authentication failed. Attempting to refresh credentials...');
+      const refreshed = await refreshCliCredentials(options.url);
+      if (refreshed) {
+        info('Credentials refreshed, retrying...');
+        
+        // Stop the current agent before retrying
+        try {
+          await agent.stop();
+        } catch {
+          // Ignore errors when stopping
+        }
+        
+        // Retry with refreshed token
+        return agentStartHandler({ ...options, token: refreshed });
       }
       
-      // Retry by recursively calling this handler (credentials are now cleared, will trigger auto-registration)
-      return agentStartHandler(options);
+      error('Authentication failed. Run `stark auth login` to re-authenticate.');
+      process.exit(1);
     }
     
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -1043,10 +984,6 @@ async function agentStartHandler(options: {
     process.exit(1);
   }
 
-  // Keep the process running until stopped (for restart)
+  // Keep the process running until stopped
   await stoppedPromise;
-  
-  // If we get here, it means shouldRestartOnStop was true
-  // Recursively call to restart with fresh credentials
-  return agentStartHandler(options);
 }

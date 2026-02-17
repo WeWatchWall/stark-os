@@ -1235,12 +1235,6 @@ export class NodeAgent {
         this.config.logger.error('Token refresh failed', { 
           error: result.error?.message ?? 'Unknown error' 
         });
-
-        // If refresh token is invalid/expired, attempt re-login with stored credentials
-        const reloginResult = await this.attemptRelogin();
-        if (reloginResult) {
-          return true;
-        }
         return false;
       }
 
@@ -1252,7 +1246,6 @@ export class NodeAgent {
         expiresAt: result.data.expiresAt,
         userId: result.data.user.id,
         email: result.data.user.email,
-        password: existingCreds?.password,
         createdAt: existingCreds?.createdAt ?? new Date().toISOString(),
       };
 
@@ -1269,90 +1262,9 @@ export class NodeAgent {
       this.config.logger.error('Token refresh failed', {
         error: error instanceof Error ? error.message : String(error),
       });
-
-      // On network or unexpected errors, also attempt re-login as a fallback
-      const reloginResult = await this.attemptRelogin();
-      if (reloginResult) {
-        return true;
-      }
       return false;
     } finally {
       this.isRefreshingToken = false;
-    }
-  }
-
-  /**
-   * Attempt to re-login using stored node credentials (email + password).
-   * This is a recovery path when the refresh token is invalid or expired.
-   */
-  private async attemptRelogin(): Promise<boolean> {
-    const existingCreds = this.stateStore.getCredentials();
-    if (!existingCreds?.email || !existingCreds?.password) {
-      this.config.logger.warn('Cannot re-login: no stored email/password in node credentials');
-      return false;
-    }
-
-    this.config.logger.info('Attempting re-login with stored node credentials...', {
-      email: existingCreds.email,
-    });
-
-    try {
-      const httpUrl = this.config.orchestratorUrl
-        .replace(/^wss:\/\//, 'https://')
-        .replace(/^ws:\/\//, 'http://')
-        .replace(/\/ws\/?$/, '');
-
-      const response = await fetch(`${httpUrl}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: existingCreds.email,
-          password: existingCreds.password,
-        }),
-      });
-
-      const result = await response.json() as {
-        success: boolean;
-        data?: {
-          accessToken: string;
-          refreshToken?: string;
-          expiresAt: string;
-          user: { id: string; email: string };
-        };
-        error?: { code: string; message: string };
-      };
-
-      if (!result.success || !result.data) {
-        this.config.logger.error('Re-login failed', {
-          error: result.error?.message ?? 'Unknown error',
-        });
-        return false;
-      }
-
-      // Update credentials with new tokens (preserve password)
-      const newCredentials: NodeCredentials = {
-        accessToken: result.data.accessToken,
-        refreshToken: result.data.refreshToken,
-        expiresAt: result.data.expiresAt,
-        userId: result.data.user.id,
-        email: result.data.user.email,
-        password: existingCreds.password,
-        createdAt: existingCreds.createdAt,
-      };
-
-      await this.saveCredentials(newCredentials);
-
-      this.config.logger.info('Re-login successful, tokens refreshed via login', {
-        userId: newCredentials.userId,
-        expiresAt: newCredentials.expiresAt,
-      });
-
-      return true;
-    } catch (error) {
-      this.config.logger.error('Re-login failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
     }
   }
 

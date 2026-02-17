@@ -180,9 +180,7 @@ export class StorageAdapter implements IStorageAdapter {
     const resolvedPath = this.resolvePath(path);
     const fileHandle = await this.getFileHandle(resolvedPath);
     const file = await fileHandle.getFile();
-    const buffer = await file.arrayBuffer();
-    const decoder = new TextDecoder(encoding === 'utf-8' ? 'utf-8' : encoding);
-    return decoder.decode(buffer);
+    return file.text();
   }
 
   /**
@@ -441,7 +439,8 @@ export class StorageAdapter implements IStorageAdapter {
   }
 
   /**
-   * Rename/move a file or directory.
+   * Rename/move a file.
+   * Note: Only supports files. Directory rename is not supported in OPFS.
    * @param oldPath - Current path (relative to root path)
    * @param newPath - New path (relative to root path)
    */

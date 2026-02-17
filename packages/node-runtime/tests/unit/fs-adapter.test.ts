@@ -13,7 +13,7 @@ describe('FsAdapter', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = path.join(tmpdir(), `fs-adapter-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = path.join(tmpdir(), `fs-adapter-test-${crypto.randomUUID()}`);
     adapter = new FsAdapter({ rootPath: testDir });
     await adapter.initialize();
   });

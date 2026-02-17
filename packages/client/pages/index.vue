@@ -145,8 +145,8 @@ async function checkRegistrationStatus(): Promise<void> {
     if (result.success && result.data) {
       registrationEnabled.value = result.data.registrationEnabled;
     }
-  } catch {
-    // Silently fail - registration button just won't show
+  } catch (err) {
+    console.warn('Failed to check registration status:', err);
   }
 }
 
@@ -195,7 +195,8 @@ async function handleLogin(): Promise<void> {
     password.value = '';
     isAuthenticated.value = true;
     await startAgent(result.data.accessToken);
-  } catch {
+  } catch (err) {
+    console.error('Login failed:', err);
     authError.value = 'Unable to connect to the server. Please try again.';
   } finally {
     isLoading.value = false;
@@ -254,7 +255,8 @@ async function handleRegister(): Promise<void> {
     password.value = '';
     isAuthenticated.value = true;
     await startAgent(result.data.accessToken);
-  } catch {
+  } catch (err) {
+    console.error('Registration failed:', err);
     authError.value = 'Unable to connect to the server. Please try again.';
   } finally {
     isLoading.value = false;
@@ -357,8 +359,8 @@ onMounted(async () => {
           await startAgent(refreshedCreds.accessToken);
           return;
         }
-      } catch {
-        // Refresh failed, show login screen
+      } catch (err) {
+        console.warn('Token refresh failed, showing login screen:', err);
       }
     }
 

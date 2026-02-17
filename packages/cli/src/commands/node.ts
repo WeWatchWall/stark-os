@@ -656,7 +656,9 @@ export function createNodeCommand(): Command {
  */
 async function refreshCliCredentials(orchestratorUrl: string): Promise<string | null> {
   const creds = loadCredentials();
-  if (!creds?.refreshToken) return null;
+  if (!creds?.refreshToken) {
+    return null;
+  }
 
   try {
     const httpUrl = orchestratorUrl

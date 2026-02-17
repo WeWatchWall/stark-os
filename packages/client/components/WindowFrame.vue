@@ -6,8 +6,10 @@
       maximized: win.maximized,
       minimized: win.minimized,
       'mobile-full': isMobile && win.mobileSnap === 'full',
-      'mobile-half-top': isMobile && win.mobileSnap === 'half-top',
-      'mobile-half-bottom': isMobile && win.mobileSnap === 'half-bottom',
+      'mobile-half-first': isMobile && win.mobileSnap === 'half-first',
+      'mobile-half-second': isMobile && win.mobileSnap === 'half-second',
+      'portrait': shell.isPortrait,
+      'landscape': !shell.isPortrait,
     }"
     :style="frameStyle"
     @mousedown="shell.focusWindow(win.id)"
@@ -22,16 +24,16 @@
       <div class="title-controls">
         <!-- Mobile snap controls -->
         <template v-if="isMobile">
-          <button class="ctrl-btn" title="Full screen" @mousedown.stop @click="shell.setMobileSnap(win.id, 'full')">⛶</button>
-          <button class="ctrl-btn" title="Top half" @mousedown.stop @click="shell.setMobileSnap(win.id, 'half-top')">⬆</button>
-          <button class="ctrl-btn" title="Bottom half" @mousedown.stop @click="shell.setMobileSnap(win.id, 'half-bottom')">⬇</button>
+          <button class="ctrl-btn" title="Full screen" aria-label="Full screen" @mousedown.stop @click="shell.setMobileSnap(win.id, 'full')">⛶</button>
+          <button class="ctrl-btn" :title="firstHalfLabel" :aria-label="firstHalfLabel" @mousedown.stop @click="shell.setMobileSnap(win.id, 'half-first')">{{ firstHalfIcon }}</button>
+          <button class="ctrl-btn" :title="secondHalfLabel" :aria-label="secondHalfLabel" @mousedown.stop @click="shell.setMobileSnap(win.id, 'half-second')">{{ secondHalfIcon }}</button>
         </template>
         <!-- Desktop controls -->
         <template v-else>
-          <button class="ctrl-btn" title="Minimize" @mousedown.stop @click="shell.minimizeWindow(win.id)">─</button>
-          <button class="ctrl-btn" title="Maximize" @mousedown.stop @click="shell.toggleMaximize(win.id)">☐</button>
+          <button class="ctrl-btn" title="Minimize" aria-label="Minimize" @mousedown.stop @click="shell.minimizeWindow(win.id)">─</button>
+          <button class="ctrl-btn" title="Maximize" aria-label="Maximize" @mousedown.stop @click="shell.toggleMaximize(win.id)">☐</button>
         </template>
-        <button class="ctrl-btn close" title="Close" @mousedown.stop @click="shell.closeWindow(win.id)">✕</button>
+        <button class="ctrl-btn close" title="Close" aria-label="Close window" @mousedown.stop @click="shell.closeWindow(win.id)">✕</button>
       </div>
     </div>
 
@@ -66,6 +68,12 @@ const shell = useShellStore();
 
 const isFocused = computed(() => shell.focusedWindowId === props.win.id);
 const isMobile = computed(() => shell.layoutMode === 'mobile');
+
+/* Orientation-aware labels for half-screen buttons */
+const firstHalfLabel = computed(() => shell.isPortrait ? 'Top half' : 'Left half');
+const secondHalfLabel = computed(() => shell.isPortrait ? 'Bottom half' : 'Right half');
+const firstHalfIcon = computed(() => shell.isPortrait ? '⬆' : '⬅');
+const secondHalfIcon = computed(() => shell.isPortrait ? '⬇' : '➡');
 
 const interacting = ref(false);
 
@@ -264,7 +272,9 @@ function startResize(e: MouseEvent, edge: Edge) {
   border-radius: 0;
   border: none;
 }
-.window-frame.mobile-half-top {
+
+/* Portrait: split top / bottom */
+.window-frame.mobile-half-first.portrait {
   position: fixed !important;
   top: 48px !important;
   left: 0 !important;
@@ -273,12 +283,32 @@ function startResize(e: MouseEvent, edge: Edge) {
   border-radius: 0;
   border: none;
 }
-.window-frame.mobile-half-bottom {
+.window-frame.mobile-half-second.portrait {
   position: fixed !important;
   top: calc(50vh + 24px) !important;
   left: 0 !important;
   width: 100vw !important;
   height: calc(50vh - 24px) !important;
+  border-radius: 0;
+  border: none;
+}
+
+/* Landscape: split left / right */
+.window-frame.mobile-half-first.landscape {
+  position: fixed !important;
+  top: 48px !important;
+  left: 0 !important;
+  width: 50vw !important;
+  height: calc(100vh - 48px) !important;
+  border-radius: 0;
+  border: none;
+}
+.window-frame.mobile-half-second.landscape {
+  position: fixed !important;
+  top: 48px !important;
+  left: 50vw !important;
+  width: 50vw !important;
+  height: calc(100vh - 48px) !important;
   border-radius: 0;
   border: none;
 }

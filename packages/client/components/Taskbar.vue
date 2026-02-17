@@ -36,7 +36,7 @@
         >
           {{ ws.name }}
         </button>
-        <button class="ws-btn ws-add" @click="shell.addWorkspace()" title="Add workspace">＋</button>
+        <button class="ws-btn ws-add" @click="shell.addWorkspace()" title="Add workspace" aria-label="Add workspace">＋</button>
       </div>
 
       <!-- Layout mode toggle -->
@@ -45,7 +45,7 @@
       </button>
 
       <!-- Sign out -->
-      <button class="icon-btn sign-out" title="Sign Out" @click="$emit('signout')">⏻</button>
+      <button class="icon-btn sign-out" title="Sign Out" aria-label="Sign Out" @click="$emit('signout')">⏻</button>
     </div>
   </header>
 </template>

@@ -5,6 +5,14 @@ import { ref, computed } from 'vue';
 
 export type LayoutMode = 'desktop' | 'mobile';
 
+/**
+ * Mobile snap positions.
+ * 'half-first' / 'half-second' split along the longer screen axis:
+ *   Portrait  → first = top,  second = bottom
+ *   Landscape → first = left, second = right
+ */
+export type MobileSnap = 'full' | 'half-first' | 'half-second';
+
 export interface ShellWindow {
   id: string;
   title: string;
@@ -19,8 +27,8 @@ export interface ShellWindow {
   zIndex: number;
   minimized: boolean;
   maximized: boolean;
-  /** Mobile: 'full' or 'half' */
-  mobileSnap: 'full' | 'half-top' | 'half-bottom' | null;
+  /** Mobile snap along longer axis */
+  mobileSnap: MobileSnap | null;
   workspaceId: string;
 }
 
@@ -59,6 +67,11 @@ export const useShellStore = defineStore('shell', () => {
       autoLayoutMode.value = window.innerWidth < MOBILE_BREAKPOINT ? 'mobile' : 'desktop';
     }
   }
+
+  /** True when screen is taller than wide (portrait orientation) */
+  const isPortrait = computed(() =>
+    typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : true,
+  );
 
   /* ── Workspaces ── */
   const workspaces = ref<Workspace[]>([
@@ -182,7 +195,7 @@ export const useShellStore = defineStore('shell', () => {
   }
 
   /** Mobile snap: full or half screen along longer axis */
-  function setMobileSnap(id: string, snap: 'full' | 'half-top' | 'half-bottom') {
+  function setMobileSnap(id: string, snap: MobileSnap) {
     const win = windows.value.find((w) => w.id === id);
     if (!win) return;
     win.mobileSnap = snap;
@@ -200,6 +213,7 @@ export const useShellStore = defineStore('shell', () => {
     manualOverride,
     setManualLayoutMode,
     detectLayoutMode,
+    isPortrait,
     /* Workspaces */
     workspaces,
     activeWorkspaceId,

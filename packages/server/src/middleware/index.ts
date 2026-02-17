@@ -75,6 +75,8 @@ export {
   createRateLimitMiddleware,
   standardRateLimiter,
   authRateLimiter,
+  authSlowDown,
+  authThrottleMiddleware,
   uploadRateLimiter,
   wsConnectionRateLimiter,
   apiRateLimiter,

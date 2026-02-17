@@ -25,7 +25,6 @@ Login is the root of authority.
 | 1.3 | Session persistence |
 | 1.4 | Node binding awareness (which node am I connected to?) |
 | 1.5 | Workspace restore after login |
-| 1.6 | Environment indicator (production / staging / local) |
 
 Nothing renders without identity.
 

@@ -924,6 +924,7 @@ export class ServiceController {
           bundlePath: pack.bundlePath,
           bundleContent: pack.bundleContent,
           metadata: pack.metadata,
+          grantedCapabilities: pack.grantedCapabilities,
         },
         resourceRequests: pod.resourceRequests,
         resourceLimits: pod.resourceLimits,

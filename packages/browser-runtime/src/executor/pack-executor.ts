@@ -18,6 +18,7 @@ import {
   createServiceLogger,
   PodError,
   requiresMainThread,
+  effectiveCapabilities,
   createPodLogSink,
   formatLogArgs,
   createEphemeralDataPlane,
@@ -643,7 +644,9 @@ export class PackExecutor {
 
       // Check if pack has root capability - run on main thread instead of Web Worker
       // Root packs need main thread access for DOM manipulation and UI rendering
-      const hasRootCapability = requiresMainThread(pack.grantedCapabilities ?? []);
+      // Use effectiveCapabilities to intersect requested with granted capabilities
+      const caps = effectiveCapabilities(pack.metadata?.requestedCapabilities, pack.grantedCapabilities ?? []);
+      const hasRootCapability = requiresMainThread(caps);
 
       if (hasRootCapability) {
         this.config.logger.info('Executing pack on main thread (root capability)', {

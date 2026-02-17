@@ -1056,6 +1056,13 @@ export class PackExecutor {
         const cid = this.config.containerIdProvider(context.podId, context.packName);
         if (cid) {
           (context as Record<string, unknown>).containerId = cid;
+
+          // Yield to the event loop so the UI framework (Vue) can flush its reactive
+          // DOM updates. The containerIdProvider typically pushes a new window into a
+          // reactive store; without this yield the DOM element won't exist yet when
+          // the pack entry function calls document.getElementById(containerId).
+          await new Promise<void>((r) => setTimeout(r, 0));
+
           const el = typeof document !== 'undefined' ? document.getElementById(cid) : null;
           this.config.logger.info('[shell-debug] containerIdProvider returned', {
             containerId: cid,

@@ -1,8 +1,8 @@
 // Stark Orchestrator - Node.js Runtime
-// File System Adapter using ZenFS with Passthrough backend
+// File System Adapter using native Node.js fs
 
 import * as nodeFs from 'node:fs';
-import { Passthrough, fs as zenFs, configureSingle } from '@zenfs/core';
+import * as nodePath from 'node:path';
 import type {
   ISyncStorageAdapter,
   FileStats,
@@ -38,7 +38,7 @@ interface ResolvedFsAdapterConfig {
 }
 
 /**
- * File system adapter wrapping ZenFS with Passthrough backend.
+ * File system adapter using native Node.js fs.
  * Provides a unified file system interface for pack execution.
  * Implements ISyncStorageAdapter interface for both async and sync operations.
  */
@@ -63,11 +63,7 @@ export class FsAdapter implements ISyncStorageAdapter {
       return;
     }
 
-    await configureSingle({
-      backend: Passthrough,
-      fs: nodeFs,
-      prefix: this.config.rootPath,
-    });
+    await nodeFs.promises.mkdir(this.config.rootPath, { recursive: true });
 
     this.initialized = true;
   }
@@ -88,6 +84,13 @@ export class FsAdapter implements ISyncStorageAdapter {
     }
   }
 
+  /**
+   * Resolve a path relative to the configured root path.
+   */
+  private resolvePath(path: string): string {
+    return nodePath.join(this.config.rootPath, path);
+  }
+
   // ============================================
   // File Reading Operations
   // ============================================
@@ -99,7 +102,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async readFile(path: string, encoding: BufferEncoding = 'utf-8'): Promise<string> {
     this.ensureInitialized();
-    return zenFs.promises.readFile(path, encoding);
+    return nodeFs.promises.readFile(this.resolvePath(path), encoding);
   }
 
   /**
@@ -108,7 +111,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async readFileBytes(path: string): Promise<Uint8Array> {
     this.ensureInitialized();
-    return new Uint8Array(await zenFs.promises.readFile(path));
+    return new Uint8Array(await nodeFs.promises.readFile(this.resolvePath(path)));
   }
 
   /**
@@ -117,7 +120,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async readFileBuffer(path: string): Promise<Buffer> {
     this.ensureInitialized();
-    return Buffer.from(await zenFs.promises.readFile(path));
+    return nodeFs.promises.readFile(this.resolvePath(path));
   }
 
   /**
@@ -127,7 +130,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   readFileSync(path: string, encoding: BufferEncoding = 'utf-8'): string {
     this.ensureInitialized();
-    return zenFs.readFileSync(path, encoding);
+    return nodeFs.readFileSync(this.resolvePath(path), encoding);
   }
 
   /**
@@ -136,7 +139,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   readFileBytesSync(path: string): Uint8Array {
     this.ensureInitialized();
-    return new Uint8Array(zenFs.readFileSync(path));
+    return new Uint8Array(nodeFs.readFileSync(this.resolvePath(path)));
   }
 
   /**
@@ -145,7 +148,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   readFileBufferSync(path: string): Buffer {
     this.ensureInitialized();
-    return Buffer.from(zenFs.readFileSync(path));
+    return nodeFs.readFileSync(this.resolvePath(path));
   }
 
   // ============================================
@@ -164,7 +167,7 @@ export class FsAdapter implements ISyncStorageAdapter {
     encoding: BufferEncoding = 'utf-8',
   ): Promise<void> {
     this.ensureInitialized();
-    await zenFs.promises.writeFile(path, content, { encoding });
+    await nodeFs.promises.writeFile(this.resolvePath(path), content, { encoding });
   }
 
   /**
@@ -179,7 +182,7 @@ export class FsAdapter implements ISyncStorageAdapter {
     encoding: BufferEncoding = 'utf-8',
   ): void {
     this.ensureInitialized();
-    zenFs.writeFileSync(path, content, { encoding });
+    nodeFs.writeFileSync(this.resolvePath(path), content, { encoding });
   }
 
   /**
@@ -194,7 +197,7 @@ export class FsAdapter implements ISyncStorageAdapter {
     encoding: BufferEncoding = 'utf-8',
   ): Promise<void> {
     this.ensureInitialized();
-    await zenFs.promises.appendFile(path, content, { encoding });
+    await nodeFs.promises.appendFile(this.resolvePath(path), content, { encoding });
   }
 
   /**
@@ -209,7 +212,7 @@ export class FsAdapter implements ISyncStorageAdapter {
     encoding: BufferEncoding = 'utf-8',
   ): void {
     this.ensureInitialized();
-    zenFs.appendFileSync(path, content, { encoding });
+    nodeFs.appendFileSync(this.resolvePath(path), content, { encoding });
   }
 
   // ============================================
@@ -223,7 +226,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async mkdir(path: string, recursive: boolean = true): Promise<void> {
     this.ensureInitialized();
-    await zenFs.promises.mkdir(path, { recursive });
+    await nodeFs.promises.mkdir(this.resolvePath(path), { recursive });
   }
 
   /**
@@ -233,7 +236,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   mkdirSync(path: string, recursive: boolean = true): void {
     this.ensureInitialized();
-    zenFs.mkdirSync(path, { recursive });
+    nodeFs.mkdirSync(this.resolvePath(path), { recursive });
   }
 
   /**
@@ -242,7 +245,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async readdir(path: string): Promise<string[]> {
     this.ensureInitialized();
-    return zenFs.promises.readdir(path);
+    return nodeFs.promises.readdir(this.resolvePath(path));
   }
 
   /**
@@ -251,7 +254,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   readdirSync(path: string): string[] {
     this.ensureInitialized();
-    return zenFs.readdirSync(path);
+    return nodeFs.readdirSync(this.resolvePath(path));
   }
 
   /**
@@ -260,7 +263,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async readdirWithTypes(path: string): Promise<DirectoryEntry[]> {
     this.ensureInitialized();
-    return zenFs.promises.readdir(path, { withFileTypes: true });
+    return nodeFs.promises.readdir(this.resolvePath(path), { withFileTypes: true });
   }
 
   /**
@@ -270,10 +273,11 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async rmdir(path: string, recursive: boolean = false): Promise<void> {
     this.ensureInitialized();
+    const resolved = this.resolvePath(path);
     if (recursive) {
-      await zenFs.promises.rm(path, { recursive: true, force: true });
+      await nodeFs.promises.rm(resolved, { recursive: true, force: true });
     } else {
-      await zenFs.promises.rmdir(path);
+      await nodeFs.promises.rmdir(resolved);
     }
   }
 
@@ -284,10 +288,11 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   rmdirSync(path: string, recursive: boolean = false): void {
     this.ensureInitialized();
+    const resolved = this.resolvePath(path);
     if (recursive) {
-      zenFs.rmSync(path, { recursive: true, force: true });
+      nodeFs.rmSync(resolved, { recursive: true, force: true });
     } else {
-      zenFs.rmdirSync(path);
+      nodeFs.rmdirSync(resolved);
     }
   }
 
@@ -302,7 +307,7 @@ export class FsAdapter implements ISyncStorageAdapter {
   async exists(path: string): Promise<boolean> {
     this.ensureInitialized();
     try {
-      await zenFs.promises.access(path);
+      await nodeFs.promises.access(this.resolvePath(path));
       return true;
     } catch {
       return false;
@@ -315,7 +320,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   existsSync(path: string): boolean {
     this.ensureInitialized();
-    return zenFs.existsSync(path);
+    return nodeFs.existsSync(this.resolvePath(path));
   }
 
   /**
@@ -324,7 +329,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async stat(path: string): Promise<FileStats> {
     this.ensureInitialized();
-    return zenFs.promises.stat(path);
+    return nodeFs.promises.stat(this.resolvePath(path));
   }
 
   /**
@@ -333,7 +338,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   statSync(path: string): FileStats {
     this.ensureInitialized();
-    return zenFs.statSync(path);
+    return nodeFs.statSync(this.resolvePath(path));
   }
 
   /**
@@ -342,7 +347,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async unlink(path: string): Promise<void> {
     this.ensureInitialized();
-    await zenFs.promises.unlink(path);
+    await nodeFs.promises.unlink(this.resolvePath(path));
   }
 
   /**
@@ -351,7 +356,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   unlinkSync(path: string): void {
     this.ensureInitialized();
-    zenFs.unlinkSync(path);
+    nodeFs.unlinkSync(this.resolvePath(path));
   }
 
   /**
@@ -361,7 +366,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async rename(oldPath: string, newPath: string): Promise<void> {
     this.ensureInitialized();
-    await zenFs.promises.rename(oldPath, newPath);
+    await nodeFs.promises.rename(this.resolvePath(oldPath), this.resolvePath(newPath));
   }
 
   /**
@@ -371,7 +376,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   renameSync(oldPath: string, newPath: string): void {
     this.ensureInitialized();
-    zenFs.renameSync(oldPath, newPath);
+    nodeFs.renameSync(this.resolvePath(oldPath), this.resolvePath(newPath));
   }
 
   /**
@@ -381,7 +386,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   async copyFile(src: string, dest: string): Promise<void> {
     this.ensureInitialized();
-    await zenFs.promises.copyFile(src, dest);
+    await nodeFs.promises.copyFile(this.resolvePath(src), this.resolvePath(dest));
   }
 
   /**
@@ -391,7 +396,7 @@ export class FsAdapter implements ISyncStorageAdapter {
    */
   copyFileSync(src: string, dest: string): void {
     this.ensureInitialized();
-    zenFs.copyFileSync(src, dest);
+    nodeFs.copyFileSync(this.resolvePath(src), this.resolvePath(dest));
   }
 
   // ============================================
@@ -405,7 +410,7 @@ export class FsAdapter implements ISyncStorageAdapter {
   async isFile(path: string): Promise<boolean> {
     this.ensureInitialized();
     try {
-      const stats = await zenFs.promises.stat(path);
+      const stats = await nodeFs.promises.stat(this.resolvePath(path));
       return stats.isFile();
     } catch {
       return false;
@@ -419,7 +424,7 @@ export class FsAdapter implements ISyncStorageAdapter {
   isFileSync(path: string): boolean {
     this.ensureInitialized();
     try {
-      const stats = zenFs.statSync(path);
+      const stats = nodeFs.statSync(this.resolvePath(path));
       return stats.isFile();
     } catch {
       return false;
@@ -433,7 +438,7 @@ export class FsAdapter implements ISyncStorageAdapter {
   async isDirectory(path: string): Promise<boolean> {
     this.ensureInitialized();
     try {
-      const stats = await zenFs.promises.stat(path);
+      const stats = await nodeFs.promises.stat(this.resolvePath(path));
       return stats.isDirectory();
     } catch {
       return false;
@@ -447,7 +452,7 @@ export class FsAdapter implements ISyncStorageAdapter {
   isDirectorySync(path: string): boolean {
     this.ensureInitialized();
     try {
-      const stats = zenFs.statSync(path);
+      const stats = nodeFs.statSync(this.resolvePath(path));
       return stats.isDirectory();
     } catch {
       return false;
@@ -462,12 +467,12 @@ export class FsAdapter implements ISyncStorageAdapter {
   }
 
   /**
-   * Get the raw ZenFS interface for advanced operations.
-   * @returns The ZenFS fs module
+   * Get the raw Node.js fs module for advanced operations.
+   * @returns The Node.js fs module
    */
-  getRawFs(): typeof zenFs {
+  getRawFs(): typeof nodeFs {
     this.ensureInitialized();
-    return zenFs;
+    return nodeFs;
   }
 }
 

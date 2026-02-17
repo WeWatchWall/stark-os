@@ -349,7 +349,7 @@ export class PackExecutor {
       // Volume mounts — expose to pack code so it can detect mounted volumes
       volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
       // Volume I/O helpers — scoped to mounted paths only
-      // Uses native node:fs to avoid ZenFS Passthrough Windows path bugs.
+      // Uses native node:fs directly.
       // The pack-worker also uses native fs, so collectVolumeFiles sees the same data.
       ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
         readFile: async (filePath: string): Promise<string> => {
@@ -1115,8 +1115,7 @@ export class PackExecutor {
   /**
    * Collect all files from a named volume using native node:fs.
    * Uses the same path convention as the pack-worker and in-process volume
-   * helpers: join(process.cwd(), 'volumes', name). We bypass ZenFS here
-   * because its Passthrough backend mangles Windows drive-letter paths.
+   * helpers: join(process.cwd(), 'volumes', name).
    * Returns serializable file entries with base64-encoded content.
    */
   async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {

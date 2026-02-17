@@ -54,7 +54,7 @@ export {
   type ExecutionHandle,
 } from './executor/pack-executor.js';
 
-// Storage adapter (IndexedDB via ZenFS)
+// Storage adapter (OPFS)
 export {
   StorageAdapter,
   createStorageAdapter,

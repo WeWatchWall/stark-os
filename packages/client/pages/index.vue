@@ -6,16 +6,17 @@
         <img src="~/assets/Logo.png" alt="StarkOS" class="logo" />
 
         <!-- Login Form -->
-        <form v-if="authMode === 'login'" @submit.prevent="handleLogin" class="auth-form">
+        <form v-if="authMode === 'login'" method="post" action="#" @submit.prevent="handleLogin" class="auth-form">
           <div class="form-group">
             <label for="email">Email</label>
             <input
               id="email"
+              name="email"
               v-model="email"
               type="email"
               placeholder="Enter your email"
               required
-              autocomplete="email"
+              autocomplete="username"
               :disabled="isLoading"
             />
           </div>
@@ -23,6 +24,7 @@
             <label for="password">Password</label>
             <input
               id="password"
+              name="password"
               v-model="password"
               type="password"
               placeholder="Enter your password"
@@ -39,7 +41,7 @@
             v-if="registrationEnabled"
             type="button"
             class="btn btn-secondary"
-            @click="authMode = 'register'; authError = ''"
+            @click="authMode = 'register'; authError = ''; confirmPassword = ''"
             :disabled="isLoading"
           >
             Create Account
@@ -47,16 +49,17 @@
         </form>
 
         <!-- Register Form -->
-        <form v-else @submit.prevent="handleRegister" class="auth-form">
+        <form v-else method="post" action="#" @submit.prevent="handleRegister" class="auth-form">
           <div class="form-group">
             <label for="reg-email">Email</label>
             <input
               id="reg-email"
+              name="email"
               v-model="email"
               type="email"
               placeholder="Enter your email"
               required
-              autocomplete="email"
+              autocomplete="username"
               :disabled="isLoading"
             />
           </div>
@@ -64,9 +67,24 @@
             <label for="reg-password">Password</label>
             <input
               id="reg-password"
+              name="new-password"
               v-model="password"
               type="password"
               placeholder="Min 8 characters"
+              required
+              minlength="8"
+              autocomplete="new-password"
+              :disabled="isLoading"
+            />
+          </div>
+          <div class="form-group">
+            <label for="reg-confirm-password">Confirm Password</label>
+            <input
+              id="reg-confirm-password"
+              name="confirm-password"
+              v-model="confirmPassword"
+              type="password"
+              placeholder="Re-enter your password"
               required
               minlength="8"
               autocomplete="new-password"
@@ -80,7 +98,7 @@
           <button
             type="button"
             class="btn btn-secondary"
-            @click="authMode = 'login'; authError = ''"
+            @click="authMode = 'login'; authError = ''; confirmPassword = ''"
             :disabled="isLoading"
           >
             Back to Sign In
@@ -119,6 +137,7 @@ const isAuthenticated = ref(false);
 const authMode = ref<'login' | 'register'>('login');
 const email = ref('');
 const password = ref('');
+const confirmPassword = ref('');
 const authError = ref('');
 const isLoading = ref(false);
 const registrationEnabled = ref(false);
@@ -209,6 +228,12 @@ async function handleRegister(): Promise<void> {
   authError.value = '';
   isLoading.value = true;
 
+  if (password.value !== confirmPassword.value) {
+    authError.value = 'Passwords do not match.';
+    isLoading.value = false;
+    return;
+  }
+
   try {
     const response = await fetch(`${getHttpBaseUrl()}/auth/register`, {
       method: 'POST',
@@ -252,6 +277,7 @@ async function handleRegister(): Promise<void> {
     saveBrowserCredentials(credentials);
 
     password.value = '';
+    confirmPassword.value = '';
     isAuthenticated.value = true;
     await startAgent(result.data.accessToken);
   } catch (err) {
@@ -309,6 +335,7 @@ async function handleLogout(): Promise<void> {
   isAuthenticated.value = false;
   email.value = '';
   password.value = '';
+  confirmPassword.value = '';
   authError.value = '';
 }
 
@@ -389,6 +416,8 @@ onUnmounted(async () => {
   justify-content: center;
   min-height: 100vh;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  margin: 0;
+  padding: 1rem;
 }
 
 .auth-card {
@@ -399,6 +428,8 @@ onUnmounted(async () => {
   max-width: 400px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   text-align: center;
+  border: none;
+  outline: none;
 }
 
 .logo {

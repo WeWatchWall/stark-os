@@ -17,13 +17,13 @@ vi.mock('../../src/supabase/pods.js', () => ({
 }));
 
 vi.mock('../../src/supabase/packs.js', () => ({
-  getPackQueries: vi.fn(),
+  getPackQueriesAdmin: vi.fn(),
 }));
 
 // Import after mocking
 import { createPod, listPods, getPodById, getPodStatus, deletePod, rollbackPod } from '../../src/api/pods.js';
 import { getPodQueries, getPodQueriesAdmin } from '../../src/supabase/pods.js';
-import { getPackQueries } from '../../src/supabase/packs.js';
+import { getPackQueriesAdmin } from '../../src/supabase/packs.js';
 
 /**
  * Create a mock Express request
@@ -146,7 +146,7 @@ describe('Pod API Handlers', () => {
     // Wire up the mocks
     vi.mocked(getPodQueries).mockReturnValue(mockPodQueries as any);
     vi.mocked(getPodQueriesAdmin).mockReturnValue(mockPodQueries as any);
-    vi.mocked(getPackQueries).mockReturnValue(mockPackQueries as any);
+    vi.mocked(getPackQueriesAdmin).mockReturnValue(mockPackQueries as any);
   });
 
   afterEach(() => {

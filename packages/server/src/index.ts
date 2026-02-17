@@ -231,6 +231,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
     max: 2000, // 2000 requests per minute
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { trustProxy: false },
   });
   app.get('*', spaRateLimiter, (_req, res) => {
     const indexPath = path.join(publicPath, 'index.html');

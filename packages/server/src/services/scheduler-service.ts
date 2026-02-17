@@ -409,6 +409,7 @@ export class SchedulerService {
           bundlePath: pack.bundlePath,
           bundleContent: pack.bundleContent,
           metadata: pack.metadata,
+          grantedCapabilities: pack.grantedCapabilities,
         },
         resourceRequests: pod.resourceRequests,
         resourceLimits: pod.resourceLimits,

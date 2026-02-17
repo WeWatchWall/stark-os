@@ -23,7 +23,8 @@ import {
   truncate,
 } from '../output.js';
 import { bundleNuxtProject, bundleSimple, isNuxtProject } from '../bundler.js';
-import type { RuntimeTag } from '@stark-o/shared';
+import type { RuntimeTag, Capability } from '@stark-o/shared';
+import { effectiveCapabilities } from '@stark-o/shared';
 
 /**
  * Get current Node.js version (without 'v' prefix)
@@ -162,6 +163,7 @@ async function registerHandler(
     visibility?: string;
     minNodeVersion?: string;
     enableEphemeral?: boolean;
+    capabilities?: string;
     yes?: boolean;
   }
 ): Promise<void> {
@@ -249,6 +251,12 @@ async function registerHandler(
     if (options.enableEphemeral) {
       requestBody.metadata = { ...((requestBody.metadata as Record<string, unknown>) ?? {}), enableEphemeral: true };
     }
+
+    // Add requested capabilities if specified
+    if (options.capabilities) {
+      const caps = options.capabilities.split(',').map((c: string) => c.trim()).filter(Boolean);
+      requestBody.metadata = { ...((requestBody.metadata as Record<string, unknown>) ?? {}), requestedCapabilities: caps };
+    }
     
     info(`Sending registration request for ${options.name}@${options.ver}...`);
     const response = await api.post('/api/packs', requestBody);
@@ -262,15 +270,21 @@ async function registerHandler(
 
     success(`Pack registered: ${options.name}@${options.ver}`);
 
+    const pack = result.data.pack;
+    const requested = (pack.metadata?.requestedCapabilities as Capability[] | undefined);
+    const effective = effectiveCapabilities(requested, pack.grantedCapabilities ?? []);
+
     if (getOutputFormat() === 'json') {
-      console.log(JSON.stringify(result.data.pack, null, 2));
+      console.log(JSON.stringify({ ...pack, effectiveCapabilities: effective }, null, 2));
     } else {
       keyValue({
-        'ID': result.data.pack.id,
-        'Name': result.data.pack.name,
-        'Version': result.data.pack.version,
-        'Runtime': result.data.pack.runtimeTag,
-        'Created': new Date(result.data.pack.createdAt).toLocaleString(),
+        'ID': pack.id,
+        'Name': pack.name,
+        'Version': pack.version,
+        'Runtime': pack.runtimeTag,
+        'Granted Capabilities': (pack.grantedCapabilities ?? []).join(', ') || 'none',
+        'Effective Capabilities': effective.join(', ') || 'none',
+        'Created': new Date(pack.createdAt).toLocaleString(),
       });
     }
   } catch (err) {
@@ -534,6 +548,7 @@ export function createPackCommand(): Command {
     .option('--visibility <visibility>', 'Pack visibility: private (default) or public')
     .option('--min-node-version <version>', 'Minimum Node.js version required (e.g., 18, 20.10.0)')
     .option('--enable-ephemeral', 'Enable EphemeralDataPlane for this pack (context.ephemeral)')
+    .option('--capabilities <caps>', 'Comma-separated requested capabilities (e.g., root,ui:render)')
     .option('-y, --yes', 'Skip confirmation prompts')
     .action(registerHandler);
 

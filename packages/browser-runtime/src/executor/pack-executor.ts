@@ -18,6 +18,7 @@ import {
   createServiceLogger,
   PodError,
   requiresMainThread,
+  effectiveCapabilities,
   createPodLogSink,
   formatLogArgs,
   createEphemeralDataPlane,
@@ -90,6 +91,12 @@ export interface PackExecutorConfig {
   gracefulShutdownTimeout?: number;
   /** Logger instance */
   logger?: Logger;
+  /**
+   * Callback invoked before a root-capability pack executes on the main thread.
+   * Returns a container element ID where the pack should render its UI.
+   * If not provided, the pack will use its built-in default container ID.
+   */
+  containerIdProvider?: (podId: string, packName: string) => string | undefined;
 }
 
 /**
@@ -127,7 +134,7 @@ interface ExecutionState {
  */
 export class PackExecutor {
   private readonly config: Required<
-    Omit<PackExecutorConfig, 'workerConfig' | 'storageConfig' | 'httpConfig' | 'orchestratorUrl' | 'orchestratorWsUrl' | 'workerScriptUrl' | 'authToken' | 'logger'>
+    Omit<PackExecutorConfig, 'workerConfig' | 'storageConfig' | 'httpConfig' | 'orchestratorUrl' | 'orchestratorWsUrl' | 'workerScriptUrl' | 'authToken' | 'logger' | 'containerIdProvider'>
   > & {
     workerConfig?: BrowserWorkerAdapterConfig;
     storageConfig?: BrowserStorageConfig;
@@ -137,6 +144,7 @@ export class PackExecutor {
     workerScriptUrl?: string;
     authToken?: string;
     logger: Logger;
+    containerIdProvider?: (podId: string, packName: string) => string | undefined;
   };
   private workerAdapter: WorkerAdapter;
   private storageAdapter: StorageAdapter;
@@ -158,6 +166,7 @@ export class PackExecutor {
       defaultTimeout: config.defaultTimeout ?? 0,
       maxConcurrent: config.maxConcurrent ?? 4, // Lower default for browsers
       gracefulShutdownTimeout: config.gracefulShutdownTimeout ?? 5000,
+      containerIdProvider: config.containerIdProvider,
       logger: config.logger ?? createServiceLogger({
         component: 'pack-executor',
         service: 'stark-browser-runtime',
@@ -635,7 +644,9 @@ export class PackExecutor {
 
       // Check if pack has root capability - run on main thread instead of Web Worker
       // Root packs need main thread access for DOM manipulation and UI rendering
-      const hasRootCapability = requiresMainThread(pack.grantedCapabilities ?? []);
+      // Use effectiveCapabilities to intersect requested with granted capabilities
+      const caps = effectiveCapabilities(pack.metadata?.requestedCapabilities, pack.grantedCapabilities ?? []);
+      const hasRootCapability = requiresMainThread(caps);
 
       if (hasRootCapability) {
         this.config.logger.info('Executing pack on main thread (root capability)', {
@@ -646,11 +657,12 @@ export class PackExecutor {
 
         // Execute on main thread WITHOUT blocking - yield to event loop first
         // This ensures the execute() call returns immediately with the ExecutionHandle
-        // and the actual pack execution happens in a subsequent microtask
+        // and the actual pack execution happens in a subsequent macrotask.
+        // We use setTimeout(0) instead of queueMicrotask so that Vue's reactive DOM
+        // updates (which use microtasks/Promise.then) flush before the pack runs.
+        // This ensures containerIdProvider's DOM elements are rendered first.
         const mainThreadResult = await new Promise<PackExecutionResult>((resolve, reject) => {
-          // Use queueMicrotask to yield control back to the event loop
-          // This allows the caller to receive the ExecutionHandle before execution starts
-          queueMicrotask(() => {
+          setTimeout(() => {
             this.executeOnMainThread(bundleCode, context, args, state.logSink)
               .then((result) => {
                 resolve({
@@ -663,7 +675,7 @@ export class PackExecutor {
                 });
               })
               .catch(reject);
-          });
+          }, 0);
         });
         
         return mainThreadResult;
@@ -1036,6 +1048,21 @@ export class PackExecutor {
           `Pack entrypoint '${entrypoint}' is not a function. ` +
           `Available exports: ${Object.keys(packExports).join(', ')}`
         );
+      }
+
+      // Inject containerId for UI packs when a containerIdProvider is configured.
+      // The bundled entry function checks context.containerId to know where to render.
+      if (this.config.containerIdProvider) {
+        const cid = this.config.containerIdProvider(context.podId, context.packName);
+        if (cid) {
+          (context as Record<string, unknown>).containerId = cid;
+
+          // Yield to the event loop so the UI framework (Vue) can flush its reactive
+          // DOM updates. The containerIdProvider typically pushes a new window into a
+          // reactive store; without this yield the DOM element won't exist yet when
+          // the pack entry function calls document.getElementById(containerId).
+          await new Promise<void>((r) => setTimeout(r, 0));
+        }
       }
 
       // Execute the entrypoint

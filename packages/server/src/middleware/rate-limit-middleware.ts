@@ -123,6 +123,7 @@ export function createRateLimitMiddleware(config: RateLimitConfig = {}): RateLim
     legacyHeaders: config.legacyHeaders ?? DEFAULT_CONFIG.legacyHeaders,
     keyGenerator: config.keyGenerator ?? defaultKeyGenerator,
     handler: config.handler ?? defaultHandler,
+    validate: { trustProxy: false },
     ...(config.skip !== undefined && { skip: config.skip }),
     ...(config.skipSuccessfulRequests !== undefined && { skipSuccessfulRequests: config.skipSuccessfulRequests }),
     ...(config.skipFailedRequests !== undefined && { skipFailedRequests: config.skipFailedRequests }),

@@ -9,7 +9,7 @@ import { Router, Request, Response } from 'express';
 import type { PodStatus, CreatePodInput, Pod } from '@stark-o/shared';
 import { validateCreatePodInput, validateResourceRequestsVsLimits, createServiceLogger, generateCorrelationId } from '@stark-o/shared';
 import { getPodQueriesAdmin } from '../supabase/pods.js';
-import { getPackQueries } from '../supabase/packs.js';
+import { getPackQueriesAdmin } from '../supabase/packs.js';
 import { getNodeQueries } from '../supabase/nodes.js';
 import { getVolumeQueries } from '../supabase/volumes.js';
 import { sendToNode, getConnectionManager } from '../services/connection-service.js';
@@ -195,7 +195,7 @@ async function createPod(req: Request, res: Response): Promise<void> {
     requestLogger.debug('Pod creation request received', { userId });
 
     const body = req.body as Record<string, unknown>;
-    const packQueries = getPackQueries();
+    const packQueries = getPackQueriesAdmin();
 
     // Support both packId (direct UUID) and packName + optional packVersion
     let resolvedPackId = body.packId as string | undefined;
@@ -771,7 +771,7 @@ async function rollbackPod(req: Request, res: Response): Promise<void> {
     requestLogger.debug('Pod rollback request received', { podId: id, targetVersion, userId });
 
     const podQueries = getPodQueriesAdmin();
-    const packQueries = getPackQueries();
+    const packQueries = getPackQueriesAdmin();
 
     // Verify pod exists
     const podResult = await podQueries.getPodById(id);

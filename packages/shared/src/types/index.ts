@@ -23,6 +23,7 @@ export {
   hasAllCapabilities,
   requiresMainThread,
   validateCapabilities,
+  effectiveCapabilities,
 } from './capabilities.js';
 
 // User types

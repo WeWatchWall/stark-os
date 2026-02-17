@@ -12,7 +12,9 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@stark-o/browser-runtime": "workspace:*"
+    "@pinia/nuxt": "^0.11.3",
+    "@stark-o/browser-runtime": "workspace:*",
+    "pinia": "^3.0.4"
   },
   "devDependencies": {
     "@nuxt/devtools": "^2.0.0",

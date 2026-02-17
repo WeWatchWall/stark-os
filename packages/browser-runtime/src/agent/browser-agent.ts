@@ -83,6 +83,12 @@ export interface BrowserAgentConfig {
   persistState?: boolean;
   /** Automatically resume an existing node with the same name (default: true) */
   resumeExisting?: boolean;
+  /**
+   * Callback invoked before a root-capability pack executes on the main thread.
+   * Returns a container element ID where the pack should render its UI.
+   * The shell window manager uses this to provide iframe container IDs.
+   */
+  containerIdProvider?: (podId: string, packName: string) => string | undefined;
 }
 
 /**
@@ -294,6 +300,7 @@ export class BrowserAgent {
       orchestratorWsUrl: this.config.orchestratorUrl, // Original WS URL for inter-service networking
       workerScriptUrl: this.config.workerScriptUrl, // Enables full pack-worker with WebRTC
       authToken: this.authToken,
+      containerIdProvider: config.containerIdProvider,
     });
 
     // Initialize pod handler

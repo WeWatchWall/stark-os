@@ -460,7 +460,7 @@ module.exports.default = async function(context) {
     }
     var iframe = document.createElement('iframe');
     iframe.id = containerId + '-frame';
-    iframe.style.cssText = 'width:100%;border:none;display:block;min-height:100px;';
+    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
     if (context.style) { Object.assign(iframe.style, context.style); }
     container.innerHTML = '';
     container.appendChild(iframe);
@@ -477,11 +477,29 @@ module.exports.default = async function(context) {
     });
     
     iframe.srcdoc = HTML_CONTENT;
+    // Wait for iframe to load, then stay alive until shutdown is requested
+    await new Promise(function(resolve) {
+      iframe.onload = function() { resolve(); };
+      setTimeout(resolve, 2000);
+    });
+    // Keep the pod running — resolve only on shutdown so the UI stays active
     return new Promise(function(resolve) {
-      iframe.onload = function() {
-        resolve({ status: 'rendered', containerId: containerId, frameId: frameId });
-      };
-      setTimeout(function() { resolve({ status: 'rendered', containerId: containerId, frameId: frameId }); }, 2000);
+      if (context.onShutdown) {
+        context.onShutdown(function() {
+          container.innerHTML = '';
+          resolve({ status: 'shutdown', containerId: containerId, frameId: frameId });
+        });
+      }
+      if (context.lifecycle) {
+        // Fallback: poll lifecycle flag in case onShutdown is not available
+        var check = setInterval(function() {
+          if (context.lifecycle.isShuttingDown) {
+            clearInterval(check);
+            container.innerHTML = '';
+            resolve({ status: 'shutdown', containerId: containerId, frameId: frameId });
+          }
+        }, 1000);
+      }
     });
   }
   return { html: HTML_CONTENT, contentType: 'text/html', defaultContainerId: DEFAULT_CONTAINER_ID };

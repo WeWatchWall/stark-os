@@ -107,16 +107,8 @@
       </div>
     </div>
 
-    <!-- Main Dashboard (after login) -->
-    <div v-else class="dashboard-container">
-      <h1>Hello World</h1>
-      <p>Welcome to StarkOS</p>
-      <div class="status">
-        <span class="status-indicator" :class="connectionState"></span>
-        <span>Node: production-browser-1 ({{ connectionState }})</span>
-      </div>
-      <button class="btn btn-logout" @click="handleLogout">Sign Out</button>
-    </div>
+    <!-- Shell (after login) -->
+    <Shell v-else :connectionState="connectionState" @signout="handleLogout" />
   </div>
 </template>
 
@@ -131,6 +123,7 @@ import {
   type ConnectionState,
   type BrowserNodeCredentials,
 } from '@stark-o/browser-runtime';
+import { useShellStore } from '~/stores/shell';
 
 const connectionState = ref<ConnectionState>('disconnected');
 const isAuthenticated = ref(false);
@@ -141,6 +134,7 @@ const confirmPassword = ref('');
 const authError = ref('');
 const isLoading = ref(false);
 const registrationEnabled = ref(false);
+const shell = useShellStore();
 let agent: BrowserAgent | null = null;
 
 /**
@@ -304,6 +298,10 @@ async function startAgent(authToken: string): Promise<void> {
     autoRegister: false,
     authToken,
     resumeExisting: true,
+    containerIdProvider: (podId: string, packName: string) => {
+      const win = shell.openWindow({ podId, title: packName });
+      return win.containerId;
+    },
   });
 
   agent.on((event, _data) => {
@@ -313,6 +311,11 @@ async function startAgent(authToken: string): Promise<void> {
     else if (event === 'registered') connectionState.value = 'registered';
     else if (event === 'disconnected') connectionState.value = 'disconnected';
     else if (event === 'reconnecting') connectionState.value = 'connecting';
+    else if (event === 'pod:stopped' && _data && typeof _data === 'object' && 'podId' in _data) {
+      const podId = (_data as { podId: string }).podId;
+      const win = shell.windows.find((w) => w.podId === podId);
+      if (win) shell.closeWindow(win.id);
+    }
   });
 
   try {
@@ -329,6 +332,10 @@ async function handleLogout(): Promise<void> {
   if (agent) {
     await agent.stop();
     agent = null;
+  }
+  // Close all shell windows
+  for (const w of [...shell.windows]) {
+    shell.closeWindow(w.id);
   }
   clearBrowserCredentials();
   connectionState.value = 'disconnected';
@@ -524,78 +531,6 @@ onUnmounted(async () => {
 
 .btn-secondary:hover:not(:disabled) {
   background-color: #f9fafb;
-}
-
-/* Dashboard styles */
-.dashboard-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-}
-
-.dashboard-container h1 {
-  font-size: 3rem;
-  color: #1a1a1a;
-  margin-bottom: 1rem;
-}
-
-.dashboard-container p {
-  font-size: 1.25rem;
-  color: #666;
-}
-
-.status {
-  margin-top: 2rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: #888;
-}
-
-.status-indicator {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background-color: #ccc;
-}
-
-.status-indicator.disconnected {
-  background-color: #ef4444;
-}
-
-.status-indicator.connecting {
-  background-color: #f59e0b;
-  animation: pulse 1s infinite;
-}
-
-.status-indicator.connected,
-.status-indicator.authenticating {
-  background-color: #3b82f6;
-}
-
-.status-indicator.authenticated,
-.status-indicator.registering {
-  background-color: #8b5cf6;
-}
-
-.status-indicator.registered {
-  background-color: #22c55e;
-}
-
-.btn-logout {
-  margin-top: 2rem;
-  background-color: transparent;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-}
-
-.btn-logout:hover:not(:disabled) {
-  background-color: #f9fafb;
-  color: #dc2626;
-  border-color: #dc2626;
 }
 
 @keyframes pulse {

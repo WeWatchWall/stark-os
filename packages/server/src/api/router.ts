@@ -18,7 +18,7 @@ import { createNetworkRouter } from './network.js';
 import { createSecretsRouter } from './secrets.js';
 import { createVolumesRouter } from './volumes.js';
 import { createChaosRouter } from '../chaos/routes.js';
-import { apiRateLimiter, authRateLimiter } from '../middleware/rate-limit-middleware.js';
+import { apiRateLimiter, authThrottleMiddleware } from '../middleware/rate-limit-middleware.js';
 
 /**
  * Logger for API router operations
@@ -239,9 +239,9 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     logger.debug('Rate limiting enabled for API routes');
   }
 
-  // Auth routes with stricter rate limiting (no /api prefix - directly at /auth)
+  // Auth routes with progressive throttling + hard rate limit (no /api prefix - directly at /auth)
   if (enableRateLimiting) {
-    router.use('/auth', authRateLimiter, createAuthRouter());
+    router.use('/auth', authThrottleMiddleware, createAuthRouter());
   } else {
     router.use('/auth', createAuthRouter());
   }

@@ -228,7 +228,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
   // SPA fallback - serve index.html for any unmatched routes (rate-limited)
   const spaRateLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
-    max: 200, // 200 requests per minute
+    max: 2000, // 2000 requests per minute
     standardHeaders: true,
     legacyHeaders: false,
   });

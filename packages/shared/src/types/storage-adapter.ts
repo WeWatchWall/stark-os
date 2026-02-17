@@ -2,7 +2,8 @@
  * Shared Storage Adapter Interface for Stark Orchestrator
  *
  * This interface defines a unified file system abstraction that can be
- * implemented by different runtimes (Node.js, Browser) using ZenFS backends.
+ * implemented by different runtimes (Node.js, Browser) using
+ * platform-appropriate backends.
  *
  * @module @stark-o/shared/types/storage-adapter
  */
@@ -66,7 +67,8 @@ export interface StorageAdapterConfig {
  *
  * This interface provides a consistent API for file system operations
  * across different runtime environments (Node.js and Browser).
- * Implementations should use ZenFS with appropriate backends.
+ * Implementations use platform-appropriate backends (native fs for Node.js,
+ * OPFS for browsers).
  *
  * Note: Sync methods may not be available in all implementations
  * (e.g., browser with IndexedDB). Use async methods for maximum compatibility.

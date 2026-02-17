@@ -393,7 +393,7 @@ export class PackExecutor {
       },
       // Volume mounts — expose to pack code so it can detect mounted volumes
       volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
-      // Volume I/O helpers — backed by ZenFS via StorageAdapter
+      // Volume I/O helpers — backed by OPFS via StorageAdapter
       // Uses storageAdapter consistently so collectVolumeFiles sees the same data.
       ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
         readFile: async (filePath: string): Promise<string> => {
@@ -1185,12 +1185,12 @@ export class PackExecutor {
 
   /**
    * Clear all data from a named volume.
-   * Removes matching entries from both ZenFS and the raw IndexedDB store.
+   * Removes matching entries from both OPFS and the raw IndexedDB store.
    */
   async clearVolume(volumeName: string): Promise<void> {
     this.ensureInitialized();
 
-    // ── 1. Clear ZenFS (main-thread volume writes) ──────────────────
+    // ── 1. Clear OPFS (main-thread volume writes) ──────────────────
     const volumeRoot = `/volumes/${volumeName}`;
     try {
       const walkAndDelete = async (dir: string): Promise<void> => {
@@ -1261,7 +1261,7 @@ export class PackExecutor {
    * Collect all files from a named volume.
    *
    * Volume data may live in two places depending on whether the pack ran on
-   * the main thread (ZenFS → `stark-orchestrator` IndexedDB) or inside a
+   * the main thread (OPFS → `stark-orchestrator` directory) or inside a
    * Web Worker (`stark-volumes` raw IndexedDB, object-store `files`).
    *
    * This method checks both stores and merges the results, preferring the
@@ -1270,8 +1270,8 @@ export class PackExecutor {
   async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
     this.ensureInitialized();
 
-    // ── 1. ZenFS (main-thread volume writes) ──────────────────────────
-    const zenFiles = new Map<string, VolumeFileEntry>();
+    // ── 1. OPFS (main-thread volume writes) ──────────────────────────
+    const opfsFiles = new Map<string, VolumeFileEntry>();
     const volumeRoot = `/volumes/${volumeName}`;
 
     const walk = async (dir: string, prefix: string): Promise<void> => {
@@ -1297,7 +1297,7 @@ export class PackExecutor {
               const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
               parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
             }
-            zenFiles.set(relativePath, { path: relativePath, data: btoa(parts.join('')) });
+            opfsFiles.set(relativePath, { path: relativePath, data: btoa(parts.join('')) });
           }
         } catch {
           // Skip unreadable entries
@@ -1317,7 +1317,7 @@ export class PackExecutor {
     const rawFiles = await this.collectRawIdbVolumeFiles(volumeName);
 
     // ── 3. Merge — raw IDB wins on duplicate paths ────────────────────
-    const merged = new Map<string, VolumeFileEntry>(zenFiles);
+    const merged = new Map<string, VolumeFileEntry>(opfsFiles);
     for (const entry of rawFiles) {
       merged.set(entry.path, entry);
     }

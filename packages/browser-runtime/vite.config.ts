@@ -44,6 +44,6 @@ export default defineConfig({
   },
   // Optimize dependencies for browser bundling
   optimizeDeps: {
-    include: ['@zenfs/core', '@zenfs/dom', 'axios'],
+    include: ['axios'],
   },
 });

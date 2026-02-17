@@ -1,8 +1,6 @@
 // Stark Orchestrator - Browser Runtime
-// Storage Adapter using ZenFS with IndexedDB backend
+// Storage Adapter using Origin Private File System (OPFS)
 
-import { IndexedDB } from '@zenfs/dom';
-import { fs as zenFs, configureSingle } from '@zenfs/core';
 import type {
   IStorageAdapter,
   FileStats,
@@ -21,22 +19,23 @@ export interface BrowserStorageConfig extends StorageAdapterConfig {
   rootPath?: string;
 
   /**
-   * The name of the IndexedDB database to use.
+   * The name of the OPFS subdirectory to use as root.
    * @default 'stark-orchestrator'
    */
   storeName?: string;
 }
 
 /**
- * Browser storage adapter wrapping ZenFS with IndexedDB backend.
+ * Browser storage adapter using the Origin Private File System (OPFS).
  * Provides a unified file system interface for pack execution in browsers.
  *
  * Note: This implementation only provides async methods since
- * IndexedDB does not support synchronous operations.
+ * OPFS does not support synchronous operations outside of Web Workers.
  */
 export class StorageAdapter implements IStorageAdapter {
   private readonly config: Required<BrowserStorageConfig>;
   private initialized: boolean = false;
+  private rootHandle: FileSystemDirectoryHandle | null = null;
 
   constructor(config: BrowserStorageConfig = {}) {
     this.config = {
@@ -46,7 +45,7 @@ export class StorageAdapter implements IStorageAdapter {
   }
 
   /**
-   * Initialize the storage adapter with IndexedDB backend.
+   * Initialize the storage adapter with OPFS backend.
    * Must be called before using any file system operations.
    */
   async initialize(): Promise<void> {
@@ -54,10 +53,11 @@ export class StorageAdapter implements IStorageAdapter {
       return;
     }
 
-    await configureSingle({
-      backend: IndexedDB,
-      storeName: this.config.storeName,
-    });
+    const opfsRoot = await navigator.storage.getDirectory();
+    this.rootHandle = await opfsRoot.getDirectoryHandle(
+      this.config.storeName,
+      { create: true },
+    );
 
     this.initialized = true;
   }
@@ -73,7 +73,7 @@ export class StorageAdapter implements IStorageAdapter {
    * Ensure the adapter is initialized before operations.
    */
   private ensureInitialized(): void {
-    if (!this.initialized) {
+    if (!this.initialized || !this.rootHandle) {
       throw new Error(
         'StorageAdapter not initialized. Call initialize() first.',
       );
@@ -100,6 +100,69 @@ export class StorageAdapter implements IStorageAdapter {
     return root + path;
   }
 
+  /**
+   * Split a resolved path into non-empty segments.
+   */
+  private getPathParts(resolvedPath: string): string[] {
+    return resolvedPath.split('/').filter((part) => part.length > 0);
+  }
+
+  /**
+   * Navigate to a directory handle by path.
+   * @param resolvedPath - The resolved path
+   * @param create - Whether to create directories along the way
+   */
+  private async getDirectoryHandle(
+    resolvedPath: string,
+    create: boolean = false,
+  ): Promise<FileSystemDirectoryHandle> {
+    const parts = this.getPathParts(resolvedPath);
+    let handle = this.rootHandle!;
+    for (const part of parts) {
+      handle = await handle.getDirectoryHandle(part, { create });
+    }
+    return handle;
+  }
+
+  /**
+   * Navigate to a file handle by path.
+   * @param resolvedPath - The resolved path
+   * @param create - Whether to create the file and parent directories
+   */
+  private async getFileHandle(
+    resolvedPath: string,
+    create: boolean = false,
+  ): Promise<FileSystemFileHandle> {
+    const parts = this.getPathParts(resolvedPath);
+    if (parts.length === 0) {
+      throw new Error('Cannot open root as a file');
+    }
+    const fileName = parts.pop()!;
+    let dirHandle = this.rootHandle!;
+    for (const part of parts) {
+      dirHandle = await dirHandle.getDirectoryHandle(part, { create });
+    }
+    return dirHandle.getFileHandle(fileName, { create });
+  }
+
+  /**
+   * Get the parent directory handle and entry name for a path.
+   */
+  private async getParentAndName(
+    resolvedPath: string,
+  ): Promise<{ parent: FileSystemDirectoryHandle; name: string }> {
+    const parts = this.getPathParts(resolvedPath);
+    if (parts.length === 0) {
+      throw new Error('Cannot operate on root path');
+    }
+    const name = parts.pop()!;
+    let parent = this.rootHandle!;
+    for (const part of parts) {
+      parent = await parent.getDirectoryHandle(part);
+    }
+    return { parent, name };
+  }
+
   // ============================================
   // File Reading Operations
   // ============================================
@@ -115,7 +178,9 @@ export class StorageAdapter implements IStorageAdapter {
   ): Promise<string> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    return zenFs.promises.readFile(resolvedPath, encoding);
+    const fileHandle = await this.getFileHandle(resolvedPath);
+    const file = await fileHandle.getFile();
+    return file.text();
   }
 
   /**
@@ -125,7 +190,9 @@ export class StorageAdapter implements IStorageAdapter {
   async readFileBytes(path: string): Promise<Uint8Array> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    return new Uint8Array(await zenFs.promises.readFile(resolvedPath));
+    const fileHandle = await this.getFileHandle(resolvedPath);
+    const file = await fileHandle.getFile();
+    return new Uint8Array(await file.arrayBuffer());
   }
 
   // ============================================
@@ -145,7 +212,15 @@ export class StorageAdapter implements IStorageAdapter {
   ): Promise<void> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    await zenFs.promises.writeFile(resolvedPath, content, { encoding });
+    const fileHandle = await this.getFileHandle(resolvedPath, true);
+    const writable = await fileHandle.createWritable();
+    if (typeof content === 'string') {
+      const encoder = new TextEncoder();
+      await writable.write(encoder.encode(content));
+    } else {
+      await writable.write(content);
+    }
+    await writable.close();
   }
 
   /**
@@ -161,7 +236,32 @@ export class StorageAdapter implements IStorageAdapter {
   ): Promise<void> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    await zenFs.promises.appendFile(resolvedPath, content, { encoding });
+
+    // Read existing content
+    let existingBytes: Uint8Array;
+    try {
+      const fileHandle = await this.getFileHandle(resolvedPath);
+      const file = await fileHandle.getFile();
+      existingBytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      existingBytes = new Uint8Array(0);
+    }
+
+    // Encode new content
+    const newBytes =
+      typeof content === 'string'
+        ? new TextEncoder().encode(content)
+        : content;
+
+    // Combine and write
+    const combined = new Uint8Array(existingBytes.length + newBytes.length);
+    combined.set(existingBytes);
+    combined.set(newBytes, existingBytes.length);
+
+    const fileHandle = await this.getFileHandle(resolvedPath, true);
+    const writable = await fileHandle.createWritable();
+    await writable.write(combined);
+    await writable.close();
   }
 
   // ============================================
@@ -176,7 +276,12 @@ export class StorageAdapter implements IStorageAdapter {
   async mkdir(path: string, recursive: boolean = true): Promise<void> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    await zenFs.promises.mkdir(resolvedPath, { recursive });
+    if (recursive) {
+      await this.getDirectoryHandle(resolvedPath, true);
+    } else {
+      const { parent, name } = await this.getParentAndName(resolvedPath);
+      await parent.getDirectoryHandle(name, { create: true });
+    }
   }
 
   /**
@@ -186,7 +291,12 @@ export class StorageAdapter implements IStorageAdapter {
   async readdir(path: string): Promise<string[]> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    return zenFs.promises.readdir(resolvedPath);
+    const dirHandle = await this.getDirectoryHandle(resolvedPath);
+    const entries: string[] = [];
+    for await (const key of dirHandle.keys()) {
+      entries.push(key);
+    }
+    return entries;
   }
 
   /**
@@ -196,7 +306,18 @@ export class StorageAdapter implements IStorageAdapter {
   async readdirWithTypes(path: string): Promise<DirectoryEntry[]> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    return zenFs.promises.readdir(resolvedPath, { withFileTypes: true });
+    const dirHandle = await this.getDirectoryHandle(resolvedPath);
+    const entries: DirectoryEntry[] = [];
+    for await (const [name, handle] of dirHandle.entries()) {
+      const isFileEntry = handle.kind === 'file';
+      entries.push({
+        name,
+        isFile: () => isFileEntry,
+        isDirectory: () => !isFileEntry,
+        isSymbolicLink: () => false,
+      });
+    }
+    return entries;
   }
 
   /**
@@ -207,11 +328,8 @@ export class StorageAdapter implements IStorageAdapter {
   async rmdir(path: string, recursive: boolean = false): Promise<void> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    if (recursive) {
-      await zenFs.promises.rm(resolvedPath, { recursive: true, force: true });
-    } else {
-      await zenFs.promises.rmdir(resolvedPath);
-    }
+    const { parent, name } = await this.getParentAndName(resolvedPath);
+    await parent.removeEntry(name, { recursive });
   }
 
   // ============================================
@@ -225,9 +343,23 @@ export class StorageAdapter implements IStorageAdapter {
   async exists(path: string): Promise<boolean> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
+    const parts = this.getPathParts(resolvedPath);
+    if (parts.length === 0) {
+      return true; // Root always exists
+    }
+    const name = parts.pop()!;
     try {
-      await zenFs.promises.access(resolvedPath);
-      return true;
+      let parent = this.rootHandle!;
+      for (const part of parts) {
+        parent = await parent.getDirectoryHandle(part);
+      }
+      try {
+        await parent.getFileHandle(name);
+        return true;
+      } catch {
+        await parent.getDirectoryHandle(name);
+        return true;
+      }
     } catch {
       return false;
     }
@@ -240,7 +372,59 @@ export class StorageAdapter implements IStorageAdapter {
   async stat(path: string): Promise<FileStats> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    return zenFs.promises.stat(resolvedPath);
+    const parts = this.getPathParts(resolvedPath);
+
+    // Root directory
+    if (parts.length === 0) {
+      const now = new Date();
+      return {
+        size: 0,
+        isFile: () => false,
+        isDirectory: () => true,
+        isSymbolicLink: () => false,
+        atime: now,
+        mtime: now,
+        birthtime: now,
+        mode: 0o755,
+      };
+    }
+
+    const name = parts.pop()!;
+    let parent = this.rootHandle!;
+    for (const part of parts) {
+      parent = await parent.getDirectoryHandle(part);
+    }
+
+    // Try as file first
+    try {
+      const fileHandle = await parent.getFileHandle(name);
+      const file = await fileHandle.getFile();
+      const lastModified = new Date(file.lastModified);
+      return {
+        size: file.size,
+        isFile: () => true,
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        atime: lastModified,
+        mtime: lastModified,
+        birthtime: lastModified,
+        mode: 0o644,
+      };
+    } catch {
+      // Try as directory
+      await parent.getDirectoryHandle(name);
+      const now = new Date();
+      return {
+        size: 0,
+        isFile: () => false,
+        isDirectory: () => true,
+        isSymbolicLink: () => false,
+        atime: now,
+        mtime: now,
+        birthtime: now,
+        mode: 0o755,
+      };
+    }
   }
 
   /**
@@ -250,19 +434,22 @@ export class StorageAdapter implements IStorageAdapter {
   async unlink(path: string): Promise<void> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
-    await zenFs.promises.unlink(resolvedPath);
+    const { parent, name } = await this.getParentAndName(resolvedPath);
+    await parent.removeEntry(name);
   }
 
   /**
-   * Rename/move a file or directory.
+   * Rename/move a file.
+   * Note: Only supports files. Directory rename is not supported in OPFS.
    * @param oldPath - Current path (relative to root path)
    * @param newPath - New path (relative to root path)
    */
   async rename(oldPath: string, newPath: string): Promise<void> {
     this.ensureInitialized();
-    const resolvedOldPath = this.resolvePath(oldPath);
-    const resolvedNewPath = this.resolvePath(newPath);
-    await zenFs.promises.rename(resolvedOldPath, resolvedNewPath);
+    // OPFS does not support rename directly; copy + delete
+    const content = await this.readFileBytes(oldPath);
+    await this.writeFile(newPath, content);
+    await this.unlink(oldPath);
   }
 
   /**
@@ -272,9 +459,8 @@ export class StorageAdapter implements IStorageAdapter {
    */
   async copyFile(src: string, dest: string): Promise<void> {
     this.ensureInitialized();
-    const resolvedSrc = this.resolvePath(src);
-    const resolvedDest = this.resolvePath(dest);
-    await zenFs.promises.copyFile(resolvedSrc, resolvedDest);
+    const content = await this.readFileBytes(src);
+    await this.writeFile(dest, content);
   }
 
   // ============================================
@@ -288,9 +474,18 @@ export class StorageAdapter implements IStorageAdapter {
   async isFile(path: string): Promise<boolean> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
+    const parts = this.getPathParts(resolvedPath);
+    if (parts.length === 0) {
+      return false;
+    }
     try {
-      const stats = await zenFs.promises.stat(resolvedPath);
-      return stats.isFile();
+      const name = parts.pop()!;
+      let parent = this.rootHandle!;
+      for (const part of parts) {
+        parent = await parent.getDirectoryHandle(part);
+      }
+      await parent.getFileHandle(name);
+      return true;
     } catch {
       return false;
     }
@@ -303,25 +498,25 @@ export class StorageAdapter implements IStorageAdapter {
   async isDirectory(path: string): Promise<boolean> {
     this.ensureInitialized();
     const resolvedPath = this.resolvePath(path);
+    const parts = this.getPathParts(resolvedPath);
+    if (parts.length === 0) {
+      return true; // Root is always a directory
+    }
     try {
-      const stats = await zenFs.promises.stat(resolvedPath);
-      return stats.isDirectory();
+      const name = parts.pop()!;
+      let parent = this.rootHandle!;
+      for (const part of parts) {
+        parent = await parent.getDirectoryHandle(part);
+      }
+      await parent.getDirectoryHandle(name);
+      return true;
     } catch {
       return false;
     }
   }
 
   /**
-   * Get the raw ZenFS interface for advanced operations.
-   * @returns The ZenFS fs module
-   */
-  getRawFs(): typeof zenFs {
-    this.ensureInitialized();
-    return zenFs;
-  }
-
-  /**
-   * Get the store name (IndexedDB database name).
+   * Get the store name (OPFS subdirectory name).
    */
   getStoreName(): string {
     return this.config.storeName;

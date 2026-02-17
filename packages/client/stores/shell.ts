@@ -43,7 +43,7 @@ const MOBILE_BREAKPOINT = 768;
 const DEFAULT_WINDOW_W = 800;
 const DEFAULT_WINDOW_H = 500;
 const TASKBAR_HEIGHT = 48;
-let idCounter = 0;
+let idCounter = 1; // starts at 1 because default workspace is 'ws-1'
 
 /* ─── Store ─── */
 

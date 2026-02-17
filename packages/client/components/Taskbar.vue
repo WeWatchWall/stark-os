@@ -9,8 +9,8 @@
       <span class="conn-dot" :class="connectionState" :title="connectionState" />
     </div>
 
-    <!-- Center: window tabs (desktop only) -->
-    <div v-if="shell.layoutMode === 'desktop'" class="taskbar-center">
+    <!-- Center: window tabs -->
+    <div class="taskbar-center">
       <button
         v-for="win in shell.activeWindows"
         :key="win.id"

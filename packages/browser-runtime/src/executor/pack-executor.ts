@@ -657,11 +657,12 @@ export class PackExecutor {
 
         // Execute on main thread WITHOUT blocking - yield to event loop first
         // This ensures the execute() call returns immediately with the ExecutionHandle
-        // and the actual pack execution happens in a subsequent microtask
+        // and the actual pack execution happens in a subsequent macrotask.
+        // We use setTimeout(0) instead of queueMicrotask so that Vue's reactive DOM
+        // updates (which use microtasks/Promise.then) flush before the pack runs.
+        // This ensures containerIdProvider's DOM elements are rendered first.
         const mainThreadResult = await new Promise<PackExecutionResult>((resolve, reject) => {
-          // Use queueMicrotask to yield control back to the event loop
-          // This allows the caller to receive the ExecutionHandle before execution starts
-          queueMicrotask(() => {
+          setTimeout(() => {
             this.executeOnMainThread(bundleCode, context, args, state.logSink)
               .then((result) => {
                 resolve({
@@ -674,7 +675,7 @@ export class PackExecutor {
                 });
               })
               .catch(reject);
-          });
+          }, 0);
         });
         
         return mainThreadResult;
@@ -1055,13 +1056,30 @@ export class PackExecutor {
         const cid = this.config.containerIdProvider(context.podId, context.packName);
         if (cid) {
           (context as Record<string, unknown>).containerId = cid;
+          const el = typeof document !== 'undefined' ? document.getElementById(cid) : null;
+          this.config.logger.info('[shell-debug] containerIdProvider returned', {
+            containerId: cid,
+            elementFound: !!el,
+            podId: context.podId,
+            packName: context.packName,
+          });
         }
       }
 
       // Execute the entrypoint
+      this.config.logger.info('[shell-debug] Calling pack entrypoint', {
+        entrypoint,
+        hasContainerId: !!(context as Record<string, unknown>).containerId,
+        podId: context.podId,
+      });
       const result: unknown = await Promise.resolve(
         (entrypointFn as (ctx: PackExecutionContext, ...args: unknown[]) => unknown)(context, ...args)
       );
+      this.config.logger.info('[shell-debug] Pack entrypoint returned', {
+        resultType: typeof result,
+        resultKeys: result && typeof result === 'object' ? Object.keys(result) : [],
+        podId: context.podId,
+      });
       return result;
     } finally {
       // Restore original console methods

@@ -240,7 +240,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
   }
 
   // Auth routes with progressive throttling always enabled, plus hard rate limit (no /api prefix - directly at /auth)
-  router.use('/auth', authThrottleMiddleware, authRateLimiter, createAuthRouter());
+  router.use('/auth', authRateLimiter, authThrottleMiddleware, createAuthRouter());
 
   // Protected API routes
   apiRouter.use('/packs', createPacksRouter());

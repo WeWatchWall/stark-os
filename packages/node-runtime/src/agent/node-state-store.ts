@@ -39,8 +39,6 @@ export interface NodeCredentials {
   userId: string;
   /** The email used for this credential */
   email: string;
-  /** The password for re-login when refresh tokens expire (encrypted at rest via file permissions) */
-  password?: string;
   /** Timestamp when credentials were created */
   createdAt: string;
 }

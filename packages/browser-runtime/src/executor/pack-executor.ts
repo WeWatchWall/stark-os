@@ -1062,31 +1062,13 @@ export class PackExecutor {
           // reactive store; without this yield the DOM element won't exist yet when
           // the pack entry function calls document.getElementById(containerId).
           await new Promise<void>((r) => setTimeout(r, 0));
-
-          const el = typeof document !== 'undefined' ? document.getElementById(cid) : null;
-          this.config.logger.info('[shell-debug] containerIdProvider returned', {
-            containerId: cid,
-            elementFound: !!el,
-            podId: context.podId,
-            packName: context.packName,
-          });
         }
       }
 
       // Execute the entrypoint
-      this.config.logger.info('[shell-debug] Calling pack entrypoint', {
-        entrypoint,
-        hasContainerId: !!(context as Record<string, unknown>).containerId,
-        podId: context.podId,
-      });
       const result: unknown = await Promise.resolve(
         (entrypointFn as (ctx: PackExecutionContext, ...args: unknown[]) => unknown)(context, ...args)
       );
-      this.config.logger.info('[shell-debug] Pack entrypoint returned', {
-        resultType: typeof result,
-        resultKeys: result && typeof result === 'object' ? Object.keys(result) : [],
-        podId: context.podId,
-      });
       return result;
     } finally {
       // Restore original console methods

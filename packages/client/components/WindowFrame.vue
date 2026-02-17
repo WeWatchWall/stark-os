@@ -39,13 +39,8 @@
     </div>
 
     <!-- Surface mount: iframe container -->
-    <div class="surface" :id="win.containerId" ref="surfaceRef">
+    <div class="surface" :id="win.containerId">
       <!-- Pods attach iframes here via the containerId -->
-      <!-- Debug: show containerId so we can verify DOM availability -->
-      <div v-if="!hasSurfaceContent" class="surface-debug">
-        <span class="debug-id">{{ win.containerId }}</span>
-        <span class="debug-waiting">Waiting for pack…</span>
-      </div>
     </div>
 
     <!-- Resize handles (desktop + not maximized only) -->
@@ -66,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref } from 'vue';
 import { useShellStore, type ShellWindow } from '~/stores/shell';
 
 const props = defineProps<{ win: ShellWindow }>();
@@ -82,28 +77,6 @@ const firstHalfIcon = computed(() => shell.isPortrait ? '⬆' : '⬅');
 const secondHalfIcon = computed(() => shell.isPortrait ? '⬇' : '➡');
 
 const interacting = ref(false);
-
-/* Surface content detection — hides the debug placeholder once pack renders */
-const surfaceRef = ref<HTMLElement | null>(null);
-const hasSurfaceContent = ref(false);
-let surfaceObserver: MutationObserver | null = null;
-
-onMounted(() => {
-  if (surfaceRef.value) {
-    surfaceObserver = new MutationObserver(() => {
-      // Check if a child iframe or non-debug element was added
-      const el = surfaceRef.value;
-      if (el && el.querySelector('iframe')) {
-        hasSurfaceContent.value = true;
-      }
-    });
-    surfaceObserver.observe(surfaceRef.value, { childList: true, subtree: true });
-  }
-});
-
-onUnmounted(() => {
-  surfaceObserver?.disconnect();
-});
 
 /* ── Computed style ── */
 const frameStyle = computed(() => {
@@ -261,7 +234,7 @@ function startResize(e: MouseEvent, edge: Edge) {
 .surface {
   flex: 1;
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   background: #111827;
 }
 .surface :deep(iframe) {
@@ -269,26 +242,6 @@ function startResize(e: MouseEvent, edge: Edge) {
   height: 100%;
   border: none;
   display: block;
-}
-.surface-debug {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: 6px;
-  opacity: 0.4;
-  user-select: none;
-}
-.debug-id {
-  font-family: monospace;
-  font-size: 0.7rem;
-  color: #64748b;
-}
-.debug-waiting {
-  font-size: 0.75rem;
-  color: #475569;
-  animation: pulse 1.5s ease-in-out infinite;
 }
 
 /* ── Resize handles ── */
@@ -365,10 +318,5 @@ function startResize(e: MouseEvent, edge: Edge) {
   height: calc(100vh - 48px) !important;
   border-radius: 0;
   border: none;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
 }
 </style>

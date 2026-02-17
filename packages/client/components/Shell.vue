@@ -5,11 +5,12 @@
 
     <!-- Desktop area -->
     <div class="desktop">
-      <!-- Windows -->
+      <!-- Render ALL windows; hide those not on active workspace via v-show -->
       <WindowFrame
-        v-for="win in shell.activeWindows"
+        v-for="win in shell.windows"
         :key="win.id"
         :win="win"
+        v-show="win.workspaceId === shell.activeWorkspaceId"
       />
 
       <!-- Empty state -->

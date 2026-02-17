@@ -58,13 +58,33 @@ export const useShellStore = defineStore('shell', () => {
     () => manualOverride.value ?? autoLayoutMode.value,
   );
 
-  function setManualLayoutMode(mode: LayoutMode | null) {
-    manualOverride.value = mode;
-  }
-
   function detectLayoutMode() {
     if (typeof window !== 'undefined') {
+      const prev = layoutMode.value;
       autoLayoutMode.value = window.innerWidth < MOBILE_BREAKPOINT ? 'mobile' : 'desktop';
+      const next = layoutMode.value;
+      if (prev !== next) syncWindowsForMode(next);
+    }
+  }
+
+  function setManualLayoutMode(mode: LayoutMode | null) {
+    const prev = layoutMode.value;
+    manualOverride.value = mode;
+    const next = layoutMode.value;
+    if (prev !== next) syncWindowsForMode(next);
+  }
+
+  /** Reconcile window state when the layout mode changes */
+  function syncWindowsForMode(mode: LayoutMode) {
+    for (const win of windows.value) {
+      if (mode === 'mobile') {
+        // Moving to mobile: clear maximized, ensure mobileSnap is set
+        win.maximized = false;
+        if (!win.mobileSnap) win.mobileSnap = 'full';
+      } else {
+        // Moving to desktop: clear mobileSnap
+        win.mobileSnap = null;
+      }
     }
   }
 

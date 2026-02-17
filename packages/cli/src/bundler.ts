@@ -460,7 +460,7 @@ module.exports.default = async function(context) {
     }
     var iframe = document.createElement('iframe');
     iframe.id = containerId + '-frame';
-    iframe.style.cssText = 'width:100%;border:none;display:block;min-height:100px;';
+    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
     if (context.style) { Object.assign(iframe.style, context.style); }
     container.innerHTML = '';
     container.appendChild(iframe);

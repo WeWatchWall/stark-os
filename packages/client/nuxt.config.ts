@@ -49,6 +49,9 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
   
+  // Pinia for global UI state
+  modules: ['@pinia/nuxt'],
+  
   // Generate static files for production
   ssr: false,
   

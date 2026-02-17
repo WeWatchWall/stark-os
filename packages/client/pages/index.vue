@@ -3,8 +3,7 @@
     <!-- Login/Register Screen -->
     <div v-if="!isAuthenticated" class="auth-container">
       <div class="auth-card">
-        <img src="~/assets/Logo.png" alt="Stark Orchestrator" class="logo" />
-        <h1 class="auth-title">Stark Orchestrator</h1>
+        <img src="~/assets/Logo.png" alt="StarkOS" class="logo" />
 
         <!-- Login Form -->
         <form v-if="authMode === 'login'" @submit.prevent="handleLogin" class="auth-form">
@@ -93,7 +92,7 @@
     <!-- Main Dashboard (after login) -->
     <div v-else class="dashboard-container">
       <h1>Hello World</h1>
-      <p>Welcome to Stark Orchestrator</p>
+      <p>Welcome to StarkOS</p>
       <div class="status">
         <span class="status-indicator" :class="connectionState"></span>
         <span>Node: production-browser-1 ({{ connectionState }})</span>
@@ -403,7 +402,7 @@ onUnmounted(async () => {
 }
 
 .logo {
-  width: 120px;
+  width: 300px;
   height: auto;
   margin-bottom: 1rem;
 }

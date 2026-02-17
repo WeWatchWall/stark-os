@@ -1,7 +1,7 @@
 {
   "name": "@stark-o/client",
   "version": "0.0.1",
-  "description": "Web client for Stark Orchestrator built with Nuxt",
+  "description": "Web client for StarkOS built with Nuxt",
   "private": true,
   "type": "module",
   "scripts": {

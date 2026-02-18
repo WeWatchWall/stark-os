@@ -92,22 +92,19 @@ export const useShellStore = defineStore('shell', () => {
         win.mobileSnap = null;
       }
     }
-    // On mobile, hide taskbar by default; on desktop, always show
-    taskbarVisible.value = mode !== 'mobile';
+    // Taskbar is always visible regardless of mode
   }
 
   /** True when screen is taller than wide (portrait orientation) */
   const isPortrait = computed(() => windowHeight.value > windowWidth.value);
 
-  /** Taskbar hidden by default on mobile, always visible on desktop */
-  const taskbarVisible = ref(
-    typeof window !== 'undefined' ? window.innerWidth >= MOBILE_BREAKPOINT : true,
-  );
+  /** Taskbar is always visible */
+  const taskbarVisible = ref(true);
 
-  /** Taskbar position: 'top' for desktop/landscape, 'left' for portrait mobile */
+  /** Taskbar position: 'top' for desktop, 'left' for mobile (any orientation) */
   const taskbarPosition = computed<'top' | 'left'>(() => {
     if (layoutMode.value === 'desktop') return 'top';
-    return isPortrait.value ? 'left' : 'top';
+    return 'left';
   });
 
   function showTaskbar() { taskbarVisible.value = true; }

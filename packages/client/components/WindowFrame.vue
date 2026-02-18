@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useShellStore, type ShellWindow } from '~/stores/shell';
 
 const props = defineProps<{ win: ShellWindow }>();
@@ -100,6 +100,11 @@ function toggleMax() {
   // Nudge iframe after Vue flushes the size change
   setTimeout(nudgeIframe, 0);
 }
+
+/* Nudge iframe whenever mobile snap, maximized state, or orientation changes */
+watch(() => props.win.mobileSnap, () => setTimeout(nudgeIframe, 0));
+watch(() => props.win.maximized, () => setTimeout(nudgeIframe, 0));
+watch(() => shell.isPortrait, () => setTimeout(nudgeIframe, 0));
 
 /* ── Computed style ── */
 const frameStyle = computed(() => {
@@ -293,53 +298,53 @@ function startResize(e: MouseEvent, edge: Edge) {
   border: none;
 }
 
-/* ── Mobile full-screen (taskbar overlays, windows use full viewport) ── */
+/* ── Mobile full-screen (fills .desktop container which accounts for taskbar) ── */
 .window-frame.mobile-full {
-  position: fixed !important;
+  position: absolute !important;
   top: 0 !important;
   left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
+  width: 100% !important;
+  height: 100% !important;
   border-radius: 0;
   border: none;
 }
 
 /* Portrait: split top / bottom */
 .window-frame.mobile-half-first.portrait {
-  position: fixed !important;
+  position: absolute !important;
   top: 0 !important;
   left: 0 !important;
-  width: 100vw !important;
-  height: 50vh !important;
+  width: 100% !important;
+  height: 50% !important;
   border-radius: 0;
   border: none;
 }
 .window-frame.mobile-half-second.portrait {
-  position: fixed !important;
-  top: 50vh !important;
+  position: absolute !important;
+  top: 50% !important;
   left: 0 !important;
-  width: 100vw !important;
-  height: 50vh !important;
+  width: 100% !important;
+  height: 50% !important;
   border-radius: 0;
   border: none;
 }
 
 /* Landscape: split left / right */
 .window-frame.mobile-half-first.landscape {
-  position: fixed !important;
+  position: absolute !important;
   top: 0 !important;
   left: 0 !important;
-  width: 50vw !important;
-  height: 100vh !important;
+  width: 50% !important;
+  height: 100% !important;
   border-radius: 0;
   border: none;
 }
 .window-frame.mobile-half-second.landscape {
-  position: fixed !important;
+  position: absolute !important;
   top: 0 !important;
-  left: 50vw !important;
-  width: 50vw !important;
-  height: 100vh !important;
+  left: 50% !important;
+  width: 50% !important;
+  height: 100% !important;
   border-radius: 0;
   border: none;
 }

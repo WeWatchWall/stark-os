@@ -1,5 +1,5 @@
 <template>
-  <header class="taskbar" :class="{ vertical: shell.taskbarPosition === 'left', 'taskbar-hidden': shell.layoutMode === 'mobile' && !shell.taskbarVisible }">
+  <header class="taskbar" :class="{ vertical: shell.taskbarPosition === 'left' }">
     <!-- Left: Logo / brand -->
     <div class="taskbar-left">
       <img src="~/assets/Logo2.png" alt="StarkOS" class="taskbar-logo" />
@@ -102,8 +102,11 @@ function toggleLayout() {
   flex-shrink: 0;
 }
 .taskbar-logo {
-  height: 26px;
+  height: 100%;
   width: auto;
+  object-fit: contain;
+  padding: 4px 0;
+  box-sizing: border-box;
 }
 .taskbar-title {
   color: #cbd5e1;
@@ -206,9 +209,10 @@ function toggleLayout() {
 .taskbar.vertical {
   flex-direction: column;
   width: 48px;
-  height: 100vh;
-  right: auto;
+  height: auto;
+  top: 0;
   bottom: 0;
+  right: auto;
   padding: 8px 0;
   align-items: center;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4);
@@ -219,7 +223,11 @@ function toggleLayout() {
   width: 100%;
   align-items: center;
 }
-.taskbar.vertical .taskbar-logo { height: 20px; }
+.taskbar.vertical .taskbar-logo {
+  height: auto;
+  width: 100%;
+  padding: 4px;
+}
 .taskbar.vertical .taskbar-title { display: none; }
 .taskbar.vertical .taskbar-center {
   flex-direction: column;

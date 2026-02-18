@@ -412,6 +412,7 @@ onMounted(async () => {
     if (!trimmed) return;
     commandHistory.push(trimmed);
     historyIndex = commandHistory.length;
+    savedLine = '';
     saveHistory();
     const plan = parseCommandLine(trimmed);
     const write = (text: string) => { term.write(text.replaceAll('\n', '\r\n')); };
@@ -439,7 +440,7 @@ onMounted(async () => {
         const completion = matches[0]!.slice(lastPart.length) + ' ';
         // Guard: skip if this match was already completed
         const beforeCursor = currentLine.slice(0, cursorPos);
-        if (lastPart === '' && beforeCursor.endsWith(matches[0]! + ' ')) {
+        if (beforeCursor.endsWith(matches[0]! + ' ')) {
           // Already completed — do nothing
         } else {
           const newPos = cursorPos + completion.length;
@@ -490,7 +491,7 @@ onMounted(async () => {
           const fullCompletion = completion + suffix;
           // Guard: skip if this match was already completed (avoids duplicate insertions)
           const beforeCursor = currentLine.slice(0, cursorPos);
-          if (prefix === '' && (beforeCursor.endsWith(match + ' ') || beforeCursor.endsWith(match + '/'))) {
+          if (beforeCursor.endsWith(match + ' ') || beforeCursor.endsWith(match + '/')) {
             // Already completed — do nothing
           } else {
             const newPos = cursorPos + fullCompletion.length;

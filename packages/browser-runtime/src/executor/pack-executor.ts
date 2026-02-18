@@ -17,8 +17,6 @@ import { FetchAdapter, type BrowserHttpAdapterConfig } from '../adapters/fetch-a
 import {
   createServiceLogger,
   PodError,
-  requiresMainThread,
-  effectiveCapabilities,
   createPodLogSink,
   formatLogArgs,
   createEphemeralDataPlane,
@@ -34,6 +32,7 @@ import {
   type ShutdownHandler,
   type PodLogSink,
   type VolumeFileEntry,
+  type Capability,
 } from '@stark-o/shared';
 
 // Re-export for convenience
@@ -418,7 +417,8 @@ export class PackExecutor {
           const volumeRoot = `/volumes/${mount.name}`;
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           const fullPath = `${volumeRoot}/${relative}`;
-          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/'));
+          if (parentDir) await this.storageAdapter.mkdir(parentDir, true);
           await this.storageAdapter.writeFile(fullPath, content);
         },
         appendFile: async (filePath: string, content: string): Promise<void> => {
@@ -427,7 +427,8 @@ export class PackExecutor {
           const volumeRoot = `/volumes/${mount.name}`;
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           const fullPath = `${volumeRoot}/${relative}`;
-          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/'));
+          if (parentDir) await this.storageAdapter.mkdir(parentDir, true);
           await this.storageAdapter.appendFile(fullPath, content);
         },
       } : {}),
@@ -643,10 +644,12 @@ export class PackExecutor {
       state.status = 'running';
 
       // Check if pack has root capability - run on main thread instead of Web Worker
-      // Root packs need main thread access for DOM manipulation and UI rendering
-      // Use effectiveCapabilities to intersect requested with granted capabilities
-      const caps = effectiveCapabilities(pack.metadata?.requestedCapabilities, pack.grantedCapabilities ?? []);
-      const hasRootCapability = requiresMainThread(caps);
+      // Root packs need main thread access for DOM manipulation and UI rendering.
+      // Only run on main thread when the pack EXPLICITLY requests root capability.
+      // Using effectiveCapabilities(requested, granted) would return ALL granted caps
+      // when requested is undefined, causing non-root packs to run on main thread.
+      const requestedCaps: Capability[] = pack.metadata?.requestedCapabilities ?? [];
+      const hasRootCapability = requestedCaps.includes('root');
 
       if (hasRootCapability) {
         this.config.logger.info('Executing pack on main thread (root capability)', {

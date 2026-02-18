@@ -292,7 +292,14 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
       const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
       if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
       const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
-      const parts = `volumes/${mount.name}/${relative}`.split('/').filter(Boolean);
+      const rawParts = `volumes/${mount.name}/${relative}`.split('/').filter(Boolean);
+      // Normalize `.` and `..` — OPFS does not support them as entry names
+      const parts: string[] = [];
+      for (const p of rawParts) {
+        if (p === '.') continue;
+        if (p === '..') { parts.pop(); continue; }
+        parts.push(p);
+      }
       const fileName = parts.pop()!;
       let dir = await getStarkRoot();
       for (const part of parts) {

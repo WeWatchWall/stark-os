@@ -101,10 +101,18 @@ export class StorageAdapter implements IStorageAdapter {
   }
 
   /**
-   * Split a resolved path into non-empty segments.
+   * Split a resolved path into non-empty segments, normalizing `.` and `..`.
+   * OPFS does not support `.` or `..` as directory entry names.
    */
   private getPathParts(resolvedPath: string): string[] {
-    return resolvedPath.split('/').filter((part) => part.length > 0);
+    const raw = resolvedPath.split('/').filter((part) => part.length > 0);
+    const normalized: string[] = [];
+    for (const part of raw) {
+      if (part === '.') continue;
+      if (part === '..') { normalized.pop(); continue; }
+      normalized.push(part);
+    }
+    return normalized;
   }
 
   /**

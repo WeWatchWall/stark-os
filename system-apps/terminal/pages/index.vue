@@ -696,7 +696,14 @@ onBeforeUnmount(() => {
 
 function buildOpfsTerminalFS(rootHandle: FileSystemDirectoryHandle): TerminalFS {
   function getPathParts(resolvedPath: string): string[] {
-    return resolvedPath.split('/').filter(p => p.length > 0);
+    const raw = resolvedPath.split('/').filter(p => p.length > 0);
+    const normalized: string[] = [];
+    for (const part of raw) {
+      if (part === '.') continue;
+      if (part === '..') { normalized.pop(); continue; }
+      normalized.push(part);
+    }
+    return normalized;
   }
 
   async function getDirectoryHandle(resolvedPath: string, create = false): Promise<FileSystemDirectoryHandle> {

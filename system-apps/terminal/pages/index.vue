@@ -121,7 +121,7 @@ onMounted(async () => {
     env: {
       USER: 'user',
       HOME: '/home',
-      HOSTNAME: typeof location !== 'undefined' ? location.hostname || 'stark-os' : 'stark-os',
+      HOSTNAME: location.hostname || 'stark-os',
       SHELL: '/bin/sh',
       TERM: 'xterm-256color',
       PATH: '/usr/bin:/bin',
@@ -281,7 +281,7 @@ onMounted(async () => {
     let i = 0;
     while (i < data.length) {
       // ── Escape sequences (\x1b[X) ────────────────────────────────
-      if (data[i] === '\x1b' && data[i + 1] === '[') {
+      if (data[i] === '\x1b' && i + 2 < data.length && data[i + 1] === '[') {
         const code = data[i + 2];
         if (code === 'A') { // Up arrow — history back
           if (historyIndex > 0) {
@@ -324,7 +324,7 @@ onMounted(async () => {
           if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
           i += 3; continue;
         }
-        if (code === '3' && data[i + 3] === '~') { // Delete key
+        if (code === '3' && i + 3 < data.length && data[i + 3] === '~') { // Delete key
           if (cursorPos < currentLine.length) {
             currentLine = currentLine.slice(0, cursorPos) + currentLine.slice(cursorPos + 1);
             const rest = currentLine.slice(cursorPos);

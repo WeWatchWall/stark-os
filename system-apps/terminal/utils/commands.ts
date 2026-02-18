@@ -688,8 +688,14 @@ commands['mktemp'] = async (ctx) => {
   const template = ctx.args.find(a => !a.startsWith('-')) || 'tmp.XXXXXXXXXX';
   const name = template.replace(/X+/g, () => {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const arr = new Uint8Array(10);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      crypto.getRandomValues(arr);
+    } else {
+      for (let j = 0; j < arr.length; j++) arr[j] = Math.floor(Math.random() * 256);
+    }
     let r = '';
-    for (let i = 0; i < 10; i++) r += chars[Math.floor(Math.random() * chars.length)];
+    for (let j = 0; j < 10; j++) r += chars[arr[j]! % chars.length];
     return r;
   });
   const path = normalizePath(`/tmp/${name}`, ctx.cwd);

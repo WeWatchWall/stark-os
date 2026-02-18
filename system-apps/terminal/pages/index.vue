@@ -217,7 +217,7 @@ onMounted(async () => {
   // ============================================================================
 
   const commandHistory: string[] = [];
-  let historyIndex = -1;
+  let historyIndex = 0;
 
   try {
     const stored = localStorage.getItem('stark-terminal-history');
@@ -226,6 +226,7 @@ onMounted(async () => {
       if (Array.isArray(parsed)) commandHistory.push(...parsed);
     }
   } catch { /* ignore */ }
+  historyIndex = commandHistory.length;
 
   function saveHistory() {
     try { localStorage.setItem('stark-terminal-history', JSON.stringify(commandHistory.slice(-100))); } catch { /* ignore */ }
@@ -390,6 +391,17 @@ onMounted(async () => {
     try { await executePlan(plan, state, write); } catch { /* error already written */ }
   }
 
+  function findCommonPrefix(strings: string[]): string {
+    if (strings.length === 0) return '';
+    let prefix = strings[0]!;
+    for (let si = 1; si < strings.length; si++) {
+      while (!strings[si]!.startsWith(prefix)) {
+        prefix = prefix.slice(0, -1);
+      }
+    }
+    return prefix;
+  }
+
   async function handleTabCompletion() {
     const parts = currentLine.slice(0, cursorPos).split(' ');
     const lastPart = parts[parts.length - 1] || '';
@@ -402,11 +414,19 @@ onMounted(async () => {
         cursorPos += completion.length;
         redrawLine();
       } else if (matches.length > 1) {
-        term.writeln('');
-        term.writeln(matches.join('  '));
-        writePrompt();
-        term.write(currentLine);
-        if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+        const common = findCommonPrefix(matches);
+        const additionalChars = common.slice(lastPart.length);
+        if (additionalChars.length > 0) {
+          currentLine = currentLine.slice(0, cursorPos) + additionalChars + currentLine.slice(cursorPos);
+          cursorPos += additionalChars.length;
+          redrawLine();
+        } else {
+          term.writeln('');
+          term.writeln(matches.join('  '));
+          writePrompt();
+          term.write(currentLine);
+          if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+        }
       }
     } else {
       // Complete file/directory names from OPFS
@@ -433,11 +453,19 @@ onMounted(async () => {
           cursorPos += fullCompletion.length;
           redrawLine();
         } else if (matches.length > 1) {
-          term.writeln('');
-          term.writeln(matches.join('  '));
-          writePrompt();
-          term.write(currentLine);
-          if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+          const common = findCommonPrefix(matches);
+          const additionalChars = common.slice(prefix.length);
+          if (additionalChars.length > 0) {
+            currentLine = currentLine.slice(0, cursorPos) + additionalChars + currentLine.slice(cursorPos);
+            cursorPos += additionalChars.length;
+            redrawLine();
+          } else {
+            term.writeln('');
+            term.writeln(matches.join('  '));
+            writePrompt();
+            term.write(currentLine);
+            if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+          }
         }
       } catch { /* no completions available */ }
     }
@@ -589,33 +617,26 @@ onMounted(async () => {
             if (text) {
               // Strip control chars except \r\n, insert text
               const clean = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
-              // Find first newline to split paste into current line + execution
-              const nlIdx = clean.search(/[\r\n]/);
-              const firstLine = nlIdx === -1 ? clean : clean.slice(0, nlIdx);
-              currentLine = currentLine.slice(0, cursorPos) + firstLine + currentLine.slice(cursorPos);
-              cursorPos += firstLine.length;
-              redrawLine();
-              // If paste contained newlines, execute and continue with rest
-              if (nlIdx !== -1) {
-                term.writeln('');
-                isRunning = true;
-                try { await handleCommand(currentLine); }
-                finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
-                // Feed remaining lines back through the handler
-                const remaining = clean.slice(nlIdx + 1).replace(/^\n/, '');
-                if (remaining) {
-                  for (const ch of remaining) {
-                    if (ch === '\r' || ch === '\n') {
-                      term.writeln('');
-                      isRunning = true;
-                      try { await handleCommand(currentLine); }
-                      finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
-                    } else {
-                      currentLine = currentLine.slice(0, cursorPos) + ch + currentLine.slice(cursorPos);
-                      cursorPos++;
-                    }
+              // Split into lines for multiline paste
+              const lines = clean.split(/\r\n|\r|\n/);
+              for (let li = 0; li < lines.length; li++) {
+                const lineText = lines[li] || '';
+                if (lineText) {
+                  // Insert text at cursor position and write to terminal
+                  const afterCursor = currentLine.slice(cursorPos);
+                  currentLine = currentLine.slice(0, cursorPos) + lineText + afterCursor;
+                  term.write(lineText + afterCursor);
+                  cursorPos += lineText.length;
+                  if (afterCursor.length > 0) {
+                    term.write(`\x1B[${afterCursor.length}D`);
                   }
-                  if (currentLine) redrawLine();
+                }
+                // If there are more lines, execute current line and start next
+                if (li < lines.length - 1) {
+                  term.writeln('');
+                  isRunning = true;
+                  try { await handleCommand(currentLine); }
+                  finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
                 }
               }
             }

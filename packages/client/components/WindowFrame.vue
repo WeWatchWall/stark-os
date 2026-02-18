@@ -293,13 +293,13 @@ function startResize(e: MouseEvent, edge: Edge) {
   border: none;
 }
 
-/* ── Mobile full-screen ── */
+/* ── Mobile full-screen (taskbar overlays, windows use full viewport) ── */
 .window-frame.mobile-full {
   position: fixed !important;
-  top: 48px !important;
+  top: 0 !important;
   left: 0 !important;
   width: 100vw !important;
-  height: calc(100vh - 48px) !important;
+  height: 100vh !important;
   border-radius: 0;
   border: none;
 }
@@ -307,19 +307,19 @@ function startResize(e: MouseEvent, edge: Edge) {
 /* Portrait: split top / bottom */
 .window-frame.mobile-half-first.portrait {
   position: fixed !important;
-  top: 48px !important;
+  top: 0 !important;
   left: 0 !important;
   width: 100vw !important;
-  height: calc(50vh - 24px) !important;
+  height: 50vh !important;
   border-radius: 0;
   border: none;
 }
 .window-frame.mobile-half-second.portrait {
   position: fixed !important;
-  top: calc(50vh + 24px) !important;
+  top: 50vh !important;
   left: 0 !important;
   width: 100vw !important;
-  height: calc(50vh - 24px) !important;
+  height: 50vh !important;
   border-radius: 0;
   border: none;
 }
@@ -327,19 +327,19 @@ function startResize(e: MouseEvent, edge: Edge) {
 /* Landscape: split left / right */
 .window-frame.mobile-half-first.landscape {
   position: fixed !important;
-  top: 48px !important;
+  top: 0 !important;
   left: 0 !important;
   width: 50vw !important;
-  height: calc(100vh - 48px) !important;
+  height: 100vh !important;
   border-radius: 0;
   border: none;
 }
 .window-frame.mobile-half-second.landscape {
   position: fixed !important;
-  top: 48px !important;
+  top: 0 !important;
   left: 50vw !important;
   width: 50vw !important;
-  height: calc(100vh - 48px) !important;
+  height: 100vh !important;
   border-radius: 0;
   border: none;
 }

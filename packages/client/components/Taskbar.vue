@@ -1,5 +1,5 @@
 <template>
-  <header class="taskbar">
+  <header class="taskbar" :class="{ vertical: shell.taskbarPosition === 'left', 'taskbar-hidden': shell.layoutMode === 'mobile' && !shell.taskbarVisible }">
     <!-- Left: Logo / brand -->
     <div class="taskbar-left">
       <img src="~/assets/Logo2.png" alt="StarkOS" class="taskbar-logo" />
@@ -45,7 +45,7 @@
       </button>
 
       <!-- Sign out -->
-      <button class="icon-btn sign-out" title="Sign Out" aria-label="Sign Out" @click="$emit('signout')">⏻</button>
+      <button class="icon-btn sign-out" title="Sign Out" aria-label="Sign Out" @click="$emit('signout')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
     </div>
   </header>
 </template>
@@ -82,6 +82,16 @@ function toggleLayout() {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
   gap: 8px;
   user-select: none;
+  transition: transform 0.3s ease;
+}
+
+/* ── Hidden taskbar (mobile auto-hide) ── */
+.taskbar.taskbar-hidden {
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+.taskbar.vertical.taskbar-hidden {
+  transform: translateX(-100%);
 }
 
 /* Left */
@@ -190,5 +200,61 @@ function toggleLayout() {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* ── Vertical taskbar (portrait mobile) ── */
+.taskbar.vertical {
+  flex-direction: column;
+  width: 48px;
+  height: 100vh;
+  right: auto;
+  bottom: 0;
+  padding: 8px 0;
+  align-items: center;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4);
+}
+.taskbar.vertical .taskbar-left {
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  align-items: center;
+}
+.taskbar.vertical .taskbar-logo { height: 20px; }
+.taskbar.vertical .taskbar-title { display: none; }
+.taskbar.vertical .taskbar-center {
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+  width: 100%;
+  align-items: center;
+}
+.taskbar.vertical .tab-btn {
+  max-width: 40px;
+  padding: 6px 4px;
+  font-size: 0.6rem;
+  text-align: center;
+}
+.taskbar.vertical .taskbar-right {
+  flex-direction: column;
+  margin-left: 0;
+  margin-top: auto;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+}
+.taskbar.vertical .ws-picker {
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  align-items: center;
+}
+.taskbar.vertical .ws-btn {
+  max-width: 40px;
+  padding: 3px 4px;
+  font-size: 0.55rem;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

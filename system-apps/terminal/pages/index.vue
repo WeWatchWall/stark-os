@@ -40,6 +40,7 @@ const terminalContainer = ref<HTMLDivElement | null>(null);
 let term: any = null;
 let fitAddon: any = null;
 let resizeObserver: ResizeObserver | null = null;
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
 onMounted(async () => {
   // Dynamically import xterm.js (client-side only)
@@ -89,10 +90,10 @@ onMounted(async () => {
     fitAddon.fit();
   }
 
-  // Resize terminal when window resizes
+  // Resize terminal when window resizes (debounced to avoid loops)
   window.addEventListener('resize', handleResize);
   if (terminalContainer.value && typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(() => fitAddon.fit());
+    resizeObserver = new ResizeObserver(() => handleResize());
     resizeObserver.observe(terminalContainer.value);
   }
 
@@ -120,12 +121,23 @@ onMounted(async () => {
     env: {
       USER: 'user',
       HOME: '/home',
-      HOSTNAME: 'stark-os',
+      HOSTNAME: typeof location !== 'undefined' ? location.hostname || 'stark-os' : 'stark-os',
       SHELL: '/bin/sh',
       TERM: 'xterm-256color',
       PATH: '/usr/bin:/bin',
     },
   };
+
+  // Try to load actual user name from browser-cli credentials
+  try {
+    const stored = localStorage.getItem('stark-cli-credentials');
+    if (stored) {
+      const creds = JSON.parse(stored);
+      if (creds.email) {
+        state.env['USER'] = creds.email.split('@')[0];
+      }
+    }
+  } catch { /* ignore */ }
 
   // Ensure default directories exist
   try { await fs.mkdir('/home', true); } catch { /* ok */ }
@@ -261,30 +273,17 @@ onMounted(async () => {
   }
 
   // Handle terminal data input
+  // Uses index-based parsing so multi-character escape sequences (arrow keys)
+  // are correctly detected instead of being split by a for-of loop.
   term.onData(async (data: string) => {
     if (isRunning) return;
 
-    for (const char of data) {
-      switch (char) {
-        case '\r':
-          term.writeln('');
-          isRunning = true;
-          try { await handleCommand(currentLine); }
-          finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
-          break;
-
-        case '\x7f':
-          if (cursorPos > 0) {
-            currentLine = currentLine.slice(0, cursorPos - 1) + currentLine.slice(cursorPos);
-            cursorPos--;
-            term.write('\b');
-            const rest = currentLine.slice(cursorPos);
-            term.write(rest + ' ');
-            if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
-          }
-          break;
-
-        case '\x1b[A':
+    let i = 0;
+    while (i < data.length) {
+      // ── Escape sequences (\x1b[X) ────────────────────────────────
+      if (data[i] === '\x1b' && data[i + 1] === '[') {
+        const code = data[i + 2];
+        if (code === 'A') { // Up arrow — history back
           if (historyIndex > 0) {
             historyIndex--;
             clearCurrentLine();
@@ -292,9 +291,9 @@ onMounted(async () => {
             cursorPos = currentLine.length;
             term.write(currentLine);
           }
-          break;
-
-        case '\x1b[B':
+          i += 3; continue;
+        }
+        if (code === 'B') { // Down arrow — history forward
           if (historyIndex < commandHistory.length - 1) {
             historyIndex++;
             clearCurrentLine();
@@ -307,42 +306,166 @@ onMounted(async () => {
             currentLine = '';
             cursorPos = 0;
           }
-          break;
-
-        case '\x1b[C':
+          i += 3; continue;
+        }
+        if (code === 'C') { // Right arrow
           if (cursorPos < currentLine.length) { cursorPos++; term.write('\x1b[C'); }
-          break;
-
-        case '\x1b[D':
+          i += 3; continue;
+        }
+        if (code === 'D') { // Left arrow
           if (cursorPos > 0) { cursorPos--; term.write('\x1b[D'); }
+          i += 3; continue;
+        }
+        if (code === 'H') { // Home
+          if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
+          i += 3; continue;
+        }
+        if (code === 'F') { // End
+          if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
+          i += 3; continue;
+        }
+        if (code === '3' && data[i + 3] === '~') { // Delete key
+          if (cursorPos < currentLine.length) {
+            currentLine = currentLine.slice(0, cursorPos) + currentLine.slice(cursorPos + 1);
+            const rest = currentLine.slice(cursorPos);
+            term.write(rest + ' ');
+            if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+          }
+          i += 4; continue;
+        }
+        // Skip unknown escape sequence
+        i += 3; continue;
+      }
+
+      const char = data[i]!;
+      i++;
+
+      switch (char) {
+        case '\r': // Enter
+        case '\n':
+          term.writeln('');
+          isRunning = true;
+          try { await handleCommand(currentLine); }
+          finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
           break;
 
-        case '\x03':
-          term.write('^C\r\n');
-          currentLine = ''; cursorPos = 0;
-          writePrompt();
+        case '\x7f': // Backspace
+          if (cursorPos > 0) {
+            currentLine = currentLine.slice(0, cursorPos - 1) + currentLine.slice(cursorPos);
+            cursorPos--;
+            term.write('\b');
+            const rest = currentLine.slice(cursorPos);
+            term.write(rest + ' ');
+            if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+          }
           break;
 
-        case '\x0c':
+        case '\x03': // Ctrl+C — copy if selection, otherwise interrupt
+          if (term.hasSelection()) {
+            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+            term.clearSelection();
+          } else {
+            term.write('^C\r\n');
+            currentLine = ''; cursorPos = 0;
+            writePrompt();
+          }
+          break;
+
+        case '\x16': { // Ctrl+V — paste from clipboard
+          try {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+              // Strip control chars except \r\n, insert text
+              const clean = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+              // Find first newline to split paste into current line + execution
+              const nlIdx = clean.search(/[\r\n]/);
+              const firstLine = nlIdx === -1 ? clean : clean.slice(0, nlIdx);
+              currentLine = currentLine.slice(0, cursorPos) + firstLine + currentLine.slice(cursorPos);
+              cursorPos += firstLine.length;
+              redrawLine();
+              // If paste contained newlines, execute and continue with rest
+              if (nlIdx !== -1) {
+                term.writeln('');
+                isRunning = true;
+                try { await handleCommand(currentLine); }
+                finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
+                // Feed remaining lines back through the handler
+                const remaining = clean.slice(nlIdx + 1).replace(/^\n/, '');
+                if (remaining) {
+                  for (const ch of remaining) {
+                    if (ch === '\r' || ch === '\n') {
+                      term.writeln('');
+                      isRunning = true;
+                      try { await handleCommand(currentLine); }
+                      finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
+                    } else {
+                      currentLine = currentLine.slice(0, cursorPos) + ch + currentLine.slice(cursorPos);
+                      cursorPos++;
+                    }
+                  }
+                  if (currentLine) redrawLine();
+                }
+              }
+            }
+          } catch { /* clipboard not available */ }
+          break;
+        }
+
+        case '\x0c': // Ctrl+L — clear screen
           term.write('\x1B[2J\x1B[H');
           writePrompt();
           term.write(currentLine);
           break;
 
-        case '\x01':
+        case '\x01': // Ctrl+A — beginning of line
           if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
           break;
 
-        case '\x05':
+        case '\x05': // Ctrl+E — end of line
           if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
           break;
 
-        case '\t':
+        case '\x0b': // Ctrl+K — kill to end of line
+          if (cursorPos < currentLine.length) {
+            const killed = currentLine.length - cursorPos;
+            currentLine = currentLine.slice(0, cursorPos);
+            term.write(' '.repeat(killed));
+            term.write(`\x1B[${killed}D`);
+          }
+          break;
+
+        case '\x15': // Ctrl+U — kill to beginning of line
+          if (cursorPos > 0) {
+            const killed = cursorPos;
+            currentLine = currentLine.slice(cursorPos);
+            cursorPos = 0;
+            redrawLine();
+            // Clear leftover chars
+            term.write(' '.repeat(killed));
+            term.write(`\x1B[${killed}D`);
+          }
+          break;
+
+        case '\x17': // Ctrl+W — delete word backward
+          if (cursorPos > 0) {
+            let j = cursorPos - 1;
+            while (j > 0 && currentLine[j - 1] === ' ') j--;
+            while (j > 0 && currentLine[j - 1] !== ' ') j--;
+            currentLine = currentLine.slice(0, j) + currentLine.slice(cursorPos);
+            const moved = cursorPos - j;
+            cursorPos = j;
+            redrawLine();
+            term.write(' '.repeat(moved));
+            term.write(`\x1B[${moved}D`);
+          }
+          break;
+
+        case '\t': // Tab — completion
           await handleTabCompletion();
           break;
 
         default:
-          if (char.charCodeAt(0) < 32) break;
+          if (char.charCodeAt(0) < 32) break; // Ignore other control characters
           currentLine = currentLine.slice(0, cursorPos) + char + currentLine.slice(cursorPos);
           cursorPos++;
           const rest = currentLine.slice(cursorPos - 1);
@@ -357,7 +480,10 @@ onMounted(async () => {
   term.focus();
 });
 
-function handleResize() { if (fitAddon) fitAddon.fit(); }
+function handleResize() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 100);
+}
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
@@ -668,7 +794,7 @@ function buildMemoryTerminalFS(): TerminalFS {
 <style scoped>
 .terminal-wrapper {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 </style>

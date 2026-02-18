@@ -538,3 +538,251 @@ describe('Shell Execution', () => {
     expect(output).toContain('banana');
   });
 });
+
+// ============================================================================
+// New Command Tests (wasi-fs-access commands + stark)
+// ============================================================================
+
+describe('New Terminal Commands', () => {
+  describe('rmdir', () => {
+    it('should remove an empty directory', async () => {
+      const fs = createMemoryFS();
+      await fs.mkdir('/home');
+      await fs.mkdir('/home/emptydir');
+      const ctx = await createContextWithFS({ args: ['emptydir'], fs });
+      const result = await commands['rmdir']!(ctx);
+      expect(result).toBe('');
+      expect(await fs.exists('/home/emptydir')).toBe(false);
+    });
+
+    it('should error on non-empty directory', async () => {
+      const fs = createMemoryFS();
+      await fs.mkdir('/home');
+      await fs.mkdir('/home/notempty');
+      await fs.writeFile('/home/notempty/file.txt', 'data');
+      const ctx = await createContextWithFS({ args: ['notempty'], fs });
+      const result = await commands['rmdir']!(ctx);
+      expect(result).toContain('failed to remove');
+    });
+  });
+
+  describe('basename', () => {
+    it('should return the base name of a path', async () => {
+      const ctx = await createContextWithFS({ args: ['/home/user/file.txt'] });
+      const result = await commands['basename']!(ctx);
+      expect(result).toBe('file.txt\n');
+    });
+
+    it('should strip suffix', async () => {
+      const ctx = await createContextWithFS({ args: ['file.txt', '.txt'] });
+      const result = await commands['basename']!(ctx);
+      expect(result).toBe('file\n');
+    });
+  });
+
+  describe('dirname', () => {
+    it('should return directory name', async () => {
+      const ctx = await createContextWithFS({ args: ['/home/user/file.txt'] });
+      const result = await commands['dirname']!(ctx);
+      expect(result).toBe('/home/user\n');
+    });
+
+    it('should return . for plain filename', async () => {
+      const ctx = await createContextWithFS({ args: ['file.txt'] });
+      const result = await commands['dirname']!(ctx);
+      expect(result).toBe('.\n');
+    });
+  });
+
+  describe('base64', () => {
+    it('should encode to base64', async () => {
+      const ctx = await createContextWithFS({ stdin: 'hello' });
+      const result = await commands['base64']!(ctx);
+      expect(result).toBe('aGVsbG8=\n');
+    });
+
+    it('should decode from base64', async () => {
+      const ctx = await createContextWithFS({ args: ['-d'], stdin: 'aGVsbG8=' });
+      const result = await commands['base64']!(ctx);
+      expect(result).toBe('hello\n');
+    });
+  });
+
+  describe('tac', () => {
+    it('should reverse lines', async () => {
+      const ctx = await createContextWithFS({ stdin: 'a\nb\nc' });
+      const result = await commands['tac']!(ctx);
+      expect(result).toBe('c\nb\na\n');
+    });
+  });
+
+  describe('factor', () => {
+    it('should factorize numbers', async () => {
+      const ctx = await createContextWithFS({ args: ['12'] });
+      const result = await commands['factor']!(ctx);
+      expect(result).toBe('12: 2 2 3\n');
+    });
+
+    it('should handle primes', async () => {
+      const ctx = await createContextWithFS({ args: ['7'] });
+      const result = await commands['factor']!(ctx);
+      expect(result).toBe('7: 7\n');
+    });
+  });
+
+  describe('expr', () => {
+    it('should evaluate arithmetic', async () => {
+      const ctx = await createContextWithFS({ args: ['3', '+', '4'] });
+      const result = await commands['expr']!(ctx);
+      expect(result).toBe('7\n');
+    });
+
+    it('should handle multiplication', async () => {
+      const ctx = await createContextWithFS({ args: ['6', '*', '7'] });
+      const result = await commands['expr']!(ctx);
+      expect(result).toBe('42\n');
+    });
+  });
+
+  describe('nl', () => {
+    it('should number lines', async () => {
+      const ctx = await createContextWithFS({ stdin: 'hello\nworld' });
+      const result = await commands['nl']!(ctx);
+      expect(result).toContain('1');
+      expect(result).toContain('hello');
+      expect(result).toContain('2');
+      expect(result).toContain('world');
+    });
+  });
+
+  describe('expand', () => {
+    it('should convert tabs to spaces', async () => {
+      const ctx = await createContextWithFS({ stdin: 'hello\tworld' });
+      const result = await commands['expand']!(ctx);
+      expect(result).toBe('hello        world');
+    });
+  });
+
+  describe('fold', () => {
+    it('should wrap lines at specified width', async () => {
+      const ctx = await createContextWithFS({ args: ['-w', '5'], stdin: 'helloworld' });
+      const result = await commands['fold']!(ctx);
+      expect(result).toContain('hello');
+      expect(result).toContain('world');
+    });
+  });
+
+  describe('printenv', () => {
+    it('should list all env vars', async () => {
+      const ctx = await createContextWithFS();
+      const result = await commands['printenv']!(ctx);
+      expect(result).toContain('USER=testuser');
+    });
+
+    it('should print single var', async () => {
+      const ctx = await createContextWithFS({ args: ['USER'] });
+      const result = await commands['printenv']!(ctx);
+      expect(result).toBe('testuser\n');
+    });
+  });
+
+  describe('printf', () => {
+    it('should format output', async () => {
+      const ctx = await createContextWithFS({ args: ['hello %s\\n', 'world'] });
+      const result = await commands['printf']!(ctx);
+      expect(result).toBe('hello world\n');
+    });
+  });
+
+  describe('stark', () => {
+    it('should show help when called with no args', async () => {
+      const ctx = await createContextWithFS();
+      const result = await commands['stark']!(ctx);
+      expect(result).toContain('Stark Orchestrator CLI');
+      expect(result).toContain('stark auth');
+      expect(result).toContain('stark pod');
+    });
+
+    it('should show help for unknown subcommand', async () => {
+      const ctx = await createContextWithFS({ args: ['nonexistent'] });
+      const result = await commands['stark']!(ctx);
+      expect(result).toContain('Unknown command');
+    });
+  });
+
+  describe('test', () => {
+    it('should succeed for existing directory', async () => {
+      const fs = createMemoryFS();
+      await fs.mkdir('/home');
+      const ctx = await createContextWithFS({ args: ['-d', '/home'], fs });
+      const result = await commands['test']!(ctx);
+      expect(result).toBe('');
+    });
+
+    it('should fail for non-existent file', async () => {
+      const ctx = await createContextWithFS({ args: ['-e', '/nonexistent'] });
+      await expect(commands['test']!(ctx)).rejects.toThrow();
+    });
+
+    it('should compare numbers', async () => {
+      const ctx = await createContextWithFS({ args: ['5', '-gt', '3'] });
+      const result = await commands['test']!(ctx);
+      expect(result).toBe('');
+    });
+  });
+
+  describe('shuf', () => {
+    it('should shuffle lines', async () => {
+      const ctx = await createContextWithFS({ stdin: 'a\nb\nc\nd\ne' });
+      const result = await commands['shuf']!(ctx);
+      const lines = result.trim().split('\n');
+      expect(lines).toHaveLength(5);
+      expect(lines.sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    });
+  });
+
+  describe('truncate', () => {
+    it('should truncate a file', async () => {
+      const fs = createMemoryFS();
+      await fs.mkdir('/home');
+      await fs.writeFile('/home/test.txt', 'hello world');
+      const ctx = await createContextWithFS({ args: ['-s', '0', 'test.txt'], fs });
+      await commands['truncate']!(ctx);
+      expect(await fs.readFile('/home/test.txt')).toBe('');
+    });
+  });
+
+  describe('link', () => {
+    it('should create a copy (link)', async () => {
+      const fs = createMemoryFS();
+      await fs.mkdir('/home');
+      await fs.writeFile('/home/src.txt', 'content');
+      const ctx = await createContextWithFS({ args: ['src.txt', 'dst.txt'], fs });
+      await commands['link']!(ctx);
+      expect(await fs.readFile('/home/dst.txt')).toBe('content');
+    });
+  });
+
+  describe('mktemp', () => {
+    it('should create a temp file', async () => {
+      const fs = createMemoryFS();
+      await fs.mkdir('/tmp');
+      const ctx = await createContextWithFS({ fs });
+      const result = await commands['mktemp']!(ctx);
+      expect(result).toContain('/tmp/');
+      expect(result.trim().length).toBeGreaterThan(5);
+    });
+  });
+
+  describe('comm', () => {
+    it('should compare sorted files', async () => {
+      const fs = createMemoryFS();
+      await fs.mkdir('/home');
+      await fs.writeFile('/home/a.txt', 'apple\nbanana\ncherry');
+      await fs.writeFile('/home/b.txt', 'banana\ndate\nfig');
+      const ctx = await createContextWithFS({ args: ['a.txt', 'b.txt'], fs });
+      const result = await commands['comm']!(ctx);
+      expect(result).toContain('banana');
+    });
+  });
+});

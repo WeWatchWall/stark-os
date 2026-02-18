@@ -54,12 +54,18 @@ export const useShellStore = defineStore('shell', () => {
   );
   const manualOverride = ref<LayoutMode | null>(null);
 
+  /** Reactive screen dimensions – updated on resize / orientation change */
+  const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const windowHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 768);
+
   const layoutMode = computed<LayoutMode>(
     () => manualOverride.value ?? autoLayoutMode.value,
   );
 
   function detectLayoutMode() {
     if (typeof window !== 'undefined') {
+      windowWidth.value = window.innerWidth;
+      windowHeight.value = window.innerHeight;
       const prev = layoutMode.value;
       autoLayoutMode.value = window.innerWidth < MOBILE_BREAKPOINT ? 'mobile' : 'desktop';
       const next = layoutMode.value;
@@ -86,12 +92,24 @@ export const useShellStore = defineStore('shell', () => {
         win.mobileSnap = null;
       }
     }
+    // Taskbar is always visible regardless of mode
   }
 
   /** True when screen is taller than wide (portrait orientation) */
-  const isPortrait = computed(() =>
-    typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : true,
-  );
+  const isPortrait = computed(() => windowHeight.value > windowWidth.value);
+
+  /** Taskbar is always visible */
+  const taskbarVisible = ref(true);
+
+  /** Taskbar position: 'top' for desktop, 'left' for mobile (any orientation) */
+  const taskbarPosition = computed<'top' | 'left'>(() => {
+    if (layoutMode.value === 'desktop') return 'top';
+    return 'left';
+  });
+
+  function showTaskbar() { taskbarVisible.value = true; }
+  function hideTaskbar() { taskbarVisible.value = false; }
+  function toggleTaskbar() { taskbarVisible.value = !taskbarVisible.value; }
 
   /* ── Workspaces ── */
   const workspaces = ref<Workspace[]>([
@@ -234,6 +252,11 @@ export const useShellStore = defineStore('shell', () => {
     setManualLayoutMode,
     detectLayoutMode,
     isPortrait,
+    taskbarVisible,
+    taskbarPosition,
+    showTaskbar,
+    hideTaskbar,
+    toggleTaskbar,
     /* Workspaces */
     workspaces,
     activeWorkspaceId,

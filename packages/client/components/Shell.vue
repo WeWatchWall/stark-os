@@ -4,7 +4,10 @@
     <Taskbar :connectionState="connectionState" @signout="$emit('signout')" />
 
     <!-- Desktop area -->
-    <div class="desktop">
+    <div class="desktop" :class="{
+      'taskbar-visible-top': shell.taskbarPosition === 'top',
+      'taskbar-visible-left': shell.taskbarPosition === 'left',
+    }">
       <!-- Render ALL windows; hide those not on active workspace via v-show -->
       <WindowFrame
         v-for="win in shell.windows"
@@ -13,10 +16,9 @@
         v-show="win.workspaceId === shell.activeWorkspaceId"
       />
 
-      <!-- Empty state -->
-      <div v-if="shell.activeWindows.length === 0" class="empty-desktop">
+      <!-- Desktop watermark (always visible behind windows) -->
+      <div class="desktop-watermark">
         <img src="~/assets/Logo.png" alt="StarkOS" class="watermark" />
-        <p class="hint">No windows open.<br />Pods with UI capability will appear here.</p>
       </div>
     </div>
   </div>
@@ -31,7 +33,7 @@ defineEmits<{ signout: [] }>();
 
 const shell = useShellStore();
 
-/* Auto-detect layout mode on resize */
+/* Auto-detect layout mode on resize / orientation change */
 function onResize() {
   shell.detectLayoutMode();
 }
@@ -45,11 +47,13 @@ function onDesktopClick(e: MouseEvent) {
 
 onMounted(() => {
   window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
   shell.detectLayoutMode();
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', onResize);
+  window.removeEventListener('orientationchange', onResize);
 });
 </script>
 
@@ -64,33 +68,33 @@ onUnmounted(() => {
 
 .desktop {
   position: absolute;
-  top: 48px; /* taskbar height */
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   overflow: hidden;
+  transition: top 0.3s ease, left 0.3s ease;
 }
 
-/* Empty state */
-.empty-desktop {
+/* Offset desktop area when taskbar is visible */
+.desktop.taskbar-visible-top {
+  top: 48px;
+}
+.desktop.taskbar-visible-left {
+  left: 48px;
+}
+
+/* Desktop watermark (always visible, behind windows) */
+.desktop-watermark {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
   opacity: 0.25;
   pointer-events: none;
   user-select: none;
+  z-index: 0;
 }
 .watermark {
   width: 260px;
   height: auto;
-  margin-bottom: 1.5rem;
-}
-.hint {
-  color: #94a3b8;
-  font-size: 0.9rem;
-  text-align: center;
-  line-height: 1.6;
 }
 </style>

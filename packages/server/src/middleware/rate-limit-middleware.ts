@@ -57,7 +57,7 @@ const DEFAULT_CONFIG: Required<
   Pick<RateLimitConfig, 'windowMs' | 'max' | 'message' | 'standardHeaders' | 'legacyHeaders'>
 > = {
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // 1000 requests per window
+  max: 10000, // 10000 requests per window
   message: 'Too many requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
@@ -143,36 +143,36 @@ export function createRateLimitMiddleware(config: RateLimitConfig = {}): RateLim
 
 /**
  * Standard API rate limiter
- * 1000 requests per 15 minutes
+ * 10000 requests per 15 minutes
  */
 export const standardRateLimiter: RateLimitRequestHandler = createRateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000,
+  max: 10000,
   message: 'Too many requests, please try again later',
 });
 
 /**
  * Authentication rate limiter (hard cap safety net)
- * 1000 requests per 15 minutes - only blocks truly abusive traffic.
+ * 10000 requests per 15 minutes - only blocks truly abusive traffic.
  * Normal throttling is handled by authSlowDown below.
  */
 export const authRateLimiter: RateLimitRequestHandler = createRateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000,
+  max: 10000,
   message: 'Too many authentication attempts, please try again later',
   skipSuccessfulRequests: false,
 });
 
 /**
  * Authentication slow-down middleware (progressive throttling)
- * After 10 requests in a 15-minute window, each subsequent request is
- * delayed by an additional 250 ms (11th → 250 ms, 12th → 500 ms, …).
+ * After 100 requests in a 15-minute window, each subsequent request is
+ * delayed by an additional 250 ms (101st → 250 ms, 102nd → 500 ms, …).
  * This throttles clients instead of rejecting them outright.
  */
 export const authSlowDown: SlowDownRequestHandler = slowDown({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  delayAfter: 10, // allow 10 requests per window without delay
-  delayMs: (hits) => (hits - 10) * 250, // add 250ms of delay per request above 10
+  delayAfter: 100, // allow 100 requests per window without delay
+  delayMs: (hits) => (hits - 100) * 250, // add 250ms of delay per request above 100
   maxDelayMs: 10_000, // cap the delay at 10 seconds
   keyGenerator: defaultKeyGenerator,
 });
@@ -191,21 +191,21 @@ export function authThrottleMiddleware(req: Request, res: Response, next: NextFu
 
 /**
  * Pack upload rate limiter
- * 200 uploads per hour
+ * 2000 uploads per hour
  */
 export const uploadRateLimiter: RateLimitRequestHandler = createRateLimitMiddleware({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 200,
+  max: 2000,
   message: 'Too many uploads, please try again later',
 });
 
 /**
  * WebSocket connection rate limiter
- * 50 connections per minute per IP
+ * 500 connections per minute per IP
  */
 export const wsConnectionRateLimiter: RateLimitRequestHandler = createRateLimitMiddleware({
   windowMs: 60 * 1000, // 1 minute
-  max: 50,
+  max: 500,
   message: 'Too many connection attempts, please try again later',
 });
 
@@ -222,7 +222,7 @@ export function skipHealthChecks(req: Request): boolean {
  */
 export const apiRateLimiter: RateLimitRequestHandler = createRateLimitMiddleware({
   windowMs: 15 * 60 * 1000,
-  max: 1000,
+  max: 10000,
   skip: skipHealthChecks,
 });
 

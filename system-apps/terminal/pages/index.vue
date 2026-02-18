@@ -92,6 +92,7 @@ onMounted(async () => {
 
   // Resize terminal when window resizes (debounced to avoid loops)
   window.addEventListener('resize', handleResize);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
   if (terminalContainer.value && typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => handleResize());
     resizeObserver.observe(terminalContainer.value);
@@ -217,7 +218,7 @@ onMounted(async () => {
   // ============================================================================
 
   const commandHistory: string[] = [];
-  let historyIndex = -1;
+  let historyIndex = 0;
 
   try {
     const stored = localStorage.getItem('stark-terminal-history');
@@ -226,6 +227,7 @@ onMounted(async () => {
       if (Array.isArray(parsed)) commandHistory.push(...parsed);
     }
   } catch { /* ignore */ }
+  historyIndex = commandHistory.length;
 
   function saveHistory() {
     try { localStorage.setItem('stark-terminal-history', JSON.stringify(commandHistory.slice(-100))); } catch { /* ignore */ }
@@ -252,18 +254,59 @@ onMounted(async () => {
   let currentLine = '';
   let cursorPos = 0;
   let isRunning = false;
+  let savedLine = '';  // Preserves in-progress input when navigating history
 
   function writePrompt() { term.write(getPrompt()); }
 
-  function clearCurrentLine() {
-    if (cursorPos > 0) term.write(`\x1B[${cursorPos}D`);
-    term.write('\x1B[K');
+  function getPromptVisibleLength(): number {
+    return getPrompt().replace(/\x1B\[[0-9;]*m/g, '').length;
   }
 
-  function redrawLine() {
+  // Compute the actual terminal row for a given character offset.
+  // xterm uses deferred wrap: writing exactly N cols of text leaves the cursor
+  // at the last column (col N-1) with a pending-wrap flag rather than advancing
+  // to the next row.  The cursor only moves to col 0 of the next row when the
+  // next character is written.  So the row is:
+  //   offset 0        → row 0
+  //   offset 1..cols  → row 0   (pending-wrap when offset === cols)
+  //   offset cols+1..2*cols → row 1
+  function termRow(offset: number, cols: number): number {
+    return offset > 0 ? Math.floor((offset - 1) / cols) : 0;
+  }
+
+  function clearCurrentLine() {
+    const promptLen = getPromptVisibleLength();
+    const cols = term.cols || 80;
+    const totalOffset = promptLen + cursorPos;
+    // promptEndRow/Col: grid cell where user text begins (standard division)
+    const promptEndRow = Math.floor(promptLen / cols);
+    // cursorRow: actual terminal row accounting for deferred wrap
+    const cursorRow = termRow(totalOffset, cols);
+
+    const upCount = cursorRow - promptEndRow;
+    if (upCount > 0) term.write(`\x1B[${upCount}A`);
+
+    const promptEndCol = promptLen % cols;
+    term.write('\r');
+    if (promptEndCol > 0) term.write(`\x1B[${promptEndCol}C`);
+
+    term.write('\x1B[J');
+  }
+
+  function redrawLine(targetPos?: number) {
     clearCurrentLine();
-    term.write(currentLine);
-    if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+    if (targetPos !== undefined) cursorPos = targetPos;
+    if (cursorPos >= currentLine.length) {
+      term.write(currentLine);
+    } else {
+      // Write text before cursor, save position with DECSC, write rest, restore with DECRC.
+      // DECSC/DECRC correctly save/restore row+column across wrapped lines,
+      // unlike CSI D which cannot move the cursor across row boundaries.
+      term.write(currentLine.slice(0, cursorPos));
+      term.write('\x1B7');
+      term.write(currentLine.slice(cursorPos));
+      term.write('\x1B8');
+    }
   }
 
   // ============================================================================
@@ -384,10 +427,22 @@ onMounted(async () => {
     if (!trimmed) return;
     commandHistory.push(trimmed);
     historyIndex = commandHistory.length;
+    savedLine = '';
     saveHistory();
     const plan = parseCommandLine(trimmed);
     const write = (text: string) => { term.write(text.replaceAll('\n', '\r\n')); };
     try { await executePlan(plan, state, write); } catch { /* error already written */ }
+  }
+
+  function findCommonPrefix(strings: string[]): string {
+    if (strings.length === 0) return '';
+    let prefix = strings[0] ?? '';
+    for (let si = 1; si < strings.length; si++) {
+      while (!strings[si]?.startsWith(prefix)) {
+        prefix = prefix.slice(0, -1);
+      }
+    }
+    return prefix;
   }
 
   async function handleTabCompletion() {
@@ -398,15 +453,35 @@ onMounted(async () => {
       const matches = Object.keys(commands).filter(c => c.startsWith(lastPart));
       if (matches.length === 1) {
         const completion = matches[0]!.slice(lastPart.length) + ' ';
-        currentLine = currentLine.slice(0, cursorPos) + completion + currentLine.slice(cursorPos);
-        cursorPos += completion.length;
-        redrawLine();
+        // Guard: skip if this match was already completed
+        const beforeCursor = currentLine.slice(0, cursorPos);
+        if (beforeCursor.endsWith(matches[0]! + ' ')) {
+          // Already completed — do nothing
+        } else {
+          const newPos = cursorPos + completion.length;
+          currentLine = currentLine.slice(0, cursorPos) + completion + currentLine.slice(cursorPos);
+          redrawLine(newPos);
+        }
       } else if (matches.length > 1) {
-        term.writeln('');
-        term.writeln(matches.join('  '));
-        writePrompt();
-        term.write(currentLine);
-        if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+        const common = findCommonPrefix(matches);
+        const additionalChars = common.slice(lastPart.length);
+        if (additionalChars.length > 0) {
+          const newPos = cursorPos + additionalChars.length;
+          currentLine = currentLine.slice(0, cursorPos) + additionalChars + currentLine.slice(cursorPos);
+          redrawLine(newPos);
+        } else {
+          term.writeln('');
+          term.writeln(matches.join('  '));
+          writePrompt();
+          if (cursorPos >= currentLine.length) {
+            term.write(currentLine);
+          } else {
+            term.write(currentLine.slice(0, cursorPos));
+            term.write('\x1B7');
+            term.write(currentLine.slice(cursorPos));
+            term.write('\x1B8');
+          }
+        }
       }
     } else {
       // Complete file/directory names from OPFS
@@ -429,15 +504,35 @@ onMounted(async () => {
           const isDir = await fs.isDirectory(fullPath);
           const suffix = isDir ? '/' : ' ';
           const fullCompletion = completion + suffix;
-          currentLine = currentLine.slice(0, cursorPos) + fullCompletion + currentLine.slice(cursorPos);
-          cursorPos += fullCompletion.length;
-          redrawLine();
+          // Guard: skip if this match was already completed (avoids duplicate insertions)
+          const beforeCursor = currentLine.slice(0, cursorPos);
+          if (beforeCursor.endsWith(match + ' ') || beforeCursor.endsWith(match + '/')) {
+            // Already completed — do nothing
+          } else {
+            const newPos = cursorPos + fullCompletion.length;
+            currentLine = currentLine.slice(0, cursorPos) + fullCompletion + currentLine.slice(cursorPos);
+            redrawLine(newPos);
+          }
         } else if (matches.length > 1) {
-          term.writeln('');
-          term.writeln(matches.join('  '));
-          writePrompt();
-          term.write(currentLine);
-          if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+          const common = findCommonPrefix(matches);
+          const additionalChars = common.slice(prefix.length);
+          if (additionalChars.length > 0) {
+            const newPos = cursorPos + additionalChars.length;
+            currentLine = currentLine.slice(0, cursorPos) + additionalChars + currentLine.slice(cursorPos);
+            redrawLine(newPos);
+          } else {
+            term.writeln('');
+            term.writeln(matches.join('  '));
+            writePrompt();
+            if (cursorPos >= currentLine.length) {
+              term.write(currentLine);
+            } else {
+              term.write(currentLine.slice(0, cursorPos));
+              term.write('\x1B7');
+              term.write(currentLine.slice(cursorPos));
+              term.write('\x1B8');
+            }
+          }
         }
       } catch { /* no completions available */ }
     }
@@ -475,72 +570,75 @@ onMounted(async () => {
         // Check for modifier: params like "1;5" means Ctrl modifier
         const hasCtrl = params.includes(';5');
 
-        if (final === 'A') { // Up arrow — history back
-          if (historyIndex > 0) {
+        if (final === 'A') { // Up arrow — visual row up or history back
+          const cols = term.cols || 80;
+          const pLen = getPromptVisibleLength();
+          const cursorRow = termRow(pLen + cursorPos, cols);
+          const firstRow = termRow(pLen, cols);
+
+          if (cursorRow > firstRow) {
+            // Move cursor up one visual row within the current line
+            redrawLine(Math.max(0, cursorPos - cols));
+          } else if (historyIndex > 0) {
+            if (historyIndex === commandHistory.length) savedLine = currentLine;
             historyIndex--;
-            clearCurrentLine();
             currentLine = commandHistory[historyIndex] || '';
-            cursorPos = currentLine.length;
-            term.write(currentLine);
+            redrawLine(currentLine.length);
           }
           i = j; continue;
         }
-        if (final === 'B') { // Down arrow — history forward
-          if (historyIndex < commandHistory.length - 1) {
+        if (final === 'B') { // Down arrow — visual row down or history forward
+          const cols = term.cols || 80;
+          const pLen = getPromptVisibleLength();
+          const cursorRow = termRow(pLen + cursorPos, cols);
+          const lastRow = termRow(pLen + currentLine.length, cols);
+
+          if (cursorRow < lastRow) {
+            // Move cursor down one visual row within the current line
+            redrawLine(Math.min(currentLine.length, cursorPos + cols));
+          } else if (historyIndex < commandHistory.length - 1) {
             historyIndex++;
-            clearCurrentLine();
             currentLine = commandHistory[historyIndex] || '';
-            cursorPos = currentLine.length;
-            term.write(currentLine);
+            redrawLine(currentLine.length);
           } else if (historyIndex === commandHistory.length - 1) {
             historyIndex = commandHistory.length;
-            clearCurrentLine();
-            currentLine = '';
-            cursorPos = 0;
+            currentLine = savedLine;
+            savedLine = '';
+            redrawLine(currentLine.length);
           }
           i = j; continue;
         }
         if (final === 'C') { // Right arrow (or Ctrl+Right for word jump)
           if (hasCtrl) {
-            // Jump to next word boundary
             const newPos = findWordBoundaryRight(currentLine, cursorPos);
-            if (newPos > cursorPos) {
-              term.write(`\x1B[${newPos - cursorPos}C`);
-              cursorPos = newPos;
-            }
+            if (newPos > cursorPos) redrawLine(newPos);
           } else {
-            if (cursorPos < currentLine.length) { cursorPos++; term.write('\x1b[C'); }
+            if (cursorPos < currentLine.length) redrawLine(cursorPos + 1);
           }
           i = j; continue;
         }
         if (final === 'D') { // Left arrow (or Ctrl+Left for word jump)
           if (hasCtrl) {
-            // Jump to previous word boundary
             const newPos = findWordBoundaryLeft(currentLine, cursorPos);
-            if (newPos < cursorPos) {
-              term.write(`\x1B[${cursorPos - newPos}D`);
-              cursorPos = newPos;
-            }
+            if (newPos < cursorPos) redrawLine(newPos);
           } else {
-            if (cursorPos > 0) { cursorPos--; term.write('\x1b[D'); }
+            if (cursorPos > 0) redrawLine(cursorPos - 1);
           }
           i = j; continue;
         }
         if (final === 'H') { // Home
-          if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
+          if (cursorPos > 0) redrawLine(0);
           i = j; continue;
         }
         if (final === 'F') { // End
-          if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
+          if (cursorPos < currentLine.length) redrawLine(currentLine.length);
           i = j; continue;
         }
         if (final === '~') { // Extended keys (Delete = \x1b[3~)
           if (params === '3') { // Delete key
             if (cursorPos < currentLine.length) {
               currentLine = currentLine.slice(0, cursorPos) + currentLine.slice(cursorPos + 1);
-              const rest = currentLine.slice(cursorPos);
-              term.write(rest + ' ');
-              if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+              redrawLine(cursorPos);
             }
           }
           i = j; continue;
@@ -564,11 +662,7 @@ onMounted(async () => {
         case '\x7f': // Backspace
           if (cursorPos > 0) {
             currentLine = currentLine.slice(0, cursorPos - 1) + currentLine.slice(cursorPos);
-            cursorPos--;
-            term.write('\b');
-            const rest = currentLine.slice(cursorPos);
-            term.write(rest + ' ');
-            if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+            redrawLine(cursorPos - 1);
           }
           break;
 
@@ -589,33 +683,20 @@ onMounted(async () => {
             if (text) {
               // Strip control chars except \r\n, insert text
               const clean = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
-              // Find first newline to split paste into current line + execution
-              const nlIdx = clean.search(/[\r\n]/);
-              const firstLine = nlIdx === -1 ? clean : clean.slice(0, nlIdx);
-              currentLine = currentLine.slice(0, cursorPos) + firstLine + currentLine.slice(cursorPos);
-              cursorPos += firstLine.length;
-              redrawLine();
-              // If paste contained newlines, execute and continue with rest
-              if (nlIdx !== -1) {
-                term.writeln('');
-                isRunning = true;
-                try { await handleCommand(currentLine); }
-                finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
-                // Feed remaining lines back through the handler
-                const remaining = clean.slice(nlIdx + 1).replace(/^\n/, '');
-                if (remaining) {
-                  for (const ch of remaining) {
-                    if (ch === '\r' || ch === '\n') {
-                      term.writeln('');
-                      isRunning = true;
-                      try { await handleCommand(currentLine); }
-                      finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
-                    } else {
-                      currentLine = currentLine.slice(0, cursorPos) + ch + currentLine.slice(cursorPos);
-                      cursorPos++;
-                    }
-                  }
-                  if (currentLine) redrawLine();
+              // Split into lines for multiline paste
+              const lines = clean.split(/\r\n|\r|\n/);
+              for (let li = 0; li < lines.length; li++) {
+                const lineText = lines[li] || '';
+                if (lineText) {
+                  currentLine = currentLine.slice(0, cursorPos) + lineText + currentLine.slice(cursorPos);
+                  redrawLine(cursorPos + lineText.length);
+                }
+                // If there are more lines, execute current line and start next
+                if (li < lines.length - 1) {
+                  term.writeln('');
+                  isRunning = true;
+                  try { await handleCommand(currentLine); }
+                  finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
                 }
               }
             }
@@ -626,35 +707,39 @@ onMounted(async () => {
         case '\x0c': // Ctrl+L — clear screen
           term.write('\x1B[2J\x1B[H');
           writePrompt();
-          term.write(currentLine);
+          if (cursorPos >= currentLine.length) {
+            term.write(currentLine);
+          } else {
+            term.write(currentLine.slice(0, cursorPos));
+            term.write('\x1B7');
+            term.write(currentLine.slice(cursorPos));
+            term.write('\x1B8');
+          }
           break;
 
         case '\x01': // Ctrl+A — beginning of line
-          if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
+          if (cursorPos > 0) {
+            redrawLine(0);
+          }
           break;
 
         case '\x05': // Ctrl+E — end of line
-          if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
+          if (cursorPos < currentLine.length) {
+            redrawLine(currentLine.length);
+          }
           break;
 
         case '\x0b': // Ctrl+K — kill to end of line
           if (cursorPos < currentLine.length) {
-            const killed = currentLine.length - cursorPos;
             currentLine = currentLine.slice(0, cursorPos);
-            term.write(' '.repeat(killed));
-            term.write(`\x1B[${killed}D`);
+            term.write('\x1B[J');
           }
           break;
 
         case '\x15': // Ctrl+U — kill to beginning of line
           if (cursorPos > 0) {
-            const killed = cursorPos;
             currentLine = currentLine.slice(cursorPos);
-            cursorPos = 0;
-            redrawLine();
-            // Clear leftover chars
-            term.write(' '.repeat(killed));
-            term.write(`\x1B[${killed}D`);
+            redrawLine(0);
           }
           break;
 
@@ -664,11 +749,7 @@ onMounted(async () => {
             while (j > 0 && currentLine[j - 1] === ' ') j--;
             while (j > 0 && currentLine[j - 1] !== ' ') j--;
             currentLine = currentLine.slice(0, j) + currentLine.slice(cursorPos);
-            const moved = cursorPos - j;
-            cursorPos = j;
-            redrawLine();
-            term.write(' '.repeat(moved));
-            term.write(`\x1B[${moved}D`);
+            redrawLine(j);
           }
           break;
 
@@ -679,10 +760,7 @@ onMounted(async () => {
         default:
           if (char.charCodeAt(0) < 32) break; // Ignore other control characters
           currentLine = currentLine.slice(0, cursorPos) + char + currentLine.slice(cursorPos);
-          cursorPos++;
-          const rest = currentLine.slice(cursorPos - 1);
-          term.write(rest);
-          if (rest.length > 1) term.write(`\x1B[${rest.length - 1}D`);
+          redrawLine(cursorPos + 1);
           break;
       }
     }
@@ -697,8 +775,17 @@ function handleResize() {
   resizeTimer = setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 100);
 }
 
+function handleVisibilityChange() {
+  if (!document.hidden) {
+    // Re-fit after window restore (minimize → maximize) with a small delay
+    // to allow the browser to recalculate layout dimensions
+    setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 200);
+  }
+}
+
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
   if (resizeObserver) resizeObserver.disconnect();
   if (term) term.dispose();
 });
@@ -1013,7 +1100,7 @@ function buildMemoryTerminalFS(): TerminalFS {
 <style scoped>
 .terminal-wrapper {
   width: 100%;
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
 }
 </style>

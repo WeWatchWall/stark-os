@@ -122,3 +122,11 @@ export {
   restoreFetch,
   isInternalUrl,
 } from '@stark-o/shared';
+
+// Browser CLI Bridge (exposes browser-cli to pods)
+export {
+  CliBridge,
+  getCliBridge,
+  type CliBridgeResult,
+  type CliBridgeWriter,
+} from './cli-bridge.js';

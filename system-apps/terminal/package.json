@@ -1,0 +1,24 @@
+{
+  "name": "@stark-o/terminal",
+  "version": "0.0.1",
+  "description": "Terminal system app for Stark OS — browser-based terminal with unix commands",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@stark-o/browser-cli": "workspace:*",
+    "@stark-o/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  },
+  "license": "MIT"
+}

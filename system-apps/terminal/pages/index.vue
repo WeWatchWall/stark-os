@@ -769,6 +769,7 @@ onMounted(async () => {
   // After a terminal resize (e.g. maximize/minimize), xterm reflows the buffer
   // content to the new column count.  Redraw the prompt + current input so
   // that the prefix is never cut off and the cursor stays in sync.
+  // Only when idle at the prompt — not during command execution or interactive prompts.
   term.onResize(() => {
     if (!isRunning && !promptResolve) {
       redrawLine();
@@ -783,7 +784,8 @@ function handleResize() {
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (!fitAddon || !terminalContainer.value) return;
-    // Guard: skip fitting when container is hidden or too small (e.g. minimized window)
+    // Guard: skip fitting when container is hidden or too small (e.g. minimized window).
+    // 50px threshold avoids xterm errors with degenerate dimensions.
     const rect = terminalContainer.value.getBoundingClientRect();
     if (rect.width < 50 || rect.height < 50) return;
     fitAddon.fit();

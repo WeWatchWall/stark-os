@@ -172,7 +172,7 @@ onMounted(async () => {
         try {
           const u = new URL(ctx.orchestratorUrl);
           u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
-          u.pathname = '';
+          u.pathname = '/';
           return u.origin;
         } catch { /* */ }
       }

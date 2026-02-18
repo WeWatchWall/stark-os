@@ -262,7 +262,7 @@ onMounted(async () => {
 
   function clearCurrentLine() {
     const promptLen = getPromptVisibleLength();
-    const cols = term.cols;
+    const cols = term.cols || 80;
     const totalOffset = promptLen + cursorPos;
     const promptEndRow = Math.floor(promptLen / cols);
     const cursorRow = Math.floor(totalOffset / cols);
@@ -283,6 +283,9 @@ onMounted(async () => {
     if (cursorPos >= currentLine.length) {
       term.write(currentLine);
     } else {
+      // Write text before cursor, save position with DECSC, write rest, restore with DECRC.
+      // DECSC/DECRC correctly save/restore row+column across wrapped lines,
+      // unlike CSI D which cannot move the cursor across row boundaries.
       term.write(currentLine.slice(0, cursorPos));
       term.write('\x1B7');
       term.write(currentLine.slice(cursorPos));

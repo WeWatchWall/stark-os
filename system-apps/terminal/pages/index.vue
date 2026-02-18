@@ -256,15 +256,38 @@ onMounted(async () => {
 
   function writePrompt() { term.write(getPrompt()); }
 
-  function clearCurrentLine() {
-    if (cursorPos > 0) term.write(`\x1B[${cursorPos}D`);
-    term.write('\x1B[K');
+  function getPromptVisibleLength(): number {
+    return getPrompt().replace(/\x1B\[[0-9;]*m/g, '').length;
   }
 
-  function redrawLine() {
+  function clearCurrentLine() {
+    const promptLen = getPromptVisibleLength();
+    const cols = term.cols;
+    const totalOffset = promptLen + cursorPos;
+    const promptEndRow = Math.floor(promptLen / cols);
+    const cursorRow = Math.floor(totalOffset / cols);
+
+    const upCount = cursorRow - promptEndRow;
+    if (upCount > 0) term.write(`\x1B[${upCount}A`);
+
+    const promptEndCol = promptLen % cols;
+    term.write('\r');
+    if (promptEndCol > 0) term.write(`\x1B[${promptEndCol}C`);
+
+    term.write('\x1B[J');
+  }
+
+  function redrawLine(targetPos?: number) {
     clearCurrentLine();
-    term.write(currentLine);
-    if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+    if (targetPos !== undefined) cursorPos = targetPos;
+    if (cursorPos >= currentLine.length) {
+      term.write(currentLine);
+    } else {
+      term.write(currentLine.slice(0, cursorPos));
+      term.write('\x1B7');
+      term.write(currentLine.slice(cursorPos));
+      term.write('\x1B8');
+    }
   }
 
   // ============================================================================
@@ -410,22 +433,28 @@ onMounted(async () => {
       const matches = Object.keys(commands).filter(c => c.startsWith(lastPart));
       if (matches.length === 1) {
         const completion = matches[0]!.slice(lastPart.length) + ' ';
+        const newPos = cursorPos + completion.length;
         currentLine = currentLine.slice(0, cursorPos) + completion + currentLine.slice(cursorPos);
-        cursorPos += completion.length;
-        redrawLine();
+        redrawLine(newPos);
       } else if (matches.length > 1) {
         const common = findCommonPrefix(matches);
         const additionalChars = common.slice(lastPart.length);
         if (additionalChars.length > 0) {
+          const newPos = cursorPos + additionalChars.length;
           currentLine = currentLine.slice(0, cursorPos) + additionalChars + currentLine.slice(cursorPos);
-          cursorPos += additionalChars.length;
-          redrawLine();
+          redrawLine(newPos);
         } else {
           term.writeln('');
           term.writeln(matches.join('  '));
           writePrompt();
-          term.write(currentLine);
-          if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+          if (cursorPos >= currentLine.length) {
+            term.write(currentLine);
+          } else {
+            term.write(currentLine.slice(0, cursorPos));
+            term.write('\x1B7');
+            term.write(currentLine.slice(cursorPos));
+            term.write('\x1B8');
+          }
         }
       }
     } else {
@@ -449,22 +478,28 @@ onMounted(async () => {
           const isDir = await fs.isDirectory(fullPath);
           const suffix = isDir ? '/' : ' ';
           const fullCompletion = completion + suffix;
+          const newPos = cursorPos + fullCompletion.length;
           currentLine = currentLine.slice(0, cursorPos) + fullCompletion + currentLine.slice(cursorPos);
-          cursorPos += fullCompletion.length;
-          redrawLine();
+          redrawLine(newPos);
         } else if (matches.length > 1) {
           const common = findCommonPrefix(matches);
           const additionalChars = common.slice(prefix.length);
           if (additionalChars.length > 0) {
+            const newPos = cursorPos + additionalChars.length;
             currentLine = currentLine.slice(0, cursorPos) + additionalChars + currentLine.slice(cursorPos);
-            cursorPos += additionalChars.length;
-            redrawLine();
+            redrawLine(newPos);
           } else {
             term.writeln('');
             term.writeln(matches.join('  '));
             writePrompt();
-            term.write(currentLine);
-            if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+            if (cursorPos >= currentLine.length) {
+              term.write(currentLine);
+            } else {
+              term.write(currentLine.slice(0, cursorPos));
+              term.write('\x1B7');
+              term.write(currentLine.slice(cursorPos));
+              term.write('\x1B8');
+            }
           }
         }
       } catch { /* no completions available */ }
@@ -506,25 +541,20 @@ onMounted(async () => {
         if (final === 'A') { // Up arrow — history back
           if (historyIndex > 0) {
             historyIndex--;
-            clearCurrentLine();
             currentLine = commandHistory[historyIndex] || '';
-            cursorPos = currentLine.length;
-            term.write(currentLine);
+            redrawLine(currentLine.length);
           }
           i = j; continue;
         }
         if (final === 'B') { // Down arrow — history forward
           if (historyIndex < commandHistory.length - 1) {
             historyIndex++;
-            clearCurrentLine();
             currentLine = commandHistory[historyIndex] || '';
-            cursorPos = currentLine.length;
-            term.write(currentLine);
+            redrawLine(currentLine.length);
           } else if (historyIndex === commandHistory.length - 1) {
             historyIndex = commandHistory.length;
-            clearCurrentLine();
             currentLine = '';
-            cursorPos = 0;
+            redrawLine(0);
           }
           i = j; continue;
         }
@@ -647,35 +677,39 @@ onMounted(async () => {
         case '\x0c': // Ctrl+L — clear screen
           term.write('\x1B[2J\x1B[H');
           writePrompt();
-          term.write(currentLine);
+          if (cursorPos >= currentLine.length) {
+            term.write(currentLine);
+          } else {
+            term.write(currentLine.slice(0, cursorPos));
+            term.write('\x1B7');
+            term.write(currentLine.slice(cursorPos));
+            term.write('\x1B8');
+          }
           break;
 
         case '\x01': // Ctrl+A — beginning of line
-          if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
+          if (cursorPos > 0) {
+            redrawLine(0);
+          }
           break;
 
         case '\x05': // Ctrl+E — end of line
-          if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
+          if (cursorPos < currentLine.length) {
+            redrawLine(currentLine.length);
+          }
           break;
 
         case '\x0b': // Ctrl+K — kill to end of line
           if (cursorPos < currentLine.length) {
-            const killed = currentLine.length - cursorPos;
             currentLine = currentLine.slice(0, cursorPos);
-            term.write(' '.repeat(killed));
-            term.write(`\x1B[${killed}D`);
+            term.write('\x1B[J');
           }
           break;
 
         case '\x15': // Ctrl+U — kill to beginning of line
           if (cursorPos > 0) {
-            const killed = cursorPos;
             currentLine = currentLine.slice(cursorPos);
-            cursorPos = 0;
-            redrawLine();
-            // Clear leftover chars
-            term.write(' '.repeat(killed));
-            term.write(`\x1B[${killed}D`);
+            redrawLine(0);
           }
           break;
 
@@ -685,11 +719,7 @@ onMounted(async () => {
             while (j > 0 && currentLine[j - 1] === ' ') j--;
             while (j > 0 && currentLine[j - 1] !== ' ') j--;
             currentLine = currentLine.slice(0, j) + currentLine.slice(cursorPos);
-            const moved = cursorPos - j;
-            cursorPos = j;
-            redrawLine();
-            term.write(' '.repeat(moved));
-            term.write(`\x1B[${moved}D`);
+            redrawLine(j);
           }
           break;
 

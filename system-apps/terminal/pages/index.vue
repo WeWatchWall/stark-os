@@ -595,45 +595,35 @@ onMounted(async () => {
         }
         if (final === 'C') { // Right arrow (or Ctrl+Right for word jump)
           if (hasCtrl) {
-            // Jump to next word boundary
             const newPos = findWordBoundaryRight(currentLine, cursorPos);
-            if (newPos > cursorPos) {
-              term.write(`\x1B[${newPos - cursorPos}C`);
-              cursorPos = newPos;
-            }
+            if (newPos > cursorPos) redrawLine(newPos);
           } else {
-            if (cursorPos < currentLine.length) { cursorPos++; term.write('\x1b[C'); }
+            if (cursorPos < currentLine.length) redrawLine(cursorPos + 1);
           }
           i = j; continue;
         }
         if (final === 'D') { // Left arrow (or Ctrl+Left for word jump)
           if (hasCtrl) {
-            // Jump to previous word boundary
             const newPos = findWordBoundaryLeft(currentLine, cursorPos);
-            if (newPos < cursorPos) {
-              term.write(`\x1B[${cursorPos - newPos}D`);
-              cursorPos = newPos;
-            }
+            if (newPos < cursorPos) redrawLine(newPos);
           } else {
-            if (cursorPos > 0) { cursorPos--; term.write('\x1b[D'); }
+            if (cursorPos > 0) redrawLine(cursorPos - 1);
           }
           i = j; continue;
         }
         if (final === 'H') { // Home
-          if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
+          if (cursorPos > 0) redrawLine(0);
           i = j; continue;
         }
         if (final === 'F') { // End
-          if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
+          if (cursorPos < currentLine.length) redrawLine(currentLine.length);
           i = j; continue;
         }
         if (final === '~') { // Extended keys (Delete = \x1b[3~)
           if (params === '3') { // Delete key
             if (cursorPos < currentLine.length) {
               currentLine = currentLine.slice(0, cursorPos) + currentLine.slice(cursorPos + 1);
-              const rest = currentLine.slice(cursorPos);
-              term.write(rest + ' ');
-              if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+              redrawLine(cursorPos);
             }
           }
           i = j; continue;
@@ -657,11 +647,7 @@ onMounted(async () => {
         case '\x7f': // Backspace
           if (cursorPos > 0) {
             currentLine = currentLine.slice(0, cursorPos - 1) + currentLine.slice(cursorPos);
-            cursorPos--;
-            term.write('\b');
-            const rest = currentLine.slice(cursorPos);
-            term.write(rest + ' ');
-            if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+            redrawLine(cursorPos - 1);
           }
           break;
 
@@ -687,14 +673,8 @@ onMounted(async () => {
               for (let li = 0; li < lines.length; li++) {
                 const lineText = lines[li] || '';
                 if (lineText) {
-                  // Insert text at cursor position and write to terminal
-                  const afterCursor = currentLine.slice(cursorPos);
-                  currentLine = currentLine.slice(0, cursorPos) + lineText + afterCursor;
-                  term.write(lineText + afterCursor);
-                  cursorPos += lineText.length;
-                  if (afterCursor.length > 0) {
-                    term.write(`\x1B[${afterCursor.length}D`);
-                  }
+                  currentLine = currentLine.slice(0, cursorPos) + lineText + currentLine.slice(cursorPos);
+                  redrawLine(cursorPos + lineText.length);
                 }
                 // If there are more lines, execute current line and start next
                 if (li < lines.length - 1) {
@@ -765,10 +745,7 @@ onMounted(async () => {
         default:
           if (char.charCodeAt(0) < 32) break; // Ignore other control characters
           currentLine = currentLine.slice(0, cursorPos) + char + currentLine.slice(cursorPos);
-          cursorPos++;
-          const rest = currentLine.slice(cursorPos - 1);
-          term.write(rest);
-          if (rest.length > 1) term.write(`\x1B[${rest.length - 1}D`);
+          redrawLine(cursorPos + 1);
           break;
       }
     }

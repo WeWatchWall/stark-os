@@ -102,11 +102,9 @@ function toggleLayout() {
   flex-shrink: 0;
 }
 .taskbar-logo {
-  height: 100%;
+  height: 48px;
   width: auto;
   object-fit: contain;
-  padding: 4px 0;
-  box-sizing: border-box;
 }
 .taskbar-title {
   color: #cbd5e1;

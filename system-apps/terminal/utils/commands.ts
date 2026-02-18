@@ -1466,8 +1466,31 @@ commands['stark'] = async (ctx) => {
   const saveCreds = (c: object) => { try { if (typeof localStorage !== 'undefined') localStorage.setItem('stark-cli-credentials', JSON.stringify(c)); } catch { /* */ } };
   const clearCreds = () => { try { if (typeof localStorage !== 'undefined') localStorage.removeItem('stark-cli-credentials'); } catch { /* */ } };
 
-  // Use same-origin URL by default to avoid TLS certificate errors (ERR_CERT_AUTHORITY_INVALID)
-  const apiUrl = loadCfg().apiUrl || (typeof globalThis.location !== 'undefined' ? globalThis.location.origin : 'https://127.0.0.1:443');
+  // Resolve orchestrator API URL with multiple fallbacks:
+  // 1. Explicit config in localStorage
+  // 2. __STARK_CONTEXT__.orchestratorUrl (set by pack executor for pods)
+  // 3. location.origin (works on main thread; returns "null" in blob: workers)
+  // 4. Hard-coded fallback
+  const apiUrl = (() => {
+    const cfgUrl = loadCfg().apiUrl;
+    if (cfgUrl && cfgUrl !== 'null') return cfgUrl;
+    // Derive HTTP URL from orchestrator WebSocket URL set on pod context
+    const ctx = (globalThis as Record<string, unknown>).__STARK_CONTEXT__ as
+      { orchestratorUrl?: string } | undefined;
+    if (ctx?.orchestratorUrl) {
+      try {
+        const u = new URL(ctx.orchestratorUrl);
+        u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+        u.pathname = '';
+        return u.origin;
+      } catch { /* malformed — try next */ }
+    }
+    if (typeof globalThis.location !== 'undefined') {
+      const origin = globalThis.location.origin;
+      if (origin && origin !== 'null') return origin;
+    }
+    return 'https://127.0.0.1:443';
+  })();
   const creds = loadCreds();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (creds?.accessToken) headers['Authorization'] = `Bearer ${creds.accessToken}`;

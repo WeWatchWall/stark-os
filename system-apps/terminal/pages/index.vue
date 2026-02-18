@@ -163,9 +163,22 @@ onMounted(async () => {
     const apiUrl = (() => {
       try {
         const s = localStorage.getItem('stark-cli-config');
-        if (s) { const c = JSON.parse(s); if (c.apiUrl) return c.apiUrl; }
+        if (s) { const c = JSON.parse(s); if (c.apiUrl && c.apiUrl !== 'null') return c.apiUrl; }
       } catch { /* */ }
-      return location.origin;
+      // Derive from pod context orchestrator URL (set by pack executor)
+      const ctx = (globalThis as Record<string, unknown>).__STARK_CONTEXT__ as
+        { orchestratorUrl?: string } | undefined;
+      if (ctx?.orchestratorUrl) {
+        try {
+          const u = new URL(ctx.orchestratorUrl);
+          u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+          u.pathname = '';
+          return u.origin;
+        } catch { /* */ }
+      }
+      const origin = typeof location !== 'undefined' ? location.origin : null;
+      if (origin && origin !== 'null') return origin;
+      return 'https://127.0.0.1:443';
     })();
     const token = (() => {
       try {

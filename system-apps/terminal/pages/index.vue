@@ -253,6 +253,7 @@ onMounted(async () => {
   let currentLine = '';
   let cursorPos = 0;
   let isRunning = false;
+  let savedLine = '';  // Preserves in-progress input when navigating history
 
   function writePrompt() { term.write(getPrompt()); }
 
@@ -436,9 +437,15 @@ onMounted(async () => {
       const matches = Object.keys(commands).filter(c => c.startsWith(lastPart));
       if (matches.length === 1) {
         const completion = matches[0]!.slice(lastPart.length) + ' ';
-        const newPos = cursorPos + completion.length;
-        currentLine = currentLine.slice(0, cursorPos) + completion + currentLine.slice(cursorPos);
-        redrawLine(newPos);
+        // Guard: skip if this match was already completed
+        const beforeCursor = currentLine.slice(0, cursorPos);
+        if (lastPart === '' && beforeCursor.endsWith(matches[0]! + ' ')) {
+          // Already completed — do nothing
+        } else {
+          const newPos = cursorPos + completion.length;
+          currentLine = currentLine.slice(0, cursorPos) + completion + currentLine.slice(cursorPos);
+          redrawLine(newPos);
+        }
       } else if (matches.length > 1) {
         const common = findCommonPrefix(matches);
         const additionalChars = common.slice(lastPart.length);
@@ -481,9 +488,15 @@ onMounted(async () => {
           const isDir = await fs.isDirectory(fullPath);
           const suffix = isDir ? '/' : ' ';
           const fullCompletion = completion + suffix;
-          const newPos = cursorPos + fullCompletion.length;
-          currentLine = currentLine.slice(0, cursorPos) + fullCompletion + currentLine.slice(cursorPos);
-          redrawLine(newPos);
+          // Guard: skip if this match was already completed (avoids duplicate insertions)
+          const beforeCursor = currentLine.slice(0, cursorPos);
+          if (prefix === '' && (beforeCursor.endsWith(match + ' ') || beforeCursor.endsWith(match + '/'))) {
+            // Already completed — do nothing
+          } else {
+            const newPos = cursorPos + fullCompletion.length;
+            currentLine = currentLine.slice(0, cursorPos) + fullCompletion + currentLine.slice(cursorPos);
+            redrawLine(newPos);
+          }
         } else if (matches.length > 1) {
           const common = findCommonPrefix(matches);
           const additionalChars = common.slice(prefix.length);
@@ -541,23 +554,41 @@ onMounted(async () => {
         // Check for modifier: params like "1;5" means Ctrl modifier
         const hasCtrl = params.includes(';5');
 
-        if (final === 'A') { // Up arrow — history back
-          if (historyIndex > 0) {
+        if (final === 'A') { // Up arrow — visual row up or history back
+          const cols = term.cols || 80;
+          const pLen = getPromptVisibleLength();
+          const cursorRow = Math.floor((pLen + cursorPos) / cols);
+          const firstRow = Math.floor(pLen / cols);
+
+          if (cursorRow > firstRow) {
+            // Move cursor up one visual row within the current line
+            redrawLine(Math.max(0, cursorPos - cols));
+          } else if (historyIndex > 0) {
+            if (historyIndex === commandHistory.length) savedLine = currentLine;
             historyIndex--;
             currentLine = commandHistory[historyIndex] || '';
             redrawLine(currentLine.length);
           }
           i = j; continue;
         }
-        if (final === 'B') { // Down arrow — history forward
-          if (historyIndex < commandHistory.length - 1) {
+        if (final === 'B') { // Down arrow — visual row down or history forward
+          const cols = term.cols || 80;
+          const pLen = getPromptVisibleLength();
+          const cursorRow = Math.floor((pLen + cursorPos) / cols);
+          const lastRow = Math.floor((pLen + currentLine.length) / cols);
+
+          if (cursorRow < lastRow) {
+            // Move cursor down one visual row within the current line
+            redrawLine(Math.min(currentLine.length, cursorPos + cols));
+          } else if (historyIndex < commandHistory.length - 1) {
             historyIndex++;
             currentLine = commandHistory[historyIndex] || '';
             redrawLine(currentLine.length);
           } else if (historyIndex === commandHistory.length - 1) {
             historyIndex = commandHistory.length;
-            currentLine = '';
-            redrawLine(0);
+            currentLine = savedLine;
+            savedLine = '';
+            redrawLine(currentLine.length);
           }
           i = j; continue;
         }

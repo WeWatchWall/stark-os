@@ -92,6 +92,7 @@ onMounted(async () => {
 
   // Resize terminal when window resizes (debounced to avoid loops)
   window.addEventListener('resize', handleResize);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
   if (terminalContainer.value && typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => handleResize());
     resizeObserver.observe(terminalContainer.value);
@@ -261,12 +262,26 @@ onMounted(async () => {
     return getPrompt().replace(/\x1B\[[0-9;]*m/g, '').length;
   }
 
+  // Compute the actual terminal row for a given character offset.
+  // xterm uses deferred wrap: writing exactly N cols of text leaves the cursor
+  // at the last column (col N-1) with a pending-wrap flag rather than advancing
+  // to the next row.  The cursor only moves to col 0 of the next row when the
+  // next character is written.  So the row is:
+  //   offset 0        → row 0
+  //   offset 1..cols  → row 0   (pending-wrap when offset === cols)
+  //   offset cols+1..2*cols → row 1
+  function termRow(offset: number, cols: number): number {
+    return offset > 0 ? Math.floor((offset - 1) / cols) : 0;
+  }
+
   function clearCurrentLine() {
     const promptLen = getPromptVisibleLength();
     const cols = term.cols || 80;
     const totalOffset = promptLen + cursorPos;
+    // promptEndRow/Col: grid cell where user text begins (standard division)
     const promptEndRow = Math.floor(promptLen / cols);
-    const cursorRow = Math.floor(totalOffset / cols);
+    // cursorRow: actual terminal row accounting for deferred wrap
+    const cursorRow = termRow(totalOffset, cols);
 
     const upCount = cursorRow - promptEndRow;
     if (upCount > 0) term.write(`\x1B[${upCount}A`);
@@ -558,8 +573,8 @@ onMounted(async () => {
         if (final === 'A') { // Up arrow — visual row up or history back
           const cols = term.cols || 80;
           const pLen = getPromptVisibleLength();
-          const cursorRow = Math.floor((pLen + cursorPos) / cols);
-          const firstRow = Math.floor(pLen / cols);
+          const cursorRow = termRow(pLen + cursorPos, cols);
+          const firstRow = termRow(pLen, cols);
 
           if (cursorRow > firstRow) {
             // Move cursor up one visual row within the current line
@@ -575,8 +590,8 @@ onMounted(async () => {
         if (final === 'B') { // Down arrow — visual row down or history forward
           const cols = term.cols || 80;
           const pLen = getPromptVisibleLength();
-          const cursorRow = Math.floor((pLen + cursorPos) / cols);
-          const lastRow = Math.floor((pLen + currentLine.length) / cols);
+          const cursorRow = termRow(pLen + cursorPos, cols);
+          const lastRow = termRow(pLen + currentLine.length, cols);
 
           if (cursorRow < lastRow) {
             // Move cursor down one visual row within the current line
@@ -760,8 +775,17 @@ function handleResize() {
   resizeTimer = setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 100);
 }
 
+function handleVisibilityChange() {
+  if (!document.hidden) {
+    // Re-fit after window restore (minimize → maximize) with a small delay
+    // to allow the browser to recalculate layout dimensions
+    setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 200);
+  }
+}
+
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
   if (resizeObserver) resizeObserver.disconnect();
   if (term) term.dispose();
 });
@@ -1076,7 +1100,7 @@ function buildMemoryTerminalFS(): TerminalFS {
 <style scoped>
 .terminal-wrapper {
   width: 100%;
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
 }
 </style>

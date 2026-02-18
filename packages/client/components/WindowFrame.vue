@@ -94,6 +94,9 @@ function nudgeIframe() {
     if (!surface) return;
     const iframe = surface.querySelector('iframe') as HTMLIFrameElement | null;
     if (!iframe) return;
+    // Reset any pixel height set by the bundle auto-resize shim so the
+    // iframe stretches to fill the surface via CSS height:100%.
+    iframe.style.height = '100%';
     try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch (_) { /* cross-origin */ }
   }, 50);
 }
@@ -270,7 +273,7 @@ function startResize(e: MouseEvent, edge: Edge) {
 }
 .surface :deep(iframe) {
   width: 100%;
-  height: 100%;
+  height: 100% !important;
   border: none;
   display: block;
 }

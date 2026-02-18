@@ -766,16 +766,6 @@ onMounted(async () => {
     }
   });
 
-  // After a terminal resize (e.g. maximize/minimize), xterm reflows the buffer
-  // content to the new column count.  Redraw the prompt + current input so
-  // that the prefix is never cut off and the cursor stays in sync.
-  // Only when idle at the prompt — not during command execution or interactive prompts.
-  term.onResize(() => {
-    if (!isRunning && !promptResolve) {
-      redrawLine();
-    }
-  });
-
   writePrompt();
   term.focus();
 });

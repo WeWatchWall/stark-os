@@ -294,8 +294,7 @@ onMounted(async () => {
       if (char === '\x7f' || char === '\b') { // Backspace
         if (promptBuffer.length > 0) {
           promptBuffer = promptBuffer.slice(0, -1);
-          if (!promptHidden) term.write('\b \b');
-          else term.write('\b \b');
+          term.write('\b \b');
         }
         continue;
       }

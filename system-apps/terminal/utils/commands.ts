@@ -1581,9 +1581,9 @@ commands['stark'] = async (ctx) => {
             let email = options['email'] || options['e'];
             if (!email && ctx.prompt) email = await ctx.prompt('Admin Email: ');
             if (!email || !String(email).includes('@')) return 'Invalid email address.\n';
-            let password: string | boolean | undefined;
+            let password: string | undefined;
             if (ctx.promptPassword) password = await ctx.promptPassword('Password: ');
-            if (!password || typeof password !== 'string') return 'Password is required.\n';
+            if (!password) return 'Password is required.\n';
             if (password.length < 8) return 'Password must be at least 8 characters.\n';
             if (ctx.promptPassword) {
               const confirm = await ctx.promptPassword('Confirm Password: ');
@@ -1605,9 +1605,9 @@ commands['stark'] = async (ctx) => {
             let email = options['email'] || options['e'];
             if (!email && ctx.prompt) email = await ctx.prompt('New User Email: ');
             if (!email || !String(email).includes('@')) return 'Invalid email address.\n';
-            let password: string | boolean | undefined;
+            let password: string | undefined;
             if (ctx.promptPassword) password = await ctx.promptPassword('Password for new user: ');
-            if (!password || typeof password !== 'string') return 'Password is required.\n';
+            if (!password) return 'Password is required.\n';
             if (password.length < 8) return 'Password must be at least 8 characters.\n';
             let displayName = '';
             if (ctx.prompt) displayName = await ctx.prompt('Display Name (optional): ');
@@ -1777,13 +1777,15 @@ commands['stark'] = async (ctx) => {
         }
       }
       case 'config': {
-        const { positionals: cfgPos, options: cfgOpts } = parseOpts(rest);
+        const { positionals: cfgPos } = parseOpts(rest);
         if (action === 'set') {
           const key = cfgPos[0] || rest[0];
           const value = cfgPos[1] || rest[1];
-          if (!key || !value) return 'Usage: stark config set <key> <value>\n  Keys: apiUrl, supabaseUrl, defaultNamespace\n';
+          const allowedKeys = ['apiUrl', 'supabaseUrl', 'supabaseAnonKey', 'defaultNamespace'];
+          if (!key || !value) return `Usage: stark config set <key> <value>\n  Keys: ${allowedKeys.join(', ')}\n`;
+          if (!allowedKeys.includes(String(key))) return `Invalid config key: ${key}\n  Allowed keys: ${allowedKeys.join(', ')}\n`;
           const cur = loadCfg();
-          cur[key] = String(value);
+          cur[String(key)] = String(value);
           try { if (typeof localStorage !== 'undefined') localStorage.setItem('stark-cli-config', JSON.stringify(cur)); } catch { /* */ }
           return `Config ${key} set to ${value}\n`;
         }

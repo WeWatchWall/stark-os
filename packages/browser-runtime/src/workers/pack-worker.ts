@@ -297,7 +297,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
       const parts: string[] = [];
       for (const p of rawParts) {
         if (p === '.') continue;
-        if (p === '..') { parts.pop(); continue; }
+        if (p === '..') { if (parts.length > 0) parts.pop(); continue; }
         parts.push(p);
       }
       const fileName = parts.pop()!;

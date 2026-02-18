@@ -109,7 +109,7 @@ export class StorageAdapter implements IStorageAdapter {
     const normalized: string[] = [];
     for (const part of raw) {
       if (part === '.') continue;
-      if (part === '..') { normalized.pop(); continue; }
+      if (part === '..') { if (normalized.length > 0) normalized.pop(); continue; }
       normalized.push(part);
     }
     return normalized;

@@ -141,6 +141,10 @@ export interface ShellState {
   cwd: string;
   fs: TerminalFS;
   env: Record<string, string>;
+  /** Optional prompt function for interactive commands */
+  prompt?: (message: string) => Promise<string>;
+  /** Optional hidden prompt function for passwords */
+  promptPassword?: (message: string) => Promise<string>;
 }
 
 /**
@@ -184,6 +188,8 @@ async function executePipeline(
       writeError: write, stdin,
       fs: state.fs, env: state.env,
       setCwd: (path: string) => { state.cwd = path; },
+      prompt: state.prompt,
+      promptPassword: state.promptPassword,
     };
 
     let output: string;

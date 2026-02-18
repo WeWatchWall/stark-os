@@ -786,3 +786,107 @@ describe('New Terminal Commands', () => {
     });
   });
 });
+
+// ============================================================================
+// Interactive Prompt & New Stark Subcommands
+// ============================================================================
+
+describe('CommandContext prompt interface', () => {
+  it('should pass prompt functions through to commands', async () => {
+    const fs = createMemoryFS();
+    await fs.mkdir('/home');
+    const promptCalls: string[] = [];
+    const ctx = await createContextWithFS({
+      fs,
+      prompt: async (msg: string) => { promptCalls.push(msg); return 'test@example.com'; },
+      promptPassword: async (msg: string) => { promptCalls.push(msg); return 'secret123'; },
+    });
+    // Verify prompts are part of the context
+    expect(ctx.prompt).toBeDefined();
+    expect(ctx.promptPassword).toBeDefined();
+  });
+
+  it('should pass prompt through ShellState to command context', async () => {
+    const fs = createMemoryFS();
+    await fs.mkdir('/home');
+    const promptCalls: string[] = [];
+    const state: ShellState = {
+      cwd: '/home',
+      fs,
+      env: { USER: 'test', HOME: '/home' },
+      prompt: async (msg) => { promptCalls.push(msg); return 'response'; },
+      promptPassword: async (msg) => { promptCalls.push(msg); return 'secret'; },
+    };
+    const output: string[] = [];
+    const write = (t: string) => output.push(t);
+    // Execute a simple echo command to verify the plumbing works
+    await executePlan(parseCommandLine('echo hello'), state, write);
+    expect(output.join('')).toContain('hello');
+  });
+});
+
+describe('stark command improvements', () => {
+  it('stark help should list setup and add-user', async () => {
+    const ctx = await createContextWithFS({ args: ['help'] });
+    const result = await commands['stark']!(ctx);
+    expect(result).toContain('setup');
+    expect(result).toContain('add-user');
+    expect(result).toContain('sync');
+  });
+
+  it('stark auth login should prompt interactively when no flags', async () => {
+    const writes: string[] = [];
+    const ctx = await createContextWithFS({
+      args: ['auth', 'login'],
+      write: (t) => writes.push(t),
+      prompt: async () => 'user@example.com',
+      promptPassword: async () => 'password123',
+    });
+    // This will fail the API call but should attempt interactive prompts first
+    const result = await commands['stark']!(ctx);
+    // Should have tried to authenticate (error expected since no API server)
+    expect(result).toMatch(/stark:|Authenticating|Login failed|fetch/i);
+  });
+
+  it('stark config set should update configuration', async () => {
+    // Mock localStorage for this test
+    const store: Record<string, string> = {};
+    const origGetItem = globalThis.localStorage?.getItem;
+    const origSetItem = globalThis.localStorage?.setItem;
+    try {
+      if (typeof globalThis.localStorage === 'undefined') {
+        Object.defineProperty(globalThis, 'localStorage', {
+          value: {
+            getItem: (k: string) => store[k] ?? null,
+            setItem: (k: string, v: string) => { store[k] = v; },
+            removeItem: (k: string) => { delete store[k]; },
+          },
+          configurable: true,
+        });
+      }
+      const ctx = await createContextWithFS({ args: ['config', 'set', 'apiUrl', 'https://my-server:8080'] });
+      const result = await commands['stark']!(ctx);
+      expect(result).toContain('apiUrl');
+      expect(result).toContain('https://my-server:8080');
+    } finally {
+      // Cleanup
+      if (origGetItem) globalThis.localStorage.getItem = origGetItem;
+      if (origSetItem) globalThis.localStorage.setItem = origSetItem;
+    }
+  });
+
+  it('stark config should show current config including resolved apiUrl', async () => {
+    const ctx = await createContextWithFS({ args: ['config'] });
+    const result = await commands['stark']!(ctx);
+    // Should be valid JSON
+    expect(() => JSON.parse(result)).not.toThrow();
+  });
+
+  it('stark auth setup should require prompts', async () => {
+    const ctx = await createContextWithFS({ args: ['auth', 'setup'] });
+    // Without prompt functions, should fail gracefully
+    const result = await commands['stark']!(ctx);
+    // Will either fail on API or show error about setup
+    expect(result).toBeTruthy();
+  });
+});

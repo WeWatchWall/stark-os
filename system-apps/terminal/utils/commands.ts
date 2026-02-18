@@ -81,6 +81,10 @@ export interface CommandContext {
   fs: TerminalFS;
   env: Record<string, string>;
   setCwd: (path: string) => void;
+  /** Prompt the user for text input (interactive terminal sequences) */
+  prompt?: (message: string) => Promise<string>;
+  /** Prompt the user for password input (hidden characters) */
+  promptPassword?: (message: string) => Promise<string>;
 }
 
 /**
@@ -1462,7 +1466,8 @@ commands['stark'] = async (ctx) => {
   const saveCreds = (c: object) => { try { if (typeof localStorage !== 'undefined') localStorage.setItem('stark-cli-credentials', JSON.stringify(c)); } catch { /* */ } };
   const clearCreds = () => { try { if (typeof localStorage !== 'undefined') localStorage.removeItem('stark-cli-credentials'); } catch { /* */ } };
 
-  const apiUrl = loadCfg().apiUrl || 'https://127.0.0.1:443';
+  // Use same-origin URL by default to avoid TLS certificate errors (ERR_CERT_AUTHORITY_INVALID)
+  const apiUrl = loadCfg().apiUrl || (typeof globalThis.location !== 'undefined' ? globalThis.location.origin : 'https://127.0.0.1:443');
   const creds = loadCreds();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (creds?.accessToken) headers['Authorization'] = `Bearer ${creds.accessToken}`;
@@ -1503,17 +1508,17 @@ commands['stark'] = async (ctx) => {
   if (!subcmd || subcmd === 'help') {
     return 'Stark Orchestrator CLI\n\n' +
       'Commands:\n' +
-      '  stark auth        Authentication (login, logout, whoami, status)\n' +
+      '  stark auth        Authentication (login, logout, whoami, status, setup, add-user)\n' +
       '  stark pack        Pack management (list, versions, info, delete)\n' +
       '  stark node        Node management (list, status)\n' +
       '  stark pod         Pod management (create, list, status, stop, rollback, history)\n' +
       '  stark service     Service management (create, list, status)\n' +
       '  stark namespace   Namespace management (create, list, get, delete, use, current)\n' +
       '  stark secret      Secret management (list, get)\n' +
-      '  stark volume      Volume management (create, list)\n' +
+      '  stark volume      Volume management (create, list, sync)\n' +
       '  stark chaos       Chaos testing (status, enable, disable, scenarios)\n' +
       '  stark network     Network management (policies, registry)\n' +
-      '  stark config      Show CLI configuration\n' +
+      '  stark config      Show/set CLI configuration\n' +
       '  stark status      Show cluster status\n' +
       '  stark help        Show this help\n';
   }
@@ -1521,12 +1526,31 @@ commands['stark'] = async (ctx) => {
   try {
     switch (subcmd) {
       case 'auth': {
-        const { options } = parseOpts(rest);
+        const { positionals: authPos, options } = parseOpts(rest);
         switch (action) {
           case 'login': {
-            const email = options['email'] || options['e'];
-            const password = options['password'] || options['p'];
-            if (!email || !password) return 'Usage: stark auth login --email <email> --password <password>\n';
+            // Check if already logged in
+            if (creds && creds.expiresAt && new Date(creds.expiresAt) > new Date()) {
+              if (ctx.prompt) {
+                ctx.write(`Already logged in as ${creds.email}\n`);
+                const proceed = await ctx.prompt('Do you want to log out and log in again? (y/N) ');
+                if (proceed.toLowerCase() !== 'y') return '';
+              }
+              clearCreds();
+            }
+            // Get email — from flags or interactive prompt
+            let email = options['email'] || options['e'];
+            if (!email && ctx.prompt) {
+              email = await ctx.prompt('Email: ');
+            }
+            if (!email) return 'Usage: stark auth login --email <email> --password <password>\n';
+            // Get password — from flags or interactive prompt (hidden)
+            let password = options['password'] || options['p'];
+            if (!password && ctx.promptPassword) {
+              password = await ctx.promptPassword('Password: ');
+            }
+            if (!password) return 'Password is required.\n';
+            ctx.write('Authenticating...\n');
             const result = await api('POST', '/auth/login', { email, password }) as Record<string, unknown>;
             const data = result.data as Record<string, unknown> | undefined;
             if (!result.success || !data) return `Login failed: ${(result.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
@@ -1546,7 +1570,70 @@ commands['stark'] = async (ctx) => {
             const authed = creds && creds.expiresAt && new Date(creds.expiresAt) > new Date();
             return `Authenticated: ${authed ? 'Yes' : 'No'}\n${authed && creds?.email ? `Email: ${creds.email}\nExpires: ${creds.expiresAt}\n` : ''}`;
           }
-          default: return `Unknown auth subcommand: ${action}\nAvailable: login, logout, whoami, status\n`;
+          case 'setup': {
+            // Interactive setup flow — create first admin account
+            ctx.write('Checking if setup is needed...\n');
+            const statusResult = await api('GET', '/auth/setup/status') as Record<string, unknown>;
+            const statusData = statusResult.data as Record<string, unknown> | undefined;
+            if (!statusResult.success) return `Failed to check setup status: ${(statusResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
+            if (!statusData?.needsSetup) return 'Setup has already been completed.\nTo add new users, login as admin and use `stark auth add-user`.\n';
+            ctx.write('No users exist. Setting up initial admin account.\n');
+            let email = options['email'] || options['e'];
+            if (!email && ctx.prompt) email = await ctx.prompt('Admin Email: ');
+            if (!email || !String(email).includes('@')) return 'Invalid email address.\n';
+            let password: string | boolean | undefined;
+            if (ctx.promptPassword) password = await ctx.promptPassword('Password: ');
+            if (!password || typeof password !== 'string') return 'Password is required.\n';
+            if (password.length < 8) return 'Password must be at least 8 characters.\n';
+            if (ctx.promptPassword) {
+              const confirm = await ctx.promptPassword('Confirm Password: ');
+              if (confirm !== password) return 'Passwords do not match.\n';
+            }
+            let displayName = '';
+            if (ctx.prompt) displayName = await ctx.prompt('Display Name (optional): ');
+            ctx.write('Creating admin account...\n');
+            const setupResult = await api('POST', '/auth/setup', { email, password, displayName: displayName || undefined }) as Record<string, unknown>;
+            const setupData = setupResult.data as Record<string, unknown> | undefined;
+            if (!setupResult.success || !setupData) return `Setup failed: ${(setupResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
+            const setupUser = setupData.user as Record<string, string>;
+            saveCreds({ accessToken: setupData.accessToken, refreshToken: setupData.refreshToken, expiresAt: setupData.expiresAt, userId: setupUser.id, email: setupUser.email });
+            ctx.env['USER'] = String(setupUser.email).split('@')[0];
+            return `Admin account created and logged in as ${setupUser.email}\n`;
+          }
+          case 'add-user': {
+            if (!creds?.accessToken) return 'Not authenticated. Run `stark auth login` first.\n';
+            let email = options['email'] || options['e'];
+            if (!email && ctx.prompt) email = await ctx.prompt('New User Email: ');
+            if (!email || !String(email).includes('@')) return 'Invalid email address.\n';
+            let password: string | boolean | undefined;
+            if (ctx.promptPassword) password = await ctx.promptPassword('Password for new user: ');
+            if (!password || typeof password !== 'string') return 'Password is required.\n';
+            if (password.length < 8) return 'Password must be at least 8 characters.\n';
+            let displayName = '';
+            if (ctx.prompt) displayName = await ctx.prompt('Display Name (optional): ');
+            let roles: string[] = [];
+            const roleOpt = options['role'] || options['r'];
+            if (roleOpt && typeof roleOpt === 'string') {
+              roles = roleOpt.split(',').map(r => r.trim()).filter(Boolean);
+            }
+            if (roles.length === 0 && ctx.prompt) {
+              ctx.write('Available roles: admin, operator, developer, viewer\n');
+              const rolesInput = await ctx.prompt('Roles (comma-separated, default: viewer): ');
+              roles = rolesInput ? rolesInput.split(',').map(r => r.trim()).filter(Boolean) : ['viewer'];
+            }
+            if (roles.length === 0) roles = ['viewer'];
+            ctx.write('Creating user...\n');
+            const addResult = await api('POST', '/auth/users', { email, password, displayName: displayName || undefined, roles }) as Record<string, unknown>;
+            const addData = addResult.data as Record<string, unknown> | undefined;
+            if (!addResult.success || !addData) return `Failed to create user: ${(addResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
+            const newUser = addData.user as Record<string, string>;
+            return `User created: ${newUser.email}\nUser ID: ${newUser.id}\nRoles: ${(newUser as unknown as Record<string, string[]>).roles?.join(', ') ?? 'viewer'}\n`;
+          }
+          case 'list-users': case 'users': {
+            if (!creds?.accessToken) return 'Not authenticated. Run `stark auth login` first.\n';
+            return formatResult(await api('GET', '/auth/users'));
+          }
+          default: return `Unknown auth subcommand: ${action}\nAvailable: login, logout, whoami, status, setup, add-user, list-users\n`;
         }
       }
       case 'pack': {
@@ -1644,7 +1731,23 @@ commands['stark'] = async (ctx) => {
             if (!n || !node) return 'Usage: stark volume create <name> --node <nodeNameOrId>\n';
             return formatResult(await api('POST', '/api/volumes', { name: String(n), nodeId: String(node) }));
           }
-          default: return `Unknown volume subcommand: ${action}\nAvailable: list, create\n`;
+          case 'sync': {
+            // Sync volume directories from orchestrator API into OPFS
+            ctx.write('Fetching volumes from orchestrator...\n');
+            const volResult = await api('GET', '/api/volumes') as Record<string, unknown>;
+            if (!volResult.success) return `Failed to fetch volumes: ${(volResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
+            const volData = volResult.data as Array<Record<string, unknown>> | undefined;
+            if (!volData || !Array.isArray(volData)) return 'No volumes found.\n';
+            let synced = 0;
+            for (const vol of volData) {
+              const name = vol.name as string;
+              if (name) {
+                try { await ctx.fs.mkdir(`/volumes/${name}`, true); synced++; } catch { /* dir may exist */ }
+              }
+            }
+            return `Synced ${synced} volume directories into /volumes/.\n`;
+          }
+          default: return `Unknown volume subcommand: ${action}\nAvailable: list, create, sync\n`;
         }
       }
       case 'chaos': {
@@ -1674,8 +1777,18 @@ commands['stark'] = async (ctx) => {
         }
       }
       case 'config': {
+        const { positionals: cfgPos, options: cfgOpts } = parseOpts(rest);
+        if (action === 'set') {
+          const key = cfgPos[0] || rest[0];
+          const value = cfgPos[1] || rest[1];
+          if (!key || !value) return 'Usage: stark config set <key> <value>\n  Keys: apiUrl, supabaseUrl, defaultNamespace\n';
+          const cur = loadCfg();
+          cur[key] = String(value);
+          try { if (typeof localStorage !== 'undefined') localStorage.setItem('stark-cli-config', JSON.stringify(cur)); } catch { /* */ }
+          return `Config ${key} set to ${value}\n`;
+        }
         const cfg = loadCfg();
-        return JSON.stringify(cfg, null, 2) + '\n';
+        return JSON.stringify({ ...cfg, apiUrl: apiUrl }, null, 2) + '\n';
       }
       case 'status': {
         const authed = creds && creds.expiresAt && new Date(creds.expiresAt) > new Date();

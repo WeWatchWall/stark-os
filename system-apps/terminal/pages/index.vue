@@ -139,10 +139,55 @@ onMounted(async () => {
     }
   } catch { /* ignore */ }
 
+  // Also try browser-runtime agent credentials (different localStorage key)
+  if (state.env['USER'] === 'user') {
+    try {
+      const agentStored = localStorage.getItem('stark:agent:credentials');
+      if (agentStored) {
+        const agentCreds = JSON.parse(agentStored);
+        if (agentCreds.email) {
+          state.env['USER'] = agentCreds.email.split('@')[0];
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   // Ensure default directories exist
   try { await fs.mkdir('/home', true); } catch { /* ok */ }
   try { await fs.mkdir('/tmp', true); } catch { /* ok */ }
   try { await fs.mkdir('/volumes', true); } catch { /* ok */ }
+
+  // Sync volume directories from orchestrator API (best-effort)
+  // This makes API-registered volumes visible in the OPFS filesystem
+  try {
+    const apiUrl = (() => {
+      try {
+        const s = localStorage.getItem('stark-cli-config');
+        if (s) { const c = JSON.parse(s); if (c.apiUrl) return c.apiUrl; }
+      } catch { /* */ }
+      return location.origin;
+    })();
+    const token = (() => {
+      try {
+        const s = localStorage.getItem('stark-cli-credentials');
+        if (s) { const c = JSON.parse(s); return c.accessToken; }
+      } catch { /* */ }
+      return null;
+    })();
+    const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) hdrs['Authorization'] = `Bearer ${token}`;
+    const resp = await fetch(`${apiUrl}/api/volumes`, { method: 'GET', headers: hdrs });
+    if (resp.ok) {
+      const json = await resp.json() as { success?: boolean; data?: Array<{ name?: string }> };
+      if (json.success && Array.isArray(json.data)) {
+        for (const vol of json.data) {
+          if (vol.name) {
+            try { await fs.mkdir(`/volumes/${vol.name}`, true); } catch { /* dir exists */ }
+          }
+        }
+      }
+    }
+  } catch { /* API not available — volumes will be shown when packs create them */ }
 
   // Write welcome file if it doesn't exist
   const readmeExists = await fs.exists('/home/README.md');
@@ -206,6 +251,120 @@ onMounted(async () => {
     clearCurrentLine();
     term.write(currentLine);
     if (cursorPos < currentLine.length) term.write(`\x1B[${currentLine.length - cursorPos}D`);
+  }
+
+  // ============================================================================
+  // Interactive Prompt Infrastructure (for stark auth login, setup, etc.)
+  // ============================================================================
+
+  let promptResolve: ((value: string) => void) | null = null;
+  let promptBuffer = '';
+  let promptHidden = false;
+
+  function handlePromptInput(data: string) {
+    let i = 0;
+    while (i < data.length) {
+      // Skip escape sequences in prompt mode
+      if (data[i] === '\x1b') {
+        // Find end of CSI sequence
+        if (i + 1 < data.length && data[i + 1] === '[') {
+          i += 2;
+          while (i < data.length && data[i]! >= '0' && data[i]! <= '?') i++;
+          if (i < data.length) i++;
+        } else {
+          i += 2;
+        }
+        continue;
+      }
+
+      const char = data[i]!;
+      i++;
+
+      if (char === '\r' || char === '\n') {
+        term.writeln('');
+        const resolve = promptResolve!;
+        const buffer = promptBuffer;
+        promptResolve = null;
+        promptBuffer = '';
+        promptHidden = false;
+        resolve(buffer);
+        return;
+      }
+
+      if (char === '\x7f' || char === '\b') { // Backspace
+        if (promptBuffer.length > 0) {
+          promptBuffer = promptBuffer.slice(0, -1);
+          if (!promptHidden) term.write('\b \b');
+          else term.write('\b \b');
+        }
+        continue;
+      }
+
+      if (char === '\x03') { // Ctrl+C — cancel prompt
+        term.writeln('^C');
+        const resolve = promptResolve!;
+        promptResolve = null;
+        promptBuffer = '';
+        promptHidden = false;
+        resolve('');
+        return;
+      }
+
+      if (char.charCodeAt(0) < 32) continue; // Ignore other control chars
+
+      promptBuffer += char;
+      if (promptHidden) {
+        term.write('*');
+      } else {
+        term.write(char);
+      }
+    }
+  }
+
+  /** Prompt the user for text input — used by interactive commands (e.g., stark auth login) */
+  function terminalPrompt(message: string): Promise<string> {
+    return new Promise((resolve) => {
+      term.write(message.replaceAll('\n', '\r\n'));
+      promptBuffer = '';
+      promptHidden = false;
+      promptResolve = resolve;
+    });
+  }
+
+  /** Prompt for password input (shows asterisks instead of characters) */
+  function terminalPromptPassword(message: string): Promise<string> {
+    return new Promise((resolve) => {
+      term.write(message.replaceAll('\n', '\r\n'));
+      promptBuffer = '';
+      promptHidden = true;
+      promptResolve = resolve;
+    });
+  }
+
+  // Wire prompt functions into shell state so commands can use them
+  state.prompt = terminalPrompt;
+  state.promptPassword = terminalPromptPassword;
+
+  // ============================================================================
+  // Word Boundary Helpers (for Ctrl+Arrow word jumping)
+  // ============================================================================
+
+  function findWordBoundaryLeft(line: string, pos: number): number {
+    let j = pos - 1;
+    // Skip whitespace
+    while (j > 0 && line[j - 1] === ' ') j--;
+    // Skip non-whitespace
+    while (j > 0 && line[j - 1] !== ' ') j--;
+    return Math.max(0, j);
+  }
+
+  function findWordBoundaryRight(line: string, pos: number): number {
+    let j = pos;
+    // Skip non-whitespace
+    while (j < line.length && line[j] !== ' ') j++;
+    // Skip whitespace
+    while (j < line.length && line[j] === ' ') j++;
+    return j;
   }
 
   async function handleCommand(line: string): Promise<void> {
@@ -273,17 +432,38 @@ onMounted(async () => {
   }
 
   // Handle terminal data input
-  // Uses index-based parsing so multi-character escape sequences (arrow keys)
-  // are correctly detected instead of being split by a for-of loop.
+  // Uses index-based parsing so multi-character escape sequences (arrow keys,
+  // Ctrl+Arrow word jump) are correctly detected.
   term.onData(async (data: string) => {
+    // If a command has activated interactive prompt mode, route input there
+    if (promptResolve) {
+      handlePromptInput(data);
+      return;
+    }
+
     if (isRunning) return;
 
     let i = 0;
     while (i < data.length) {
-      // ── Escape sequences (\x1b[X) ────────────────────────────────
-      if (data[i] === '\x1b' && i + 2 < data.length && data[i + 1] === '[') {
-        const code = data[i + 2];
-        if (code === 'A') { // Up arrow — history back
+      // ── Escape sequences (\x1b[...) ──────────────────────────────
+      if (data[i] === '\x1b' && i + 1 < data.length && data[i + 1] === '[') {
+        // Parse full CSI sequence: \x1b[ [params] final_byte
+        // E.g., \x1b[A (arrow up), \x1b[1;5C (Ctrl+Right), \x1b[3~ (Delete)
+        let j = i + 2;
+        let params = '';
+        // Collect parameter bytes (0x30-0x3F: digits, semicolons)
+        while (j < data.length && data[j]! >= '0' && data[j]! <= '?') {
+          params += data[j];
+          j++;
+        }
+        // Get final byte
+        const final = j < data.length ? data[j] : '';
+        j++; // skip past final byte
+
+        // Check for modifier: params like "1;5" means Ctrl modifier
+        const hasCtrl = params.includes(';5');
+
+        if (final === 'A') { // Up arrow — history back
           if (historyIndex > 0) {
             historyIndex--;
             clearCurrentLine();
@@ -291,9 +471,9 @@ onMounted(async () => {
             cursorPos = currentLine.length;
             term.write(currentLine);
           }
-          i += 3; continue;
+          i = j; continue;
         }
-        if (code === 'B') { // Down arrow — history forward
+        if (final === 'B') { // Down arrow — history forward
           if (historyIndex < commandHistory.length - 1) {
             historyIndex++;
             clearCurrentLine();
@@ -306,35 +486,55 @@ onMounted(async () => {
             currentLine = '';
             cursorPos = 0;
           }
-          i += 3; continue;
+          i = j; continue;
         }
-        if (code === 'C') { // Right arrow
-          if (cursorPos < currentLine.length) { cursorPos++; term.write('\x1b[C'); }
-          i += 3; continue;
-        }
-        if (code === 'D') { // Left arrow
-          if (cursorPos > 0) { cursorPos--; term.write('\x1b[D'); }
-          i += 3; continue;
-        }
-        if (code === 'H') { // Home
-          if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
-          i += 3; continue;
-        }
-        if (code === 'F') { // End
-          if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
-          i += 3; continue;
-        }
-        if (code === '3' && i + 3 < data.length && data[i + 3] === '~') { // Delete key
-          if (cursorPos < currentLine.length) {
-            currentLine = currentLine.slice(0, cursorPos) + currentLine.slice(cursorPos + 1);
-            const rest = currentLine.slice(cursorPos);
-            term.write(rest + ' ');
-            if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+        if (final === 'C') { // Right arrow (or Ctrl+Right for word jump)
+          if (hasCtrl) {
+            // Jump to next word boundary
+            const newPos = findWordBoundaryRight(currentLine, cursorPos);
+            if (newPos > cursorPos) {
+              term.write(`\x1B[${newPos - cursorPos}C`);
+              cursorPos = newPos;
+            }
+          } else {
+            if (cursorPos < currentLine.length) { cursorPos++; term.write('\x1b[C'); }
           }
-          i += 4; continue;
+          i = j; continue;
+        }
+        if (final === 'D') { // Left arrow (or Ctrl+Left for word jump)
+          if (hasCtrl) {
+            // Jump to previous word boundary
+            const newPos = findWordBoundaryLeft(currentLine, cursorPos);
+            if (newPos < cursorPos) {
+              term.write(`\x1B[${cursorPos - newPos}D`);
+              cursorPos = newPos;
+            }
+          } else {
+            if (cursorPos > 0) { cursorPos--; term.write('\x1b[D'); }
+          }
+          i = j; continue;
+        }
+        if (final === 'H') { // Home
+          if (cursorPos > 0) { term.write(`\x1B[${cursorPos}D`); cursorPos = 0; }
+          i = j; continue;
+        }
+        if (final === 'F') { // End
+          if (cursorPos < currentLine.length) { term.write(`\x1B[${currentLine.length - cursorPos}C`); cursorPos = currentLine.length; }
+          i = j; continue;
+        }
+        if (final === '~') { // Extended keys (Delete = \x1b[3~)
+          if (params === '3') { // Delete key
+            if (cursorPos < currentLine.length) {
+              currentLine = currentLine.slice(0, cursorPos) + currentLine.slice(cursorPos + 1);
+              const rest = currentLine.slice(cursorPos);
+              term.write(rest + ' ');
+              if (rest.length + 1 > 0) term.write(`\x1B[${rest.length + 1}D`);
+            }
+          }
+          i = j; continue;
         }
         // Skip unknown escape sequence
-        i += 3; continue;
+        i = j; continue;
       }
 
       const char = data[i]!;

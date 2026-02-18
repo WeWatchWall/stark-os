@@ -37,6 +37,7 @@ export default defineConfig({
       '@stark-o/browser-runtime': path.resolve(__dirname, './packages/browser-runtime/src'),
       '@stark-o/server': path.resolve(__dirname, './packages/server/src'),
       '@stark-o/cli': path.resolve(__dirname, './packages/cli/src'),
+      '@stark-o/browser-cli': path.resolve(__dirname, './packages/browser-cli/src'),
     },
   },
 });

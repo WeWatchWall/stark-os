@@ -272,70 +272,62 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
 
   // Recreate volume readFile/writeFile inside the worker
   // These closures cannot be serialized via postMessage, so we recreate them here
-  // using the volumeMounts metadata and IndexedDB for persistence.
+  // using the volumeMounts metadata and OPFS for persistence.
+  // OPFS is available inside Web Workers via navigator.storage.getDirectory(),
+  // which shares the same origin storage as the main thread.
   if (context.volumeMounts && context.volumeMounts.length > 0) {
-    const openVolumeDB = (): Promise<IDBDatabase> => {
-      return new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('stark-volumes', 1);
-        req.onupgradeneeded = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains('files')) {
-            db.createObjectStore('files');
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
+    let opfsStarkRoot: FileSystemDirectoryHandle | null = null;
+
+    const getStarkRoot = async (): Promise<FileSystemDirectoryHandle> => {
+      if (opfsStarkRoot) return opfsStarkRoot;
+      const opfsRoot = await navigator.storage.getDirectory();
+      opfsStarkRoot = await opfsRoot.getDirectoryHandle('stark-orchestrator', { create: true });
+      return opfsStarkRoot;
+    };
+
+    const resolveVolumeFileHandle = async (
+      filePath: string,
+      create: boolean,
+    ): Promise<{ fileHandle: FileSystemFileHandle; mount: (typeof context.volumeMounts)[0] }> => {
+      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
+      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
+      const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
+      const rawParts = `volumes/${mount.name}/${relative}`.split('/').filter(Boolean);
+      // Normalize `.` and `..` — OPFS does not support them as entry names
+      const parts: string[] = [];
+      for (const p of rawParts) {
+        if (p === '.') continue;
+        if (p === '..') { if (parts.length > 0) parts.pop(); continue; }
+        parts.push(p);
+      }
+      const fileName = parts.pop()!;
+      let dir = await getStarkRoot();
+      for (const part of parts) {
+        dir = await dir.getDirectoryHandle(part, { create });
+      }
+      return { fileHandle: await dir.getFileHandle(fileName, { create }), mount };
     };
 
     (context as Record<string, unknown>).readFile = async (filePath: string): Promise<string> => {
-      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
-      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-      const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
-      const db = await openVolumeDB();
-      const tx = db.transaction('files', 'readonly');
-      const store = tx.objectStore('files');
-      const result = await new Promise<string | undefined>((resolve, reject) => {
-        const r = store.get(key);
-        r.onsuccess = () => resolve(r.result as string | undefined);
-        r.onerror = () => reject(r.error);
-      });
-      if (result === undefined) throw new Error(`File not found: ${filePath}`);
-      return result;
+      const { fileHandle } = await resolveVolumeFileHandle(filePath, false);
+      const file = await fileHandle.getFile();
+      return file.text();
     };
 
     (context as Record<string, unknown>).writeFile = async (filePath: string, content: string): Promise<void> => {
-      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
-      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-      const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
-      const db = await openVolumeDB();
-      const tx = db.transaction('files', 'readwrite');
-      const store = tx.objectStore('files');
-      await new Promise<void>((resolve, reject) => {
-        const r = store.put(content, key);
-        r.onsuccess = () => resolve();
-        r.onerror = () => reject(r.error);
-      });
+      const { fileHandle } = await resolveVolumeFileHandle(filePath, true);
+      const writable = await fileHandle.createWritable();
+      await writable.write(new TextEncoder().encode(content));
+      await writable.close();
     };
 
     (context as Record<string, unknown>).appendFile = async (filePath: string, content: string): Promise<void> => {
-      const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
-      if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-      const key = `stark-volumes/${mount.name}/${filePath.slice(mount.mountPath.length).replace(/^\//, '')}`;
-      const db = await openVolumeDB();
-      // Use a single readwrite transaction for atomic read-then-append
-      const tx = db.transaction('files', 'readwrite');
-      const store = tx.objectStore('files');
-      const existing = await new Promise<string>((resolve, reject) => {
-        const r = store.get(key);
-        r.onsuccess = () => resolve((r.result as string) ?? '');
-        r.onerror = () => reject(r.error);
-      });
-      await new Promise<void>((resolve, reject) => {
-        const r = store.put(existing + content, key);
-        r.onsuccess = () => resolve();
-        r.onerror = () => reject(r.error);
-      });
+      const { fileHandle } = await resolveVolumeFileHandle(filePath, true);
+      const file = await fileHandle.getFile();
+      const existing = await file.text();
+      const writable = await fileHandle.createWritable();
+      await writable.write(new TextEncoder().encode(existing + content));
+      await writable.close();
     };
 
     originalConsole.log(

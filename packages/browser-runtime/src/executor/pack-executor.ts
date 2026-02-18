@@ -17,8 +17,6 @@ import { FetchAdapter, type BrowserHttpAdapterConfig } from '../adapters/fetch-a
 import {
   createServiceLogger,
   PodError,
-  requiresMainThread,
-  effectiveCapabilities,
   createPodLogSink,
   formatLogArgs,
   createEphemeralDataPlane,
@@ -34,6 +32,7 @@ import {
   type ShutdownHandler,
   type PodLogSink,
   type VolumeFileEntry,
+  type Capability,
 } from '@stark-o/shared';
 
 // Re-export for convenience
@@ -418,7 +417,8 @@ export class PackExecutor {
           const volumeRoot = `/volumes/${mount.name}`;
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           const fullPath = `${volumeRoot}/${relative}`;
-          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/'));
+          if (parentDir) await this.storageAdapter.mkdir(parentDir, true);
           await this.storageAdapter.writeFile(fullPath, content);
         },
         appendFile: async (filePath: string, content: string): Promise<void> => {
@@ -427,7 +427,8 @@ export class PackExecutor {
           const volumeRoot = `/volumes/${mount.name}`;
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           const fullPath = `${volumeRoot}/${relative}`;
-          await this.storageAdapter.mkdir(`${volumeRoot}/${relative}/..`, true);
+          const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/'));
+          if (parentDir) await this.storageAdapter.mkdir(parentDir, true);
           await this.storageAdapter.appendFile(fullPath, content);
         },
       } : {}),
@@ -643,10 +644,12 @@ export class PackExecutor {
       state.status = 'running';
 
       // Check if pack has root capability - run on main thread instead of Web Worker
-      // Root packs need main thread access for DOM manipulation and UI rendering
-      // Use effectiveCapabilities to intersect requested with granted capabilities
-      const caps = effectiveCapabilities(pack.metadata?.requestedCapabilities, pack.grantedCapabilities ?? []);
-      const hasRootCapability = requiresMainThread(caps);
+      // Root packs need main thread access for DOM manipulation and UI rendering.
+      // Only run on main thread when the pack EXPLICITLY requests root capability.
+      // Using effectiveCapabilities(requested, granted) would return ALL granted caps
+      // when requested is undefined, causing non-root packs to run on main thread.
+      const requestedCaps: Capability[] = pack.metadata?.requestedCapabilities ?? [];
+      const hasRootCapability = requestedCaps.includes('root');
 
       if (hasRootCapability) {
         this.config.logger.info('Executing pack on main thread (root capability)', {
@@ -1217,7 +1220,7 @@ export class PackExecutor {
   async clearVolume(volumeName: string): Promise<void> {
     this.ensureInitialized();
 
-    // ── 1. Clear OPFS (main-thread volume writes) ──────────────────
+    // Clear OPFS volume data (both main-thread and worker writes go here)
     const volumeRoot = `/volumes/${volumeName}`;
     try {
       const walkAndDelete = async (dir: string): Promise<void> => {
@@ -1243,62 +1246,19 @@ export class PackExecutor {
       // Volume directory may not exist yet — that's fine
     }
 
-    // ── 2. Clear raw IndexedDB (Web Worker volume writes) ───────────
-    if (typeof indexedDB !== 'undefined') {
-      try {
-        const db = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = indexedDB.open('stark-volumes', 1);
-          req.onupgradeneeded = () => {
-            const dbInner = req.result;
-            if (!dbInner.objectStoreNames.contains('files')) {
-              dbInner.createObjectStore('files');
-            }
-          };
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-
-        const prefix = `stark-volumes/${volumeName}/`;
-        const tx = db.transaction('files', 'readwrite');
-        const store = tx.objectStore('files');
-        const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-          const req = store.getAllKeys();
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-        for (const key of allKeys) {
-          if (typeof key === 'string' && key.startsWith(prefix)) {
-            store.delete(key);
-          }
-        }
-        await new Promise<void>((resolve, reject) => {
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-        db.close();
-      } catch {
-        // IndexedDB may not have this store yet — that's fine
-      }
-    }
-
     this.config.logger.info('Cleared volume', { volumeName });
   }
 
   /**
    * Collect all files from a named volume.
    *
-   * Volume data may live in two places depending on whether the pack ran on
-   * the main thread (OPFS → `stark-orchestrator` directory) or inside a
-   * Web Worker (`stark-volumes` raw IndexedDB, object-store `files`).
-   *
-   * This method checks both stores and merges the results, preferring the
-   * raw IndexedDB entry when a path exists in both.
+   * All volume data (both main-thread and Web Worker writes) lives in OPFS
+   * under `stark-orchestrator/volumes/<volumeName>/`.
    */
   async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
     this.ensureInitialized();
 
-    // ── 1. OPFS (main-thread volume writes) ──────────────────────────
-    const opfsFiles = new Map<string, VolumeFileEntry>();
+    const opfsFiles: VolumeFileEntry[] = [];
     const volumeRoot = `/volumes/${volumeName}`;
 
     const walk = async (dir: string, prefix: string): Promise<void> => {
@@ -1324,7 +1284,7 @@ export class PackExecutor {
               const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
               parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
             }
-            opfsFiles.set(relativePath, { path: relativePath, data: btoa(parts.join('')) });
+            opfsFiles.push({ path: relativePath, data: btoa(parts.join('')) });
           }
         } catch {
           // Skip unreadable entries
@@ -1334,100 +1294,7 @@ export class PackExecutor {
 
     await walk(volumeRoot, '');
 
-    // ── 2. Raw IndexedDB (Web Worker volume writes) ───────────────────
-    //
-    // The pack-worker writes volume data into IndexedDB database
-    // "stark-volumes", object store "files", with keys of the form:
-    //   stark-volumes/<volumeName>/<relativePath>
-    //
-    // We open a cursor over that key prefix and collect matching entries.
-    const rawFiles = await this.collectRawIdbVolumeFiles(volumeName);
-
-    // ── 3. Merge — raw IDB wins on duplicate paths ────────────────────
-    const merged = new Map<string, VolumeFileEntry>(opfsFiles);
-    for (const entry of rawFiles) {
-      merged.set(entry.path, entry);
-    }
-
-    return Array.from(merged.values());
-  }
-
-  /**
-   * Scan the raw `stark-volumes` IndexedDB for entries belonging to a volume.
-   * This is where the Web Worker stores volume data.
-   */
-  private async collectRawIdbVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
-    if (typeof indexedDB === 'undefined') return [];
-
-    const keyPrefix = `stark-volumes/${volumeName}/`;
-    const files: VolumeFileEntry[] = [];
-
-    try {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('stark-volumes', 1);
-        req.onupgradeneeded = () => {
-          const dbInner = req.result;
-          if (!dbInner.objectStoreNames.contains('files')) {
-            dbInner.createObjectStore('files');
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-
-      const tx = db.transaction('files', 'readonly');
-      const store = tx.objectStore('files');
-
-      // Use getAllKeys + getAll for efficiency (widely supported)
-      const allKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-        const req = store.getAllKeys();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-
-      for (const key of allKeys) {
-        const keyStr = String(key);
-        if (!keyStr.startsWith(keyPrefix)) continue;
-
-        const relativePath = keyStr.slice(keyPrefix.length);
-        if (!relativePath) continue;
-
-        const value = await new Promise<unknown>((resolve, reject) => {
-          // Open a fresh readonly transaction per get — IDB auto-commits
-          const getTx = db.transaction('files', 'readonly');
-          const getStore = getTx.objectStore('files');
-          const req = getStore.get(key);
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-
-        if (value === undefined) continue;
-
-        // Values are stored as strings by the worker
-        const str = typeof value === 'string' ? value : String(value);
-        // Encode to base64
-        const CHUNK = 8192;
-        const parts: string[] = [];
-        for (let i = 0; i < str.length; i += CHUNK) {
-          parts.push(str.slice(i, i + CHUNK));
-        }
-        // The content is plain text stored by writeFile — encode to base64
-        const encoder = new TextEncoder();
-        const bytes = encoder.encode(parts.join(''));
-        const b64Parts: string[] = [];
-        for (let i = 0; i < bytes.length; i += CHUNK) {
-          const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
-          b64Parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
-        }
-        files.push({ path: relativePath, data: btoa(b64Parts.join('')) });
-      }
-
-      db.close();
-    } catch {
-      // stark-volumes DB may not exist yet — that's fine
-    }
-
-    return files;
+    return opfsFiles;
   }
 
   /**

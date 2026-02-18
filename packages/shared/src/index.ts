@@ -163,3 +163,6 @@ export {
   groupBy,
   sortBy,
 } from './utils/index.js';
+
+// CLI command definitions (data-driven)
+export * from './cli/index.js';

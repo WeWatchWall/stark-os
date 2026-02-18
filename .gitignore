@@ -51,3 +51,4 @@ supabase/.temp/
 .nuxt/
 .output/
 **/dist/
+package-lock.json

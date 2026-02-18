@@ -80,25 +80,27 @@ const interacting = ref(false);
 
 /**
  * Force the iframe inside the surface container to re-layout after a size change.
- * Mirrors the mitigation from examples/nuxt-pack/test.html:
- * temporarily reset iframe height to a small value and scroll to (0,0),
- * then restore height:100% so the content recalculates its layout.
+ * Dispatches a resize event into the iframe so that content (e.g. xterm FitAddon)
+ * can recalculate its dimensions without the destructive height-reset trick that
+ * caused sizing loops and prompt corruption.
  */
+let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 function nudgeIframe() {
-  const surface = document.getElementById(props.win.containerId);
-  if (!surface) return;
-  const iframe = surface.querySelector('iframe') as HTMLIFrameElement | null;
-  if (!iframe) return;
-  iframe.style.height = '100px';
-  try { iframe.contentWindow?.scrollTo(0, 0); } catch (_) { /* cross-origin */ }
-  // Restore after a tick so the content re-layouts
-  requestAnimationFrame(() => { iframe.style.height = '100%'; });
+  // Debounce: collapse rapid calls (e.g. maximize watcher + explicit call) into one
+  if (nudgeTimer) clearTimeout(nudgeTimer);
+  nudgeTimer = setTimeout(() => {
+    nudgeTimer = null;
+    const surface = document.getElementById(props.win.containerId);
+    if (!surface) return;
+    const iframe = surface.querySelector('iframe') as HTMLIFrameElement | null;
+    if (!iframe) return;
+    try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch (_) { /* cross-origin */ }
+  }, 50);
 }
 
 function toggleMax() {
   shell.toggleMaximize(props.win.id);
-  // Nudge iframe after Vue flushes the size change
-  setTimeout(nudgeIframe, 0);
+  // Watcher on props.win.maximized handles the nudge — no explicit call needed
 }
 
 /* Nudge iframe whenever mobile snap, maximized state, or orientation changes */
@@ -263,7 +265,7 @@ function startResize(e: MouseEvent, edge: Edge) {
 .surface {
   flex: 1;
   position: relative;
-  overflow: auto;
+  overflow: hidden;
   background: #111827;
 }
 .surface :deep(iframe) {

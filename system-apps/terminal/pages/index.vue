@@ -766,20 +766,35 @@ onMounted(async () => {
     }
   });
 
+  // After a terminal resize (e.g. maximize/minimize), xterm reflows the buffer
+  // content to the new column count.  Redraw the prompt + current input so
+  // that the prefix is never cut off and the cursor stays in sync.
+  term.onResize(() => {
+    if (!isRunning && !promptResolve) {
+      redrawLine();
+    }
+  });
+
   writePrompt();
   term.focus();
 });
 
 function handleResize() {
   if (resizeTimer) clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 100);
+  resizeTimer = setTimeout(() => {
+    if (!fitAddon || !terminalContainer.value) return;
+    // Guard: skip fitting when container is hidden or too small (e.g. minimized window)
+    const rect = terminalContainer.value.getBoundingClientRect();
+    if (rect.width < 50 || rect.height < 50) return;
+    fitAddon.fit();
+  }, 100);
 }
 
 function handleVisibilityChange() {
   if (!document.hidden) {
-    // Re-fit after window restore (minimize → maximize) with a small delay
-    // to allow the browser to recalculate layout dimensions
-    setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 200);
+    // Re-fit after window restore with a small delay to allow layout recalculation.
+    // Reuses handleResize which includes the small-container guard.
+    setTimeout(() => handleResize(), 200);
   }
 }
 
@@ -1100,7 +1115,7 @@ function buildMemoryTerminalFS(): TerminalFS {
 <style scoped>
 .terminal-wrapper {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 </style>

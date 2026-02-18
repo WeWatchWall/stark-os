@@ -393,9 +393,9 @@ onMounted(async () => {
 
   function findCommonPrefix(strings: string[]): string {
     if (strings.length === 0) return '';
-    let prefix = strings[0]!;
+    let prefix = strings[0] ?? '';
     for (let si = 1; si < strings.length; si++) {
-      while (!strings[si]!.startsWith(prefix)) {
+      while (!strings[si]?.startsWith(prefix)) {
         prefix = prefix.slice(0, -1);
       }
     }

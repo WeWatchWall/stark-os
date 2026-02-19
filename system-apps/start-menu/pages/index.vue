@@ -61,8 +61,22 @@
         </button>
       </div>
 
+      <!-- Universal apps -->
+      <div v-if="universalApps.length" class="category">
+        <div class="category-label">Universal</div>
+        <button
+          v-for="app in universalApps"
+          :key="app.name"
+          class="app-item"
+          @click="launchApp(app)"
+        >
+          <span class="app-icon universal">⊕</span>
+          <span class="app-name">{{ app.name }}</span>
+        </button>
+      </div>
+
       <!-- Empty state -->
-      <div v-if="!visualApps.length && !workerApps.length && !nodeApps.length" class="menu-empty">
+      <div v-if="!visualApps.length && !workerApps.length && !nodeApps.length && !universalApps.length" class="menu-empty">
         No applications available.
       </div>
     </div>
@@ -82,7 +96,7 @@ interface PackInfo {
   description?: string;
 }
 
-type AppCategory = 'visual' | 'worker' | 'node';
+type AppCategory = 'visual' | 'worker' | 'universal' | 'node';
 
 interface AppEntry {
   name: string;
@@ -117,17 +131,24 @@ const workerApps = computed(() =>
 const nodeApps = computed(() =>
   apps.value.filter((a) => a.category === 'node').sort((a, b) => a.name.localeCompare(b.name)),
 );
+const universalApps = computed(() =>
+  apps.value.filter((a) => a.category === 'universal').sort((a, b) => a.name.localeCompare(b.name)),
+);
 
 /* ── Helpers ── */
 
 function categorize(pack: PackInfo): AppCategory {
   const caps = pack.grantedCapabilities ?? [];
+  // d. Universal apps: run on both browser and node runtimes
+  if (pack.runtimeTag === 'universal') {
+    return 'universal';
+  }
   // a. Visual browser apps: have the root effective capability and browser runtime
-  if (caps.includes('root') && (pack.runtimeTag === 'browser' || pack.runtimeTag === 'universal')) {
+  if (caps.includes('root') && pack.runtimeTag === 'browser') {
     return 'visual';
   }
   // b. Web worker browser apps: browser runtime without root
-  if (pack.runtimeTag === 'browser' || pack.runtimeTag === 'universal') {
+  if (pack.runtimeTag === 'browser') {
     return 'worker';
   }
   // c. Node.js apps
@@ -206,7 +227,7 @@ async function launchApp(app: AppEntry) {
 
       await api.pod.create(app.pack.name, { nodeId: nodeNode.id });
     } else {
-      // Browser apps (visual + worker) — target this browser node
+      // Browser, universal, visual, and worker apps — target this browser node
       const browserNodeId = getBrowserNodeId();
       if (browserNodeId) {
         await api.pod.create(app.pack.name, { nodeId: browserNodeId });
@@ -386,6 +407,10 @@ onMounted(() => {
 .app-icon.node {
   background: rgba(34, 197, 94, 0.15);
   color: #4ade80;
+}
+.app-icon.universal {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
 }
 
 .app-name {

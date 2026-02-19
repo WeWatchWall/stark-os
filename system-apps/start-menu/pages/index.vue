@@ -332,6 +332,7 @@ onMounted(() => {
 /* ── Body (scrollable app list) ── */
 .menu-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 8px 0;

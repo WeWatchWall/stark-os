@@ -39,6 +39,7 @@ import {
   type EphemeralResponse,
   type PodGroupMembership,
 } from '@stark-o/shared';
+import { createPortableStarkAPI } from '@stark-o/shared';
 import { WorkerNetworkProxy } from '../network/worker-network-proxy.js';
 
 // ── Types matching the main thread's BrowserWorkerRequest / Response ──
@@ -177,6 +178,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
   // Make env + context available globally for pack code that expects it
   self.__STARK_ENV__ = context.env ?? {};
   self.__STARK_CONTEXT__ = context;
+
+  // Recreate starkAPI for worker context — the original was stripped before postMessage
+  // because it contains closures that cannot survive structured clone.
+  // Web Workers lack localStorage, so pass the auth token explicitly.
+  (context as Record<string, unknown>).starkAPI = createPortableStarkAPI({
+    accessToken: context.authToken,
+  });
 
   // ── Initialize networking (if orchestrator URL AND serviceId provided) ──
   let networkInitialized = false;

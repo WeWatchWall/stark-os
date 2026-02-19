@@ -37,6 +37,7 @@ import {
   type PodLogSink,
   type VolumeFileEntry,
 } from '@stark-o/shared';
+import { createPortableStarkAPI } from '@stark-o/shared';
 
 // Re-export for convenience
 export type { PackExecutionContext, PackExecutionResult, ExecutionHandle };
@@ -390,6 +391,11 @@ export class PackExecutor {
           serviceId,
         }),
       } : {}),
+      // Stark API — programmatic API for orchestrator operations
+      starkAPI: createPortableStarkAPI({
+        apiUrl: this.config.orchestratorUrl,
+        accessToken: options.podToken,
+      }),
     };
 
     this.config.logger.info('Starting pack execution', {
@@ -646,13 +652,19 @@ export class PackExecutor {
       // The worker script imports PodLogSink and other dependencies directly —
       // no serialized functions are injected. Only bundleCode, context (metadata/state),
       // and args are passed via IPC.
-      // Strip non-serializable properties (lifecycle, onShutdown, ephemeral) — they use
+      // Strip non-serializable properties (lifecycle, onShutdown, ephemeral, starkAPI) — they use
       // getters/closures and cannot survive structured clone over IPC.
       // The ephemeral data plane (EphemeralDataPlane) contains a PodGroupStore with
       // NodeCache event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
       // Add networking config for direct pod-to-orchestrator WebRTC signaling.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, ...serializableContext } = context;
+      this.config.logger.info('Executing pack in worker process', {
+        packId: pack.id,
+        packVersion: pack.version,
+        executionId: context.executionId,
+      });
+
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
       const workerContext = {
         ...serializableContext,
         // Networking: pod connects directly to orchestrator for signaling

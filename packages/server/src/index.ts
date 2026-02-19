@@ -101,36 +101,10 @@ const logger = createServiceLogger(
 /**
  * Create CORS configuration for browser clients
  */
-function createCorsConfig(origins: string[]): CorsOptions {
+function createCorsConfig(_origins: string[]): CorsOptions {
   return {
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-
-      // Allow private-network origins (LAN) automatically
-      const privateNetworkPattern =
-        /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1)(:\d+)?$/;
-
-      // Check if origin matches any allowed pattern or is a private network address
-      const isAllowed =
-        privateNetworkPattern.test(origin) ||
-        origins.some((pattern) => {
-          if (pattern.includes('*')) {
-            // Convert wildcard pattern to regex
-            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-            return regex.test(origin);
-          }
-          return pattern === origin;
-        });
-
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
-      }
+    origin: (_origin, callback) => {
+      callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

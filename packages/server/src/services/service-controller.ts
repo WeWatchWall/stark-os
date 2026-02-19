@@ -263,11 +263,14 @@ export class ServiceController {
             serviceId: service.id,
             oldVersion: service.packVersion,
             newVersion: latestVersion,
+            oldPackId: service.packId,
+            newPackId: latestResult.data.id,
           });
 
           // Record the current version as last successful before upgrading
           // (if pods are running, current version is "successful")
           const updateData: Record<string, unknown> = {
+            packId: latestResult.data.id,
             packVersion: latestVersion,
           };
           

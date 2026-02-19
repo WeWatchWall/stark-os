@@ -282,6 +282,8 @@ export interface CreateServiceInput {
  * Service update input
  */
 export interface UpdateServiceInput {
+  /** New pack ID (when following latest, points to the new version's pack row) */
+  packId?: string;
   /** New pack version */
   packVersion?: string;
   /** Enable or disable follow latest */

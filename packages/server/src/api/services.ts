@@ -115,6 +115,10 @@ async function createService(req: Request, res: Response): Promise<void> {
     let packId = input.packId;
     let packVersion = input.packVersion;
 
+    // If no explicit version was pinned, default to followLatest so the
+    // service automatically picks up new pack versions on registration.
+    const shouldFollowLatest = input.followLatest ?? (!input.packVersion);
+
     if (!packId && input.packName) {
       // Look up pack by name
       const packResult = await packQueries.getLatestPackVersion(input.packName);
@@ -169,10 +173,10 @@ async function createService(req: Request, res: Response): Promise<void> {
       }
     }
 
-    // Create service
+    // Create service — merge followLatest into input
     const serviceQueries = getServiceQueriesAdmin();
     const result = await serviceQueries.createService(
-      input,
+      { ...input, followLatest: shouldFollowLatest },
       packId,
       packVersion ?? 'latest',
       userId

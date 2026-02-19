@@ -268,5 +268,13 @@ export function resolveApiUrl(): string {
     if (origin && origin !== 'null') return origin;
   }
 
+  // srcdoc iframes have location.origin === 'null'; try the parent window
+  try {
+    if (typeof globalThis.parent !== 'undefined' && globalThis.parent !== globalThis) {
+      const parentOrigin = (globalThis.parent as { location?: { origin?: string } }).location?.origin;
+      if (parentOrigin && parentOrigin !== 'null') return parentOrigin;
+    }
+  } catch { /* cross-origin — ignore */ }
+
   return cfgUrl || DEFAULT_CONFIG.apiUrl;
 }

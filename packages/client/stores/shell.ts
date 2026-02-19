@@ -139,6 +139,19 @@ export const useShellStore = defineStore('shell', () => {
     activeWorkspaceId.value = id;
   }
 
+  /* ── Start Menu ── */
+  const startMenuVisible = ref(false);
+  /** Container ID for the chromeless start-menu surface */
+  const startMenuContainerId = 'stark-start-menu-surface';
+  /** Whether the start-menu pod has been attached */
+  const startMenuAttached = ref(false);
+
+  function toggleStartMenu() {
+    startMenuVisible.value = !startMenuVisible.value;
+  }
+  function showStartMenu() { startMenuVisible.value = true; }
+  function hideStartMenu() { startMenuVisible.value = false; }
+
   /* ── Windows ── */
   const windows = ref<ShellWindow[]>([]);
   let nextZIndex = 100;
@@ -264,6 +277,13 @@ export const useShellStore = defineStore('shell', () => {
     addWorkspace,
     removeWorkspace,
     switchWorkspace,
+    /* Start Menu */
+    startMenuVisible,
+    startMenuContainerId,
+    startMenuAttached,
+    toggleStartMenu,
+    showStartMenu,
+    hideStartMenu,
     /* Windows */
     windows,
     activeWindows,

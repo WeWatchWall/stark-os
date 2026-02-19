@@ -16,6 +16,15 @@
         v-show="win.workspaceId === shell.activeWorkspaceId"
       />
 
+      <!-- Start Menu surface (no window chrome) -->
+      <div
+        class="start-menu-panel"
+        :class="{ visible: shell.startMenuVisible }"
+        @mousedown.stop
+      >
+        <div :id="shell.startMenuContainerId" class="start-menu-surface" />
+      </div>
+
       <!-- Desktop watermark (always visible behind windows) -->
       <div class="desktop-watermark">
         <img src="~/assets/Logo.png" alt="StarkOS" class="watermark" />
@@ -25,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, watch } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
 defineProps<{ connectionState: string }>();
@@ -39,21 +48,45 @@ function onResize() {
 }
 
 function onDesktopClick(e: MouseEvent) {
+  // Hide start menu on any click outside of it
+  if (shell.startMenuVisible) {
+    shell.hideStartMenu();
+  }
   // If click is on the desktop background (not on a window), clear focus
   if ((e.target as HTMLElement).classList.contains('desktop')) {
     shell.clearFocus();
   }
 }
 
+/** Hide start menu when signalled by the start-menu app (same-origin CustomEvent) */
+function onStartMenuHide() {
+  shell.hideStartMenu();
+}
+
+/**
+ * Tell the start-menu to refresh its pack list whenever the panel opens.
+ * Uses a localStorage counter so the srcdoc iframe picks it up via the
+ * 'storage' event — no cross-frame dispatching needed.
+ */
+const STORAGE_KEY = 'stark:start-menu-opened';
+watch(() => shell.startMenuVisible, (visible) => {
+  if (visible) {
+    const prev = parseInt(localStorage.getItem(STORAGE_KEY) ?? '0', 10);
+    localStorage.setItem(STORAGE_KEY, String(prev + 1));
+  }
+});
+
 onMounted(() => {
   window.addEventListener('resize', onResize);
   window.addEventListener('orientationchange', onResize);
+  window.addEventListener('stark:start-menu:hide', onStartMenuHide);
   shell.detectLayoutMode();
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', onResize);
   window.removeEventListener('orientationchange', onResize);
+  window.removeEventListener('stark:start-menu:hide', onStartMenuHide);
 });
 </script>
 
@@ -96,5 +129,33 @@ onUnmounted(() => {
 .watermark {
   width: 260px;
   height: auto;
+}
+
+/* ── Start Menu panel (no window chrome) ── */
+.start-menu-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 420px;
+  max-height: calc(100% - 8px);
+  z-index: 99998;
+  display: none;
+  overflow: hidden;
+  border-radius: 0 0 8px 0;
+  box-shadow: 4px 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+.start-menu-panel.visible {
+  display: block;
+}
+.start-menu-surface {
+  width: 100%;
+  height: 100%;
+}
+.start-menu-surface :deep(iframe) {
+  width: 100%;
+  height: 100% !important;
+  border: none;
+  display: block;
 }
 </style>

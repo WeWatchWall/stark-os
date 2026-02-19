@@ -1737,7 +1737,7 @@ commands['stark'] = async (ctx) => {
             // Ensure parent dir exists
             const parentDir = outPath.substring(0, outPath.lastIndexOf('/'));
             if (parentDir) try { await ctx.fs.mkdir(parentDir, true); } catch { /* ok */ }
-            await ctx.fs.writeFile(outPath, new TextDecoder().decode(zipData));
+            await ctx.fs.writeFile(outPath, zipData);
             return `✓ Volume '${n}' downloaded to ${outPath} (${zipData.byteLength} bytes)\n`;
           }
           case 'sync': {

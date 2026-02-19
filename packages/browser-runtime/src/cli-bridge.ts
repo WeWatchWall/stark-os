@@ -67,7 +67,8 @@ export class CliBridge {
             return { success: true, data };
           }
           if (subcommand === 'info') {
-            const data = await api.pack.info(rest[0]!);
+            if (!rest[0]) return { success: false, error: 'Pack name required' };
+            const data = await api.pack.info(rest[0]);
             outputWriter(JSON.stringify(data, null, 2) + '\n');
             return { success: true, data };
           }
@@ -80,7 +81,8 @@ export class CliBridge {
             return { success: true, data };
           }
           if (subcommand === 'status') {
-            const data = await api.pod.status(rest[0]!);
+            if (!rest[0]) return { success: false, error: 'Pod ID required' };
+            const data = await api.pod.status(rest[0]);
             outputWriter(JSON.stringify(data, null, 2) + '\n');
             return { success: true, data };
           }

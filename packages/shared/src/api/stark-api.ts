@@ -155,7 +155,6 @@ function resolveApiUrl(explicitUrl?: string): string {
     try {
       const u = new URL(ctx.orchestratorUrl);
       u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
-      u.pathname = '/';
       return u.origin;
     } catch { /* malformed — try next */ }
   }
@@ -214,7 +213,7 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         return { authenticated: !!accessToken, email: undefined, expiresAt: undefined };
       },
       async setup(email: string, password: string, displayName?: string) {
-        const response = await apiPost('/auth/setup', { email, password, displayName: displayName || undefined });
+        const response = await apiPost('/auth/setup', { email, password, displayName });
         return handleResponse<{ accessToken: string; user: { id: string; email: string } }>(response);
       },
       async setupStatus() {
@@ -223,7 +222,7 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       async addUser(email: string, password: string, options?: { displayName?: string; roles?: string[] }) {
         const response = await apiPost('/auth/users', {
           email, password,
-          displayName: options?.displayName || undefined,
+          displayName: options?.displayName,
           roles: options?.roles ?? ['viewer'],
         });
         return handleResponse<{ user: { id: string; email: string; roles?: string[] } }>(response);

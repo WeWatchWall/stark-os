@@ -698,12 +698,18 @@ export class PackExecutor {
       // Execute in Web Worker. The worker script imports all dependencies
       // (formatLogArgs, etc.) directly — no serialized function injection.
       // Only bundleCode, context (metadata/state), and args are passed via postMessage.
-      // Strip non-serializable properties (lifecycle, onShutdown, ephemeral) — they use
+      // Strip non-serializable properties (lifecycle, onShutdown, ephemeral, starkAPI) — they use
       // getters/closures and cannot survive structured clone.
       // The ephemeral data plane (EphemeralDataPlane) contains a PodGroupStore with
       // event listeners and Map handlers — none of which can be cloned.
       // The worker will recreate it from context.metadata.enableEphemeral.
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, ...serializableContext } = context;
+      this.config.logger.info('Executing pack in web worker', {
+        packId: pack.id,
+        packVersion: pack.version,
+        executionId: context.executionId,
+      });
+
+      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
       
       // Add networking config for pack-worker
       const workerContext = {

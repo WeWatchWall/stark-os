@@ -260,8 +260,8 @@ onMounted(() => {
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid rgba(59, 130, 246, 0.2);
-  border-top: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 0 8px 0 0;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 0 0 8px 0;
 }
 
 /* ── Header ── */

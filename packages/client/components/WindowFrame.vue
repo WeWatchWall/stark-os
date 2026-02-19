@@ -43,6 +43,9 @@
       <!-- Pods attach iframes here via the containerId -->
     </div>
 
+    <!-- Focus overlay: captures mousedown over iframes on unfocused windows -->
+    <div v-if="!isFocused" class="focus-overlay" @mousedown="shell.focusWindow(win.id)" />
+
     <!-- Resize handles (desktop + not maximized only) -->
     <template v-if="!isMobile && !win.maximized">
       <div class="rh rh-n" @mousedown.prevent="startResize($event, 'n')" />
@@ -295,6 +298,16 @@ function startResize(e: MouseEvent, edge: Edge) {
   position: absolute;
   inset: 0;
   z-index: 50;
+}
+
+/* ── Focus overlay (captures mousedown over iframes on unfocused windows) ── */
+.focus-overlay {
+  position: absolute;
+  top: 34px; /* below title bar */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
 }
 
 /* ── Maximized ── */

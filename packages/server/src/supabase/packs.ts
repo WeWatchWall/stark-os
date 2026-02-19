@@ -81,6 +81,7 @@ function rowToPackListItem(row: PackRow & { version_count?: number }): PackListI
     description: row.description ?? undefined,
     versionCount: row.version_count ?? 1,
     ownerId: row.owner_id,
+    grantedCapabilities: (row.granted_capabilities ?? []) as Capability[],
     createdAt: new Date(row.created_at),
   };
 }

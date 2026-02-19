@@ -63,7 +63,7 @@ export interface StarkAPI {
   pod: {
     list(options?: { namespace?: string; status?: string }): Promise<unknown>;
     status(podId: string): Promise<unknown>;
-    create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string }): Promise<unknown>;
+    create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }> }): Promise<unknown>;
     stop(podId: string): Promise<unknown>;
     rollback(podId: string): Promise<unknown>;
     history(podId: string): Promise<unknown>;
@@ -248,10 +248,11 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
         return handleResponse<unknown>(await getApi().get(`/api/pods${qs ? '?' + qs : ''}`));
       },
       async status(podId: string) { return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}`)); },
-      async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string }) {
+      async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }> }) {
         const body: Record<string, unknown> = { packName, namespace: options?.namespace ?? 'default' };
         if (options?.packVersion) body.packVersion = options.packVersion;
         if (options?.nodeId) body.nodeId = options.nodeId;
+        if (options?.volumeMounts) body.volumeMounts = options.volumeMounts;
         return handleResponse<unknown>(await getApi().post('/api/pods', body));
       },
       async stop(podId: string) { return handleResponse<unknown>(await getApi().post(`/api/pods/${podId}/stop`, {})); },

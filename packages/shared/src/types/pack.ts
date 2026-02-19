@@ -163,6 +163,8 @@ export interface PackListItem {
   versionCount: number;
   /** Owner ID */
   ownerId: string;
+  /** Granted capabilities */
+  grantedCapabilities: Capability[];
   /** Creation timestamp */
   createdAt: Date;
 }

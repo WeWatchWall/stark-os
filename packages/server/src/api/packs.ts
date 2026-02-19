@@ -421,7 +421,7 @@ async function listPacks(req: Request, res: Response): Promise<void> {
       bundlePath: `packs/${item.name}/${item.latestVersion}/bundle.js`,
       description: item.description,
       metadata: {},
-      grantedCapabilities: [],
+      grantedCapabilities: item.grantedCapabilities,
       createdAt: item.createdAt,
       updatedAt: item.createdAt, // List items don't have updatedAt
     }));

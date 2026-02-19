@@ -121,7 +121,7 @@ onUnmounted(() => {
 /* ── Start Menu panel (no window chrome) ── */
 .start-menu-panel {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
   width: 280px;
   height: 420px;
@@ -129,8 +129,8 @@ onUnmounted(() => {
   z-index: 99998;
   display: none;
   overflow: hidden;
-  border-radius: 0 8px 0 0;
-  box-shadow: 4px -4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(59, 130, 246, 0.15);
+  border-radius: 0 0 8px 0;
+  box-shadow: 4px 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(59, 130, 246, 0.15);
 }
 .start-menu-panel.visible {
   display: block;

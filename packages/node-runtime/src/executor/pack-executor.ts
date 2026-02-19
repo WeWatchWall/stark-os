@@ -37,6 +37,7 @@ import {
   type PodLogSink,
   type VolumeFileEntry,
 } from '@stark-o/shared';
+import { createPortableStarkAPI } from '@stark-o/shared';
 
 // Re-export for convenience
 export type { PackExecutionContext, PackExecutionResult, ExecutionHandle };
@@ -390,6 +391,11 @@ export class PackExecutor {
           serviceId,
         }),
       } : {}),
+      // Stark API — programmatic API for orchestrator operations
+      starkAPI: createPortableStarkAPI({
+        apiUrl: this.config.orchestratorUrl,
+        accessToken: options.podToken,
+      }),
     };
 
     this.config.logger.info('Starting pack execution', {

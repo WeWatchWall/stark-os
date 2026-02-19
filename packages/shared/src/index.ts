@@ -166,3 +166,10 @@ export {
 
 // CLI command definitions (data-driven)
 export * from './cli/index.js';
+
+// Portable Stark API (fetch-based, no localStorage)
+export {
+  createStarkAPI as createPortableStarkAPI,
+  type StarkAPI,
+  type StarkAPIConfig,
+} from './api/index.js';

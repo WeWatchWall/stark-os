@@ -22,6 +22,7 @@ import {
   type GroupTransport,
   type EphemeralDataPlane,
 } from '@stark-o/shared';
+import { createPortableStarkAPI } from '@stark-o/shared';
 import { PodNetworkStack } from '../network/pod-network-stack.js';
 
 // ── Types matching parent's WorkerRequest / WorkerResponse ──────────
@@ -117,6 +118,12 @@ async function executePack(request: WorkerRequest): Promise<void> {
     originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
   console.error = (...logArgs: unknown[]) =>
     originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
+
+  // 2b. Recreate starkAPI for worker context — the original was stripped before IPC
+  // because it contains closures that cannot survive structured clone.
+  (context as Record<string, unknown>).starkAPI = createPortableStarkAPI({
+    accessToken: context.authToken,
+  });
 
   // 3. Initialize WebRTC networking (if orchestrator URL AND serviceId provided)
   let networkStack: PodNetworkStack | null = null;

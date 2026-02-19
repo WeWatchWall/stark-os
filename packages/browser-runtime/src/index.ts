@@ -130,3 +130,25 @@ export {
   type CliBridgeResult,
   type CliBridgeWriter,
 } from './cli-bridge.js';
+
+// Browser API (programmatic API for packs + terminal)
+export {
+  createStarkAPI,
+  type StarkAPI,
+  loadConfig as loadApiConfig,
+  saveConfig as saveApiConfig,
+  loadCredentials as loadApiCredentials,
+  saveCredentials as saveApiCredentials,
+  clearCredentials as clearApiCredentials,
+  isAuthenticated as isApiAuthenticated,
+  getAccessToken as getApiAccessToken,
+  requireAuth as requireApiAuth,
+  createApiClient,
+  resolveNodeId,
+  resolveApiUrl,
+  downloadVolume,
+  archiveVolumePath,
+  type BrowserApiConfig,
+  type BrowserCredentials,
+  type ApiClient,
+} from './api/index.js';

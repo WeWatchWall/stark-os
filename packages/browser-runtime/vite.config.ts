@@ -30,7 +30,7 @@ export default defineConfig({
           return false;
         }
         // Externalize workspace packages for main library
-        return id === '@stark-o/core' || id === '@stark-o/shared' || id === '@stark-o/browser-cli';
+        return id === '@stark-o/core' || id === '@stark-o/shared';
       },
       output: {
         // Library output options

@@ -1,10 +1,14 @@
 /**
  * Browser CLI Bridge
  *
- * Exposes the browser-cli to pods running in the browser runtime.
- * Pods can call CLI commands through this bridge.
+ * Exposes the browser API to pods running in the browser runtime.
+ * Pods can call API operations through this bridge.
+ * Uses the internal API module directly (no external browser-cli dependency).
  * @module @stark-o/browser-runtime/cli-bridge
  */
+
+import { createStarkAPI, type StarkAPI } from './api/api.js';
+import { downloadVolume, archiveVolumePath } from './api/volume.js';
 
 /**
  * CLI command result
@@ -22,48 +26,81 @@ export interface CliBridgeResult {
 export type CliBridgeWriter = (text: string) => void;
 
 /**
- * CLI bridge that exposes browser-cli to pods.
- * Dynamically imports @stark-o/browser-cli to avoid circular dependencies.
+ * CLI bridge that exposes the Stark API to pods.
+ * Uses the internal browser-runtime API module directly.
  */
 export class CliBridge {
-  private cliModule: {
-    executeCommand: (args: string[], write: CliBridgeWriter) => Promise<CliBridgeResult>;
-    downloadVolume: (volumeName: string, nodeNameOrId: string) => Promise<Uint8Array>;
-    archiveVolumePath: (nodeNameOrId: string, volumeName: string, archivePath: string) => Promise<Uint8Array>;
-  } | null = null;
+  private _api: StarkAPI | null = null;
 
   /**
-   * Lazily load the browser-cli module
+   * Get or create the StarkAPI instance
    */
-  private async loadCli(): Promise<NonNullable<typeof this.cliModule>> {
-    if (!this.cliModule) {
-      const mod = await import('@stark-o/browser-cli');
-      this.cliModule = {
-        executeCommand: mod.executeCommand,
-        downloadVolume: mod.downloadVolume,
-        archiveVolumePath: mod.archiveVolumePath,
-      };
+  private getApi(): StarkAPI {
+    if (!this._api) {
+      this._api = createStarkAPI();
     }
-    return this.cliModule;
+    return this._api;
   }
 
   /**
-   * Execute a CLI command
+   * Execute a CLI-like command via the StarkAPI.
+   * Dispatches to the appropriate API method based on args.
+   *
    * @param args - Command arguments (e.g., ['pack', 'list'])
    * @param write - Optional output callback
    */
   async execute(args: string[], write?: CliBridgeWriter): Promise<CliBridgeResult> {
-    const cli = await this.loadCli();
     const outputWriter = write ?? (() => {});
-    return cli.executeCommand(args, outputWriter);
+    if (args.length === 0) {
+      return { success: false, error: 'No command specified' };
+    }
+
+    const [command, subcommand, ...rest] = args;
+    const api = this.getApi();
+
+    try {
+      switch (command) {
+        case 'pack': {
+          if (subcommand === 'list' || subcommand === 'ls') {
+            const data = await api.pack.list();
+            outputWriter(JSON.stringify(data, null, 2) + '\n');
+            return { success: true, data };
+          }
+          if (subcommand === 'info') {
+            const data = await api.pack.info(rest[0]!);
+            outputWriter(JSON.stringify(data, null, 2) + '\n');
+            return { success: true, data };
+          }
+          return { success: false, error: `Unknown pack subcommand: ${subcommand}` };
+        }
+        case 'pod': {
+          if (subcommand === 'list' || subcommand === 'ls') {
+            const data = await api.pod.list();
+            outputWriter(JSON.stringify(data, null, 2) + '\n');
+            return { success: true, data };
+          }
+          if (subcommand === 'status') {
+            const data = await api.pod.status(rest[0]!);
+            outputWriter(JSON.stringify(data, null, 2) + '\n');
+            return { success: true, data };
+          }
+          return { success: false, error: `Unknown pod subcommand: ${subcommand}` };
+        }
+        default:
+          return { success: false, error: `Unknown command: ${command}` };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      outputWriter(`Error: ${msg}\n`);
+      return { success: false, error: msg };
+    }
   }
 
   /**
    * Download a volume as a zip archive
    */
   async downloadVolume(volumeName: string, nodeNameOrId: string): Promise<Uint8Array> {
-    const cli = await this.loadCli();
-    return cli.downloadVolume(volumeName, nodeNameOrId);
+    return downloadVolume(volumeName, nodeNameOrId);
   }
 
   /**
@@ -74,8 +111,7 @@ export class CliBridge {
     volumeName: string,
     archivePath: string,
   ): Promise<Uint8Array> {
-    const cli = await this.loadCli();
-    return cli.archiveVolumePath(nodeNameOrId, volumeName, archivePath);
+    return archiveVolumePath(nodeNameOrId, volumeName, archivePath);
   }
 }
 

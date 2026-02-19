@@ -329,6 +329,25 @@ export interface PackExecutionContext {
       headers?: Record<string, string>,
     ) => Promise<{ status: number; body?: unknown; headers?: Record<string, string> }>) => void;
   };
+
+  /**
+   * Stark API — programmatic API for orchestrator operations.
+   * Available in browser runtimes when the pack runs inside a pod.
+   * Provides access to auth, packs, pods, services, volumes, etc.
+   *
+   * @example
+   * ```typescript
+   * // List all packs
+   * const packs = await context.starkAPI.pack.list();
+   *
+   * // Create a pod
+   * const pod = await context.starkAPI.pod.create('my-pack');
+   *
+   * // Download a volume
+   * const data = await context.starkAPI.volume.download('my-vol', 'my-node');
+   * ```
+   */
+  starkAPI?: unknown;
 }
 
 /**

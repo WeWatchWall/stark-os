@@ -14,6 +14,7 @@ import {
 } from '../adapters/worker-adapter.js';
 import { StorageAdapter, type BrowserStorageConfig } from '../adapters/storage-adapter.js';
 import { FetchAdapter, type BrowserHttpAdapterConfig } from '../adapters/fetch-adapter.js';
+import { createStarkAPI } from '../api/api.js';
 import {
   createServiceLogger,
   PodError,
@@ -37,6 +38,14 @@ import {
 
 // Re-export for convenience
 export type { PackExecutionContext, PackExecutionResult, ExecutionHandle };
+
+/**
+ * Create a StarkAPI instance for the pack execution context.
+ * Lazily wraps createStarkAPI so that it picks up the resolved API URL.
+ */
+function createStarkAPIForContext(): ReturnType<typeof createStarkAPI> {
+  return createStarkAPI();
+}
 
 /**
  * Generate a UUID (browser-compatible)
@@ -439,6 +448,8 @@ export class PackExecutor {
           serviceId,
         }),
       } : {}),
+      // Stark API — programmatic API for orchestrator operations
+      starkAPI: createStarkAPIForContext(),
     };
 
     this.config.logger.info('Starting pack execution', {

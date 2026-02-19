@@ -393,6 +393,7 @@ export class PackExecutor {
         STARK_PACK_ID: pack.id,
         STARK_PACK_VERSION: pack.version,
         STARK_EXECUTION_ID: executionId,
+        STARK_NODE_ID: pod.nodeId,
       },
       timeout,
       metadata: {

@@ -147,13 +147,15 @@ function requestHide(): void {
 }
 
 /**
- * Read the current browser node ID from localStorage.
- * The client persists this after the browser agent registers so that
- * same-origin system apps can target this specific node.
+ * Read the current browser node ID from the pack execution context.
+ * The executor sets __STARK_ENV__ on the parent window for main-thread packs.
+ * STARK_NODE_ID is injected there by the pack executor.
  */
 function getBrowserNodeId(): string | null {
   try {
-    return localStorage.getItem('stark:current-browser-node-id');
+    const env = (window.parent as Record<string, unknown>).__STARK_ENV__ as
+      Record<string, string> | undefined;
+    return env?.STARK_NODE_ID ?? null;
   } catch {
     return null;
   }

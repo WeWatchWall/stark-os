@@ -119,6 +119,8 @@ import {
   saveBrowserCredentials,
   loadBrowserCredentials,
   clearBrowserCredentials,
+  saveApiCredentials,
+  clearApiCredentials,
   type BrowserAgent,
   type ConnectionState,
   type BrowserNodeCredentials,
@@ -136,6 +138,27 @@ const isLoading = ref(false);
 const registrationEnabled = ref(false);
 const shell = useShellStore();
 let agent: BrowserAgent | null = null;
+
+/**
+ * Persist credentials to both the agent store (for node registration)
+ * and the API store (for createStarkAPI() used by terminal & start-menu).
+ */
+function persistCredentials(creds: BrowserNodeCredentials): void {
+  saveBrowserCredentials(creds);
+  saveApiCredentials({
+    accessToken: creds.accessToken,
+    refreshToken: creds.refreshToken,
+    expiresAt: creds.expiresAt,
+    userId: creds.userId,
+    email: creds.email,
+  });
+}
+
+/** Clear both credential stores. */
+function clearAllCredentials(): void {
+  clearBrowserCredentials();
+  clearApiCredentials();
+}
 
 /**
  * Get the HTTP base URL from the current page
@@ -202,7 +225,7 @@ async function handleLogin(): Promise<void> {
       email: result.data.user.email,
       createdAt: new Date().toISOString(),
     };
-    saveBrowserCredentials(credentials);
+    persistCredentials(credentials);
 
     password.value = '';
     isAuthenticated.value = true;
@@ -268,7 +291,7 @@ async function handleRegister(): Promise<void> {
       email: result.data.user.email,
       createdAt: new Date().toISOString(),
     };
-    saveBrowserCredentials(credentials);
+    persistCredentials(credentials);
 
     password.value = '';
     confirmPassword.value = '';
@@ -285,14 +308,13 @@ async function handleRegister(): Promise<void> {
 /** Name used when the start-menu pack is registered */
 const START_MENU_PACK_NAME = '@stark-o/start-menu';
 
-/** localStorage key where the current browser node ID is stored for system apps */
-const BROWSER_NODE_ID_KEY = 'stark:current-browser-node-id';
-
 /**
  * Start the browser agent with the given auth token.
  * Auth credentials are persisted in localStorage (shared origin) so
  * system apps running in srcdoc iframes pick them up automatically
  * via createStarkAPI() — no postMessage relay needed.
+ * The browser node ID is passed through the pack execution context
+ * (STARK_NODE_ID env var) for consistency with other context values.
  */
 async function startAgent(authToken: string): Promise<void> {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -327,11 +349,6 @@ async function startAgent(authToken: string): Promise<void> {
     else if (event === 'authenticated') connectionState.value = 'authenticated';
     else if (event === 'registered') {
       connectionState.value = 'registered';
-      // Persist this browser node's ID so same-origin system apps can read it
-      const nodeId = agent?.getNodeId();
-      if (nodeId) {
-        try { localStorage.setItem(BROWSER_NODE_ID_KEY, nodeId); } catch { /* ignore */ }
-      }
     }
     else if (event === 'disconnected') connectionState.value = 'disconnected';
     else if (event === 'reconnecting') connectionState.value = 'connecting';
@@ -363,8 +380,7 @@ async function handleLogout(): Promise<void> {
   }
   shell.startMenuAttached = false;
   shell.hideStartMenu();
-  try { localStorage.removeItem(BROWSER_NODE_ID_KEY); } catch { /* ignore */ }
-  clearBrowserCredentials();
+  clearAllCredentials();
   connectionState.value = 'disconnected';
   isAuthenticated.value = false;
   email.value = '';
@@ -414,7 +430,7 @@ onMounted(async () => {
             email: result.data.user.email,
             createdAt: storedCreds.createdAt,
           };
-          saveBrowserCredentials(refreshedCreds);
+          persistCredentials(refreshedCreds);
           isAuthenticated.value = true;
           await startAgent(refreshedCreds.accessToken);
           return;
@@ -425,7 +441,7 @@ onMounted(async () => {
     }
 
     // Credentials expired and refresh failed, clear them
-    clearBrowserCredentials();
+    clearAllCredentials();
   }
 });
 

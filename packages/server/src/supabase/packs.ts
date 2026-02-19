@@ -221,14 +221,8 @@ export class PackQueries {
 
     query = query.order('created_at', { ascending: false });
 
-    if (options?.limit) {
-      query = query.limit(options.limit);
-    }
-
-    if (options?.offset) {
-      query = query.range(options.offset, options.offset + (options.limit ?? 50) - 1);
-    }
-
+    // NOTE: Do NOT apply SQL-level limit/offset here because we group
+    // by pack name in JS afterwards. Pagination is applied after grouping.
     const { data, error } = await query;
 
     if (error) {
@@ -247,9 +241,14 @@ export class PackQueries {
       }
     }
 
-    const items = Array.from(packMap.values()).map(({ pack, count }) =>
+    let items = Array.from(packMap.values()).map(({ pack, count }) =>
       rowToPackListItem({ ...pack, version_count: count })
     );
+
+    // Apply pagination after grouping by name
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? 50;
+    items = items.slice(offset, offset + limit);
 
     return { data: items, error: null };
   }
@@ -371,9 +370,11 @@ export class PackQueries {
     runtimeTag?: RuntimeTag;
     name?: string;
   }): Promise<PackResult<number>> {
+    // Select only the name column to count distinct pack names
+    // (each pack can have multiple version rows)
     let query = this.client
       .from('packs')
-      .select('*', { count: 'exact', head: true });
+      .select('name');
 
     if (options?.ownerId) {
       query = query.eq('owner_id', options.ownerId);
@@ -387,13 +388,15 @@ export class PackQueries {
       query = query.eq('name', options.name);
     }
 
-    const { count, error } = await query;
+    const { data, error } = await query;
 
     if (error) {
       return { data: null, error };
     }
 
-    return { data: count ?? 0, error: null };
+    // Count distinct pack names (rows may contain multiple versions of the same pack)
+    const uniqueNames = new Set((data || []).map((row: { name: string }) => row.name));
+    return { data: uniqueNames.size, error: null };
   }
 
   /**

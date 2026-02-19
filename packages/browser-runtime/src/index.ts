@@ -123,7 +123,7 @@ export {
   isInternalUrl,
 } from '@stark-o/shared';
 
-// Browser CLI Bridge (exposes browser-cli to pods)
+// Browser CLI Bridge (exposes Stark API to pods)
 export {
   CliBridge,
   getCliBridge,

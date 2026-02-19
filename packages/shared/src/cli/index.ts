@@ -2,7 +2,7 @@
  * Shared CLI Data
  *
  * Data-driven CLI command definitions used by both
- * Node.js CLI (packages/cli) and Browser CLI (packages/browser-cli).
+ * Node.js CLI (packages/cli) and the browser terminal (system-apps/terminal).
  * @module @stark-o/shared/cli
  */
 

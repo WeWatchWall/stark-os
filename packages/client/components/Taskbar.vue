@@ -2,7 +2,9 @@
   <header class="taskbar" :class="{ vertical: shell.taskbarPosition === 'left' }">
     <!-- Left: Logo / brand -->
     <div class="taskbar-left">
-      <img src="~/assets/Logo2.png" alt="StarkOS" class="taskbar-logo" />
+      <button class="logo-btn" @click="shell.toggleStartMenu()" title="Start Menu" aria-label="Start Menu">
+        <img src="~/assets/Logo2.png" alt="StarkOS" class="taskbar-logo" />
+      </button>
       <span class="taskbar-title">StarkOS</span>
 
       <!-- Connection indicator -->
@@ -105,6 +107,19 @@ function toggleLayout() {
   height: 48px;
   width: auto;
   object-fit: contain;
+}
+.logo-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.logo-btn:hover {
+  background: rgba(255,255,255,0.08);
 }
 .taskbar-title {
   color: #cbd5e1;

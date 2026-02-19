@@ -282,8 +282,17 @@ async function handleRegister(): Promise<void> {
   }
 }
 
+/** Name used when the start-menu pack is registered */
+const START_MENU_PACK_NAME = '@stark-o/start-menu';
+
+/** localStorage key where the current browser node ID is stored for system apps */
+const BROWSER_NODE_ID_KEY = 'stark:current-browser-node-id';
+
 /**
- * Start the browser agent with the given auth token
+ * Start the browser agent with the given auth token.
+ * Auth credentials are persisted in localStorage (shared origin) so
+ * system apps running in srcdoc iframes pick them up automatically
+ * via createStarkAPI() — no postMessage relay needed.
  */
 async function startAgent(authToken: string): Promise<void> {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -299,6 +308,14 @@ async function startAgent(authToken: string): Promise<void> {
     authToken,
     resumeExisting: true,
     containerIdProvider: (podId: string, packName: string) => {
+      // Start-menu pack: attach to the dedicated chromeless surface
+      if (packName === START_MENU_PACK_NAME) {
+        shell.startMenuAttached = true;
+        // Hide immediately — logo click will toggle visibility
+        shell.hideStartMenu();
+        return shell.startMenuContainerId;
+      }
+      // Normal packs: open a window with chrome
       const win = shell.openWindow({ podId, title: packName });
       return win.containerId;
     },
@@ -308,7 +325,14 @@ async function startAgent(authToken: string): Promise<void> {
     if (event === 'connecting') connectionState.value = 'connecting';
     else if (event === 'connected') connectionState.value = 'connected';
     else if (event === 'authenticated') connectionState.value = 'authenticated';
-    else if (event === 'registered') connectionState.value = 'registered';
+    else if (event === 'registered') {
+      connectionState.value = 'registered';
+      // Persist this browser node's ID so same-origin system apps can read it
+      const nodeId = agent?.getNodeId();
+      if (nodeId) {
+        try { localStorage.setItem(BROWSER_NODE_ID_KEY, nodeId); } catch { /* ignore */ }
+      }
+    }
     else if (event === 'disconnected') connectionState.value = 'disconnected';
     else if (event === 'reconnecting') connectionState.value = 'connecting';
     else if (event === 'pod:stopped' && _data && typeof _data === 'object' && 'podId' in _data) {
@@ -337,6 +361,9 @@ async function handleLogout(): Promise<void> {
   for (const w of [...shell.windows]) {
     shell.closeWindow(w.id);
   }
+  shell.startMenuAttached = false;
+  shell.hideStartMenu();
+  try { localStorage.removeItem(BROWSER_NODE_ID_KEY); } catch { /* ignore */ }
   clearBrowserCredentials();
   connectionState.value = 'disconnected';
   isAuthenticated.value = false;

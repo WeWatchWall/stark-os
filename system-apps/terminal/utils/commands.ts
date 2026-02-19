@@ -1461,7 +1461,7 @@ function statusBadge(status: string): string {
   const s = (status || '').toLowerCase();
   if (['running', 'healthy', 'active', 'ready'].includes(s)) return `● ${status}`;
   if (['pending', 'scheduling', 'starting'].includes(s)) return `◐ ${status}`;
-  if (['failed', 'error', 'unhealthy', 'dead'].includes(s)) return `● ${status}`;
+  if (['failed', 'error', 'unhealthy', 'dead'].includes(s)) return `✗ ${status}`;
   if (['stopped', 'terminated', 'completed'].includes(s)) return `○ ${status}`;
   return `● ${status}`;
 }

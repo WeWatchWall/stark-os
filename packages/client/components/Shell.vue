@@ -66,7 +66,13 @@ function onStartMenuHide() {
 /** Tell the start-menu iframe to refresh its pack list whenever the panel opens */
 watch(() => shell.startMenuVisible, (visible) => {
   if (visible) {
-    window.dispatchEvent(new CustomEvent('stark:start-menu:show'));
+    // Dispatch directly into the iframe's own window so the listener fires reliably.
+    // Cross-frame addEventListener on window.parent doesn't deliver events in all browsers.
+    const surface = document.getElementById(shell.startMenuContainerId);
+    const iframe = surface?.querySelector('iframe') as HTMLIFrameElement | null;
+    try {
+      iframe?.contentWindow?.dispatchEvent(new CustomEvent('stark:start-menu:show'));
+    } catch { /* cross-origin or no iframe yet */ }
   }
 });
 
@@ -148,7 +154,7 @@ onUnmounted(() => {
 }
 .start-menu-surface :deep(iframe) {
   width: 100%;
-  height: 100%;
+  height: 100% !important;
   border: none;
   display: block;
 }

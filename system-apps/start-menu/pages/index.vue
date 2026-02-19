@@ -253,15 +253,12 @@ function onShow() {
 
 onMounted(() => {
   loadPacks();
-  try {
-    window.parent?.addEventListener('stark:start-menu:show', onShow);
-  } catch { /* cross-origin */ }
+  // Listen on our own window — Shell.vue dispatches directly into the iframe's contentWindow
+  window.addEventListener('stark:start-menu:show', onShow);
 });
 
 onUnmounted(() => {
-  try {
-    window.parent?.removeEventListener('stark:start-menu:show', onShow);
-  } catch { /* cross-origin */ }
+  window.removeEventListener('stark:start-menu:show', onShow);
 });
 </script>
 

@@ -139,17 +139,21 @@ async function handleDeleteResponse(response: Response): Promise<void> {
 /**
  * Creates a standard StarkAPI instance.
  *
- * @param overrides - Optional config overrides (e.g. apiUrl)
+ * @param overrides - Optional config overrides (e.g. apiUrl).
+ *                    Pass `accessToken` to provide an explicit Bearer token
+ *                    (used in Web Workers that lack localStorage).
  * @returns StarkAPI object suitable for use as context.starkAPI
  */
-export function createStarkAPI(overrides?: Partial<BrowserApiConfig>): StarkAPI {
+export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessToken?: string }): StarkAPI {
+  const { accessToken: explicitToken, ...configOverrides } = overrides ?? {};
+
   const getConfig = (): BrowserApiConfig => {
     const base = loadConfig();
-    const apiUrl = overrides?.apiUrl ?? resolveApiUrl();
-    return { ...base, ...overrides, apiUrl };
+    const apiUrl = configOverrides.apiUrl ?? resolveApiUrl();
+    return { ...base, ...configOverrides, apiUrl };
   };
 
-  const getApi = () => createApiClient(getConfig());
+  const getApi = () => createApiClient(getConfig(), explicitToken);
 
   return {
     auth: {

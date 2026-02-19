@@ -168,11 +168,14 @@ export interface ApiClient {
 
 /**
  * Creates an authenticated HTTP client for API calls (browser-compatible using fetch)
+ *
+ * @param config - Optional config overrides
+ * @param explicitAccessToken - Optional access token override (e.g. for Web Workers that lack localStorage)
  */
-export function createApiClient(config?: BrowserApiConfig): ApiClient {
+export function createApiClient(config?: BrowserApiConfig, explicitAccessToken?: string): ApiClient {
   const cfg = config ?? loadConfig();
   const baseUrl = cfg.apiUrl;
-  const accessToken = getAccessToken();
+  const accessToken = explicitAccessToken ?? getAccessToken();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

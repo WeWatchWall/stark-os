@@ -742,6 +742,10 @@ self.onmessage = async function(event) {
   self.__STARK_ENV__ = context.env || {};
   self.__STARK_CONTEXT__ = context;
 
+  // starkAPI is NOT available in inline worker mode (cannot import modules).
+  // Use the full pack-worker bundle (workerScriptUrl) for starkAPI support.
+  console.warn('[STARK-WORKER-INLINE] ⚠️ context.starkAPI is NOT available in inline worker mode.');
+
   try {
     var moduleExports = {};
     var mod = { exports: moduleExports };

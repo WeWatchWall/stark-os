@@ -164,6 +164,15 @@ function resolveApiUrl(explicitUrl?: string): string {
     if (origin && origin !== 'null') return origin;
   }
 
+  // srcdoc iframes have location.origin === 'null'; try the parent window
+  try {
+    const g = globalThis as Record<string, unknown>;
+    if (g.parent && g.parent !== globalThis) {
+      const parentOrigin = (g.parent as { location?: { origin?: string } }).location?.origin;
+      if (parentOrigin && parentOrigin !== 'null') return parentOrigin;
+    }
+  } catch { /* cross-origin — ignore */ }
+
   return 'https://127.0.0.1:443';
 }
 

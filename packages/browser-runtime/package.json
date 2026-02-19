@@ -21,7 +21,8 @@
   "dependencies": {
     "@stark-o/core": "workspace:*",
     "@stark-o/shared": "workspace:*",
-    "axios": "^1.13.5"
+    "axios": "^1.13.5",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

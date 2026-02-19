@@ -161,43 +161,13 @@ onMounted(async () => {
   // Sync volume directories from orchestrator API (best-effort)
   // This makes API-registered volumes visible in the OPFS filesystem
   try {
-    const apiUrl = (() => {
-      try {
-        const s = localStorage.getItem('stark-cli-config');
-        if (s) { const c = JSON.parse(s); if (c.apiUrl && c.apiUrl !== 'null') return c.apiUrl; }
-      } catch { /* */ }
-      // Derive from pod context orchestrator URL (set by pack executor)
-      const ctx = (globalThis as Record<string, unknown>).__STARK_CONTEXT__ as
-        { orchestratorUrl?: string } | undefined;
-      if (ctx?.orchestratorUrl) {
-        try {
-          const u = new URL(ctx.orchestratorUrl);
-          u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
-          u.pathname = '/';
-          return u.origin;
-        } catch { /* */ }
-      }
-      const origin = typeof location !== 'undefined' ? location.origin : null;
-      if (origin && origin !== 'null') return origin;
-      return 'https://127.0.0.1:443';
-    })();
-    const token = (() => {
-      try {
-        const s = localStorage.getItem('stark-cli-credentials');
-        if (s) { const c = JSON.parse(s); return c.accessToken; }
-      } catch { /* */ }
-      return null;
-    })();
-    const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) hdrs['Authorization'] = `Bearer ${token}`;
-    const resp = await fetch(`${apiUrl}/api/volumes`, { method: 'GET', headers: hdrs });
-    if (resp.ok) {
-      const json = await resp.json() as { success?: boolean; data?: Array<{ name?: string }> };
-      if (json.success && Array.isArray(json.data)) {
-        for (const vol of json.data) {
-          if (vol.name) {
-            try { await fs.mkdir(`/volumes/${vol.name}`, true); } catch { /* dir exists */ }
-          }
+    const { createStarkAPI } = await import('@stark-o/browser-runtime');
+    const starkApi = createStarkAPI();
+    const volData = await starkApi.volume.list() as Array<{ name?: string }> | undefined;
+    if (volData && Array.isArray(volData)) {
+      for (const vol of volData) {
+        if (vol.name) {
+          try { await fs.mkdir(`/volumes/${vol.name}`, true); } catch { /* dir exists */ }
         }
       }
     }

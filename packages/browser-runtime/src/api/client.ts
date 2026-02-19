@@ -1,15 +1,17 @@
 /**
- * Browser CLI API Client
+ * Browser API Client
  *
- * Isomorphic API client that works in both Node.js and browser.
- * Mirrors the Node.js CLI's config.ts but uses browser-compatible storage.
- * @module @stark-o/browser-cli/config
+ * Isomorphic API client for browser runtimes. Provides config management,
+ * credential storage, and an authenticated HTTP client using fetch.
+ * This is the foundation shared by the CLI layer and pack code (context.starkAPI).
+ *
+ * @module @stark-o/browser-runtime/api/client
  */
 
 /**
- * Browser CLI configuration
+ * Browser API configuration
  */
-export interface BrowserCliConfig {
+export interface BrowserApiConfig {
   apiUrl: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
@@ -27,7 +29,7 @@ export interface BrowserCredentials {
   email: string;
 }
 
-const DEFAULT_CONFIG: BrowserCliConfig = {
+const DEFAULT_CONFIG: BrowserApiConfig = {
   apiUrl: 'https://127.0.0.1:443',
   supabaseUrl: 'http://127.0.0.1:54321',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
@@ -40,7 +42,7 @@ const STORAGE_KEY_CREDENTIALS = 'stark-cli-credentials';
 /**
  * Load configuration from localStorage (or return defaults)
  */
-export function loadConfig(): BrowserCliConfig {
+export function loadConfig(): BrowserApiConfig {
   try {
     if (typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
@@ -57,7 +59,7 @@ export function loadConfig(): BrowserCliConfig {
 /**
  * Save configuration to localStorage
  */
-export function saveConfig(config: Partial<BrowserCliConfig>): void {
+export function saveConfig(config: Partial<BrowserApiConfig>): void {
   try {
     if (typeof localStorage !== 'undefined') {
       const current = loadConfig();
@@ -154,15 +156,20 @@ export function requireAuth(): BrowserCredentials {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Creates an authenticated HTTP client for API calls (browser-compatible using fetch)
+ * Authenticated HTTP client interface
  */
-export function createApiClient(config?: BrowserCliConfig): {
+export interface ApiClient {
   get: (path: string) => Promise<Response>;
   post: (path: string, body?: unknown) => Promise<Response>;
   put: (path: string, body?: unknown) => Promise<Response>;
   patch: (path: string, body?: unknown) => Promise<Response>;
   delete: (path: string) => Promise<Response>;
-} {
+}
+
+/**
+ * Creates an authenticated HTTP client for API calls (browser-compatible using fetch)
+ */
+export function createApiClient(config?: BrowserApiConfig): ApiClient {
   const cfg = config ?? loadConfig();
   const baseUrl = cfg.apiUrl;
   const accessToken = getAccessToken();
@@ -210,7 +217,7 @@ export function createApiClient(config?: BrowserCliConfig): {
  */
 export async function resolveNodeId(
   nameOrId: string,
-  api: ReturnType<typeof createApiClient>,
+  api: ApiClient,
 ): Promise<string> {
   if (UUID_PATTERN.test(nameOrId)) {
     return nameOrId;
@@ -228,4 +235,35 @@ export async function resolveNodeId(
   }
 
   return result.data.node.id;
+}
+
+/**
+ * Resolve the API URL from multiple sources with fallbacks:
+ * 1. Explicit config in localStorage
+ * 2. __STARK_CONTEXT__.orchestratorUrl (set by pack executor for pods)
+ * 3. location.origin (works on main thread)
+ * 4. Hard-coded fallback
+ */
+export function resolveApiUrl(): string {
+  const cfgUrl = loadConfig().apiUrl;
+  if (cfgUrl && cfgUrl !== 'null' && cfgUrl !== DEFAULT_CONFIG.apiUrl) return cfgUrl;
+
+  // Derive HTTP URL from orchestrator WebSocket URL set on pod context
+  const ctx = (globalThis as Record<string, unknown>).__STARK_CONTEXT__ as
+    { orchestratorUrl?: string } | undefined;
+  if (ctx?.orchestratorUrl) {
+    try {
+      const u = new URL(ctx.orchestratorUrl);
+      u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+      u.pathname = '/';
+      return u.origin;
+    } catch { /* malformed — try next */ }
+  }
+
+  if (typeof globalThis.location !== 'undefined') {
+    const origin = globalThis.location.origin;
+    if (origin && origin !== 'null') return origin;
+  }
+
+  return cfgUrl || DEFAULT_CONFIG.apiUrl;
 }

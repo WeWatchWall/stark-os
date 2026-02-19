@@ -1,12 +1,12 @@
 /**
- * Browser CLI Volume Operations
+ * Browser Volume Operations
  *
- * Volume management using JSZip for cross-platform (Node.js + browser) archive handling.
- * @module @stark-o/browser-cli/volume
+ * Volume download and archive using JSZip for cross-platform archive handling.
+ * @module @stark-o/browser-runtime/api/volume
  */
 
 import JSZip from 'jszip';
-import { createApiClient, requireAuth, resolveNodeId } from './config.js';
+import { createApiClient, requireAuth, resolveNodeId, type ApiClient } from './client.js';
 
 /**
  * Volume file entry from the API
@@ -81,7 +81,6 @@ export async function downloadVolume(
 
 /**
  * Creates a zip archive of a specific path within a volume.
- * The archive is placed next to the last piece of the path.
  *
  * @param nodeNameOrId - Node name or UUID
  * @param volumeName - Name of the volume

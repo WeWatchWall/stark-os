@@ -123,10 +123,32 @@ export {
   isInternalUrl,
 } from '@stark-o/shared';
 
-// Browser CLI Bridge (exposes browser-cli to pods)
+// Browser CLI Bridge (exposes Stark API to pods via context.starkAPI)
 export {
   CliBridge,
-  getCliBridge,
+  createCliBridge,
   type CliBridgeResult,
   type CliBridgeWriter,
 } from './cli-bridge.js';
+
+// Browser API (programmatic API for packs + terminal)
+export {
+  createStarkAPI,
+  type StarkAPI,
+  loadConfig as loadApiConfig,
+  saveConfig as saveApiConfig,
+  loadCredentials as loadApiCredentials,
+  saveCredentials as saveApiCredentials,
+  clearCredentials as clearApiCredentials,
+  isAuthenticated as isApiAuthenticated,
+  getAccessToken as getApiAccessToken,
+  requireAuth as requireApiAuth,
+  createApiClient,
+  resolveNodeId,
+  resolveApiUrl,
+  downloadVolume,
+  archiveVolumePath,
+  type BrowserApiConfig,
+  type BrowserCredentials,
+  type ApiClient,
+} from './api/index.js';

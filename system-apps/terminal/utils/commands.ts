@@ -1457,50 +1457,10 @@ commands['sum'] = async (ctx) => {
 commands['stark'] = async (ctx) => {
   const [subcmd, action, ...rest] = ctx.args;
 
-  const loadCfg = (): Record<string, string> => {
-    try { const s = typeof localStorage !== 'undefined' ? localStorage.getItem('stark-cli-config') : null; return s ? JSON.parse(s) : {}; } catch { return {}; }
-  };
-  const loadCreds = (): { accessToken?: string; email?: string; userId?: string; expiresAt?: string } | null => {
-    try { const s = typeof localStorage !== 'undefined' ? localStorage.getItem('stark-cli-credentials') : null; return s ? JSON.parse(s) : null; } catch { return null; }
-  };
-  const saveCreds = (c: object) => { try { if (typeof localStorage !== 'undefined') localStorage.setItem('stark-cli-credentials', JSON.stringify(c)); } catch { /* */ } };
-  const clearCreds = () => { try { if (typeof localStorage !== 'undefined') localStorage.removeItem('stark-cli-credentials'); } catch { /* */ } };
+  // Lazy import to avoid bundling browser-runtime at module load time
+  const { createStarkAPI, resolveApiUrl, loadApiConfig, saveApiConfig, loadApiCredentials, clearApiCredentials, isApiAuthenticated, createBrowserAgent, getBrowserAccessToken, downloadVolume } = await import('@stark-o/browser-runtime');
 
-  // Resolve orchestrator API URL with multiple fallbacks:
-  // 1. Explicit config in localStorage
-  // 2. __STARK_CONTEXT__.orchestratorUrl (set by pack executor for pods)
-  // 3. location.origin (works on main thread; returns "null" in blob: workers)
-  // 4. Hard-coded fallback
-  const apiUrl = (() => {
-    const cfgUrl = loadCfg().apiUrl;
-    if (cfgUrl && cfgUrl !== 'null') return cfgUrl;
-    // Derive HTTP URL from orchestrator WebSocket URL set on pod context
-    const ctx = (globalThis as Record<string, unknown>).__STARK_CONTEXT__ as
-      { orchestratorUrl?: string } | undefined;
-    if (ctx?.orchestratorUrl) {
-      try {
-        const u = new URL(ctx.orchestratorUrl);
-        u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
-        u.pathname = '/';
-        return u.origin;
-      } catch { /* malformed — try next */ }
-    }
-    if (typeof globalThis.location !== 'undefined') {
-      const origin = globalThis.location.origin;
-      if (origin && origin !== 'null') return origin;
-    }
-    return 'https://127.0.0.1:443';
-  })();
-  const creds = loadCreds();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (creds?.accessToken) headers['Authorization'] = `Bearer ${creds.accessToken}`;
-
-  const api = async (method: string, path: string, body?: unknown): Promise<Record<string, unknown>> => {
-    const opts: RequestInit = { method, headers };
-    if (body) opts.body = JSON.stringify(body);
-    const resp = await fetch(`${apiUrl}${path}`, opts);
-    return resp.json() as Promise<Record<string, unknown>>;
-  };
+  const api = createStarkAPI();
 
   const parseOpts = (args: string[]) => {
     const positionals: string[] = [];
@@ -1520,25 +1480,17 @@ commands['stark'] = async (ctx) => {
     return { positionals, options };
   };
 
-  const formatResult = (result: Record<string, unknown>): string => {
-    if (!result.success) {
-      const err = result.error as Record<string, unknown> | undefined;
-      return `Error: ${err?.message ?? 'Request failed'}\n`;
-    }
-    return JSON.stringify(result.data, null, 2) + '\n';
-  };
-
   if (!subcmd || subcmd === 'help') {
     return 'Stark Orchestrator CLI\n\n' +
       'Commands:\n' +
       '  stark auth        Authentication (login, logout, whoami, status, setup, add-user)\n' +
       '  stark pack        Pack management (list, versions, info, delete)\n' +
-      '  stark node        Node management (list, status)\n' +
+      '  stark node        Node management (list, status, agent start)\n' +
       '  stark pod         Pod management (create, list, status, stop, rollback, history)\n' +
       '  stark service     Service management (create, list, status)\n' +
       '  stark namespace   Namespace management (create, list, get, delete, use, current)\n' +
       '  stark secret      Secret management (list, get)\n' +
-      '  stark volume      Volume management (create, list, sync)\n' +
+      '  stark volume      Volume management (create, list, download, sync)\n' +
       '  stark chaos       Chaos testing (status, enable, disable, scenarios)\n' +
       '  stark network     Network management (policies, registry)\n' +
       '  stark config      Show/set CLI configuration\n' +
@@ -1549,57 +1501,46 @@ commands['stark'] = async (ctx) => {
   try {
     switch (subcmd) {
       case 'auth': {
-        const { positionals: authPos, options } = parseOpts(rest);
+        const { positionals: _authPos, options } = parseOpts(rest);
         switch (action) {
           case 'login': {
-            // Check if already logged in
+            const creds = loadApiCredentials();
             if (creds && creds.expiresAt && new Date(creds.expiresAt) > new Date()) {
               if (ctx.prompt) {
                 ctx.write(`Already logged in as ${creds.email}\n`);
                 const proceed = await ctx.prompt('Do you want to log out and log in again? (y/N) ');
                 if (proceed.toLowerCase() !== 'y') return '';
               }
-              clearCreds();
+              clearApiCredentials();
             }
-            // Get email — from flags or interactive prompt
             let email = options['email'] || options['e'];
-            if (!email && ctx.prompt) {
-              email = await ctx.prompt('Email: ');
-            }
+            if (!email && ctx.prompt) email = await ctx.prompt('Email: ');
             if (!email) return 'Usage: stark auth login --email <email> --password <password>\n';
-            // Get password — from flags or interactive prompt (hidden)
             let password = options['password'] || options['p'];
-            if (!password && ctx.promptPassword) {
-              password = await ctx.promptPassword('Password: ');
-            }
+            if (!password && ctx.promptPassword) password = await ctx.promptPassword('Password: ');
             if (!password) return 'Password is required.\n';
             ctx.write('Authenticating...\n');
-            const result = await api('POST', '/auth/login', { email, password }) as Record<string, unknown>;
-            const data = result.data as Record<string, unknown> | undefined;
-            if (!result.success || !data) return `Login failed: ${(result.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
-            const user = data.user as Record<string, string>;
-            saveCreds({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt, userId: user.id, email: user.email });
-            ctx.env['USER'] = String(user.email).split('@')[0];
-            return `Logged in as ${user.email}\n`;
+            const result = await api.auth.login(String(email), String(password));
+            ctx.env['USER'] = result.user.email.split('@')[0];
+            return `✓ Logged in as ${result.user.email}\n`;
           }
           case 'logout':
-            clearCreds();
+            api.auth.logout();
             ctx.env['USER'] = 'user';
-            return 'Logged out.\n';
-          case 'whoami':
-            if (!creds) return 'Not authenticated.\n';
-            return `Email: ${creds.email}\nUser ID: ${creds.userId}\n`;
+            return '✓ Logged out.\n';
+          case 'whoami': {
+            const info = api.auth.whoami();
+            if (!info) return 'Not authenticated.\n';
+            return `Email: ${info.email}\nUser ID: ${info.userId}\n`;
+          }
           case 'status': {
-            const authed = creds && creds.expiresAt && new Date(creds.expiresAt) > new Date();
-            return `Authenticated: ${authed ? 'Yes' : 'No'}\n${authed && creds?.email ? `Email: ${creds.email}\nExpires: ${creds.expiresAt}\n` : ''}`;
+            const s = api.auth.status();
+            return `Authenticated: ${s.authenticated ? 'Yes' : 'No'}\n${s.authenticated && s.email ? `Email: ${s.email}\nExpires: ${s.expiresAt}\n` : ''}`;
           }
           case 'setup': {
-            // Interactive setup flow — create first admin account
             ctx.write('Checking if setup is needed...\n');
-            const statusResult = await api('GET', '/auth/setup/status') as Record<string, unknown>;
-            const statusData = statusResult.data as Record<string, unknown> | undefined;
-            if (!statusResult.success) return `Failed to check setup status: ${(statusResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
-            if (!statusData?.needsSetup) return 'Setup has already been completed.\nTo add new users, login as admin and use `stark auth add-user`.\n';
+            const statusResult = await api.auth.setupStatus();
+            if (!statusResult.needsSetup) return 'Setup has already been completed.\nTo add new users, login as admin and use `stark auth add-user`.\n';
             ctx.write('No users exist. Setting up initial admin account.\n');
             let email = options['email'] || options['e'];
             if (!email && ctx.prompt) email = await ctx.prompt('Admin Email: ');
@@ -1615,16 +1556,12 @@ commands['stark'] = async (ctx) => {
             let displayName = '';
             if (ctx.prompt) displayName = await ctx.prompt('Display Name (optional): ');
             ctx.write('Creating admin account...\n');
-            const setupResult = await api('POST', '/auth/setup', { email, password, displayName: displayName || undefined }) as Record<string, unknown>;
-            const setupData = setupResult.data as Record<string, unknown> | undefined;
-            if (!setupResult.success || !setupData) return `Setup failed: ${(setupResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
-            const setupUser = setupData.user as Record<string, string>;
-            saveCreds({ accessToken: setupData.accessToken, refreshToken: setupData.refreshToken, expiresAt: setupData.expiresAt, userId: setupUser.id, email: setupUser.email });
-            ctx.env['USER'] = String(setupUser.email).split('@')[0];
-            return `Admin account created and logged in as ${setupUser.email}\n`;
+            const setupResult = await api.auth.setup(String(email), password, displayName || undefined);
+            ctx.env['USER'] = setupResult.user.email.split('@')[0];
+            return `✓ Admin account created and logged in as ${setupResult.user.email}\n`;
           }
           case 'add-user': {
-            if (!creds?.accessToken) return 'Not authenticated. Run `stark auth login` first.\n';
+            if (!isApiAuthenticated()) return 'Not authenticated. Run `stark auth login` first.\n';
             let email = options['email'] || options['e'];
             if (!email && ctx.prompt) email = await ctx.prompt('New User Email: ');
             if (!email || !String(email).includes('@')) return 'Invalid email address.\n';
@@ -1646,15 +1583,14 @@ commands['stark'] = async (ctx) => {
             }
             if (roles.length === 0) roles = ['viewer'];
             ctx.write('Creating user...\n');
-            const addResult = await api('POST', '/auth/users', { email, password, displayName: displayName || undefined, roles }) as Record<string, unknown>;
-            const addData = addResult.data as Record<string, unknown> | undefined;
-            if (!addResult.success || !addData) return `Failed to create user: ${(addResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
-            const newUser = addData.user as Record<string, string>;
-            return `User created: ${newUser.email}\nUser ID: ${newUser.id}\nRoles: ${(newUser as unknown as Record<string, string[]>).roles?.join(', ') ?? 'viewer'}\n`;
+            const addResult = await api.auth.addUser(String(email), password, { displayName: displayName || undefined, roles });
+            const newUser = addResult.user;
+            return `✓ User created: ${newUser.email}\nUser ID: ${newUser.id}\nRoles: ${newUser.roles?.join(', ') ?? 'viewer'}\n`;
           }
           case 'list-users': case 'users': {
-            if (!creds?.accessToken) return 'Not authenticated. Run `stark auth login` first.\n';
-            return formatResult(await api('GET', '/auth/users'));
+            if (!isApiAuthenticated()) return 'Not authenticated. Run `stark auth login` first.\n';
+            const data = await api.auth.listUsers();
+            return JSON.stringify(data, null, 2) + '\n';
           }
           default: return `Unknown auth subcommand: ${action}\nAvailable: login, logout, whoami, status, setup, add-user, list-users\n`;
         }
@@ -1662,40 +1598,71 @@ commands['stark'] = async (ctx) => {
       case 'pack': {
         const { positionals } = parseOpts(rest);
         switch (action) {
-          case 'list': case 'ls': return formatResult(await api('GET', '/api/packs'));
-          case 'versions': { const n = positionals[0]; if (!n) return 'Usage: stark pack versions <name>\n'; return formatResult(await api('GET', `/api/packs/name/${encodeURIComponent(n)}/versions`)); }
-          case 'info': { const n = positionals[0]; if (!n) return 'Usage: stark pack info <name>\n'; return formatResult(await api('GET', `/api/packs/name/${encodeURIComponent(n)}`)); }
-          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark pack delete <name>\n'; const r = await api('DELETE', `/api/packs/name/${encodeURIComponent(n)}`); return r.success ? 'Deleted successfully.\n' : `Error: ${(r.error as Record<string, unknown>)?.message ?? 'Failed'}\n`; }
+          case 'list': case 'ls': return JSON.stringify(await api.pack.list(), null, 2) + '\n';
+          case 'versions': { const n = positionals[0]; if (!n) return 'Usage: stark pack versions <name>\n'; return JSON.stringify(await api.pack.versions(n), null, 2) + '\n'; }
+          case 'info': { const n = positionals[0]; if (!n) return 'Usage: stark pack info <name>\n'; return JSON.stringify(await api.pack.info(n), null, 2) + '\n'; }
+          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark pack delete <name>\n'; await api.pack.delete(n); return '✓ Deleted successfully.\n'; }
           default: return `Unknown pack subcommand: ${action}\nAvailable: list, versions, info, delete\n`;
         }
       }
       case 'node': {
-        const { positionals } = parseOpts(rest);
+        const { positionals, options } = parseOpts(rest);
         switch (action) {
-          case 'list': case 'ls': return formatResult(await api('GET', '/api/nodes'));
-          case 'status': case 'info': { const n = positionals[0]; if (!n) return 'Usage: stark node status <name>\n'; return formatResult(await api('GET', `/api/nodes/name/${encodeURIComponent(n)}`)); }
-          default: return `Unknown node subcommand: ${action}\nAvailable: list, status\n`;
+          case 'list': case 'ls': return JSON.stringify(await api.node.list(), null, 2) + '\n';
+          case 'status': case 'info': { const n = positionals[0]; if (!n) return 'Usage: stark node status <name>\n'; return JSON.stringify(await api.node.status(n), null, 2) + '\n'; }
+          case 'agent': {
+            const [agentSub, ...agentArgs] = rest;
+            if (agentSub !== 'start') return 'Usage: stark node agent start [options]\n';
+            const { options: agentOpts } = parseOpts(agentArgs);
+            const agentName = String(agentOpts['name'] || agentOpts['n'] || `browser-${Date.now()}`);
+            const agentUrl = String(agentOpts['url'] || agentOpts['u'] || 'wss://localhost:443/ws');
+            let authToken = agentOpts['token'] ? String(agentOpts['token']) : undefined;
+            if (!authToken) {
+              const browserToken = getBrowserAccessToken();
+              if (browserToken) authToken = browserToken;
+            }
+            if (!authToken) return '✗ Authentication required. Please provide a token or login first.\n';
+            ctx.write(`ℹ Starting browser node agent: ${agentName}\n`);
+            ctx.write(`Orchestrator: ${agentUrl}\n`);
+            const agentConfig = {
+              orchestratorUrl: agentUrl,
+              authToken,
+              nodeName: agentName,
+              autoRegister: true,
+              heartbeatInterval: agentOpts['heartbeat'] ? parseInt(String(agentOpts['heartbeat']), 10) * 1000 : 15000,
+              debug: agentOpts['debug'] === true,
+              persistState: true,
+              resumeExisting: true,
+            };
+            const agent = createBrowserAgent(agentConfig);
+            await agent.start();
+            return '✓ Browser node agent started.\n';
+          }
+          default: return `Unknown node subcommand: ${action}\nAvailable: list, status, agent\n`;
         }
       }
       case 'pod': {
         const { positionals, options } = parseOpts(rest);
         switch (action) {
           case 'list': case 'ls': {
-            const params = new URLSearchParams();
-            if (options['namespace'] || options['n']) params.set('namespace', String(options['namespace'] || options['n']));
-            if (options['status'] || options['s']) params.set('status', String(options['status'] || options['s']));
-            const qs = params.toString();
-            return formatResult(await api('GET', `/api/pods${qs ? '?' + qs : ''}`));
+            const ns = options['namespace'] || options['n'];
+            const st = options['status'] || options['s'];
+            return JSON.stringify(await api.pod.list({
+              namespace: ns ? String(ns) : undefined,
+              status: st ? String(st) : undefined,
+            }), null, 2) + '\n';
           }
-          case 'status': { const id = positionals[0]; if (!id) return 'Usage: stark pod status <podId>\n'; return formatResult(await api('GET', `/api/pods/${id}`)); }
+          case 'status': { const id = positionals[0]; if (!id) return 'Usage: stark pod status <podId>\n'; return JSON.stringify(await api.pod.status(id), null, 2) + '\n'; }
           case 'create': case 'run': {
             const pack = positionals[0] || options['pack'];
             if (!pack) return 'Usage: stark pod create <pack> [options]\n';
-            return formatResult(await api('POST', '/api/pods', { packName: String(pack), namespace: String(options['namespace'] || options['n'] || 'default') }));
+            return JSON.stringify(await api.pod.create(String(pack), {
+              namespace: String(options['namespace'] || options['n'] || 'default'),
+            }), null, 2) + '\n';
           }
-          case 'stop': { const id = positionals[0]; if (!id) return 'Usage: stark pod stop <podId>\n'; return formatResult(await api('POST', `/api/pods/${id}/stop`, {})); }
-          case 'rollback': { const id = positionals[0]; if (!id) return 'Usage: stark pod rollback <podId>\n'; return formatResult(await api('POST', `/api/pods/${id}/rollback`, {})); }
-          case 'history': { const id = positionals[0]; if (!id) return 'Usage: stark pod history <podId>\n'; return formatResult(await api('GET', `/api/pods/${id}/history`)); }
+          case 'stop': { const id = positionals[0]; if (!id) return 'Usage: stark pod stop <podId>\n'; return JSON.stringify(await api.pod.stop(id), null, 2) + '\n'; }
+          case 'rollback': { const id = positionals[0]; if (!id) return 'Usage: stark pod rollback <podId>\n'; return JSON.stringify(await api.pod.rollback(id), null, 2) + '\n'; }
+          case 'history': { const id = positionals[0]; if (!id) return 'Usage: stark pod history <podId>\n'; return JSON.stringify(await api.pod.history(id), null, 2) + '\n'; }
           default: return `Unknown pod subcommand: ${action}\nAvailable: create, list, status, stop, rollback, history\n`;
         }
       }
@@ -1703,15 +1670,17 @@ commands['stark'] = async (ctx) => {
         const { positionals, options } = parseOpts(rest);
         switch (action) {
           case 'list': case 'ls': {
-            const params = new URLSearchParams();
-            if (options['namespace'] || options['n']) params.set('namespace', String(options['namespace'] || options['n']));
-            return formatResult(await api('GET', `/api/services${params.toString() ? '?' + params.toString() : ''}`));
+            const ns = options['namespace'] || options['n'];
+            return JSON.stringify(await api.service.list({ namespace: ns ? String(ns) : undefined }), null, 2) + '\n';
           }
-          case 'status': { const n = positionals[0]; if (!n) return 'Usage: stark service status <name>\n'; return formatResult(await api('GET', `/api/services/name/${encodeURIComponent(n)}`)); }
+          case 'status': { const n = positionals[0]; if (!n) return 'Usage: stark service status <name>\n'; return JSON.stringify(await api.service.status(n), null, 2) + '\n'; }
           case 'create': {
             const pack = options['pack'];
             if (!pack) return 'Usage: stark service create --pack <name> [options]\n';
-            return formatResult(await api('POST', '/api/services', { packName: String(pack), namespace: String(options['namespace'] || 'default'), replicas: parseInt(String(options['replicas'] || '1'), 10) }));
+            return JSON.stringify(await api.service.create(String(pack), {
+              namespace: String(options['namespace'] || 'default'),
+              replicas: parseInt(String(options['replicas'] || '1'), 10),
+            }), null, 2) + '\n';
           }
           default: return `Unknown service subcommand: ${action}\nAvailable: create, list, status\n`;
         }
@@ -1719,15 +1688,15 @@ commands['stark'] = async (ctx) => {
       case 'namespace': case 'ns': {
         const { positionals } = parseOpts(rest);
         switch (action) {
-          case 'list': case 'ls': return formatResult(await api('GET', '/api/namespaces'));
-          case 'get': { const n = positionals[0]; if (!n) return 'Usage: stark namespace get <name>\n'; return formatResult(await api('GET', `/api/namespaces/name/${encodeURIComponent(n)}`)); }
-          case 'create': { const n = positionals[0]; if (!n) return 'Usage: stark namespace create <name>\n'; return formatResult(await api('POST', '/api/namespaces', { name: n })); }
-          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark namespace delete <name>\n'; const r = await api('DELETE', `/api/namespaces/name/${encodeURIComponent(n)}`); return r.success ? 'Deleted successfully.\n' : `Error: ${(r.error as Record<string, unknown>)?.message ?? 'Failed'}\n`; }
-          case 'current': { const cfg = loadCfg(); return `Current namespace: ${cfg.defaultNamespace || 'default'}\n`; }
+          case 'list': case 'ls': return JSON.stringify(await api.namespace.list(), null, 2) + '\n';
+          case 'get': { const n = positionals[0]; if (!n) return 'Usage: stark namespace get <name>\n'; return JSON.stringify(await api.namespace.get(n), null, 2) + '\n'; }
+          case 'create': { const n = positionals[0]; if (!n) return 'Usage: stark namespace create <name>\n'; return JSON.stringify(await api.namespace.create(n), null, 2) + '\n'; }
+          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark namespace delete <name>\n'; await api.namespace.delete(n); return '✓ Deleted successfully.\n'; }
+          case 'current': return `Current namespace: ${api.namespace.current()}\n`;
           case 'use': {
             const n = positionals[0]; if (!n) return 'Usage: stark namespace use <name>\n';
-            try { const cur = loadCfg(); if (typeof localStorage !== 'undefined') localStorage.setItem('stark-cli-config', JSON.stringify({ ...cur, defaultNamespace: n })); } catch { /* */ }
-            return `Default namespace set to: ${n}\n`;
+            api.namespace.use(n);
+            return `✓ Default namespace set to: ${n}\n`;
           }
           default: return `Unknown namespace subcommand: ${action}\nAvailable: create, list, get, delete, current, use\n`;
         }
@@ -1736,31 +1705,45 @@ commands['stark'] = async (ctx) => {
         const { positionals, options } = parseOpts(rest);
         switch (action) {
           case 'list': case 'ls': {
-            const params = new URLSearchParams();
-            if (options['namespace'] || options['n']) params.set('namespace', String(options['namespace'] || options['n']));
-            return formatResult(await api('GET', `/api/secrets${params.toString() ? '?' + params.toString() : ''}`));
+            const ns = options['namespace'] || options['n'];
+            return JSON.stringify(await api.secret.list({ namespace: ns ? String(ns) : undefined }), null, 2) + '\n';
           }
-          case 'get': { const n = positionals[0]; if (!n) return 'Usage: stark secret get <name>\n'; const ns = String(options['namespace'] || options['n'] || 'default'); return formatResult(await api('GET', `/api/secrets/name/${encodeURIComponent(n)}?namespace=${ns}`)); }
+          case 'get': { const n = positionals[0]; if (!n) return 'Usage: stark secret get <name>\n'; const ns = String(options['namespace'] || options['n'] || 'default'); return JSON.stringify(await api.secret.get(n, ns), null, 2) + '\n'; }
           default: return `Unknown secret subcommand: ${action}\nAvailable: list, get\n`;
         }
       }
       case 'volume': {
         const { positionals, options } = parseOpts(rest);
         switch (action) {
-          case 'list': case 'ls': return formatResult(await api('GET', '/api/volumes'));
+          case 'list': case 'ls': {
+            const node = options['node'] || options['n'];
+            return JSON.stringify(await api.volume.list({ nodeNameOrId: node ? String(node) : undefined }), null, 2) + '\n';
+          }
           case 'create': {
             const n = positionals[0] || options['name'];
             const node = options['node'] || options['n'];
             if (!n || !node) return 'Usage: stark volume create <name> --node <nodeNameOrId>\n';
-            return formatResult(await api('POST', '/api/volumes', { name: String(n), nodeId: String(node) }));
+            return JSON.stringify(await api.volume.create(String(n), String(node)), null, 2) + '\n';
+          }
+          case 'download': {
+            const n = positionals[0] || options['name'];
+            const node = options['node'] || options['n'];
+            if (!n || !node) return 'Usage: stark volume download <name> --node <nodeNameOrId>\n';
+            ctx.write(`ℹ Downloading volume '${n}' from node ${node}\n`);
+            const zipData = await downloadVolume(String(n), String(node));
+            // Save the zip to OPFS
+            const outFile = String(options['O'] || options['out-file'] || `/tmp/${n}.zip`);
+            const outPath = normalizePath(outFile, ctx.cwd);
+            // Ensure parent dir exists
+            const parentDir = outPath.substring(0, outPath.lastIndexOf('/'));
+            if (parentDir) try { await ctx.fs.mkdir(parentDir, true); } catch { /* ok */ }
+            await ctx.fs.writeFile(outPath, new TextDecoder().decode(zipData));
+            return `✓ Volume '${n}' downloaded to ${outPath} (${zipData.byteLength} bytes)\n`;
           }
           case 'sync': {
-            // Sync volume directories from orchestrator API into OPFS
             ctx.write('Fetching volumes from orchestrator...\n');
-            const volResult = await api('GET', '/api/volumes') as Record<string, unknown>;
-            if (!volResult.success) return `Failed to fetch volumes: ${(volResult.error as Record<string, unknown>)?.message ?? 'Unknown error'}\n`;
-            const volData = volResult.data as Array<Record<string, unknown>> | undefined;
-            if (!volData || !Array.isArray(volData)) return 'No volumes found.\n';
+            const volData = await api.volume.list() as Array<Record<string, unknown>> | undefined;
+            if (!volData || !Array.isArray(volData) || volData.length === 0) return 'No volumes found.\n';
             let synced = 0;
             for (const vol of volData) {
               const name = vol.name as string;
@@ -1768,34 +1751,34 @@ commands['stark'] = async (ctx) => {
                 try { await ctx.fs.mkdir(`/volumes/${name}`, true); synced++; } catch { /* dir may exist */ }
               }
             }
-            return `Synced ${synced} volume directories into /volumes/.\n`;
+            return `✓ Synced ${synced} volume directories into /volumes/.\n`;
           }
-          default: return `Unknown volume subcommand: ${action}\nAvailable: list, create, sync\n`;
+          default: return `Unknown volume subcommand: ${action}\nAvailable: list, create, download, sync\n`;
         }
       }
       case 'chaos': {
         switch (action) {
-          case 'status': return formatResult(await api('GET', '/chaos/status'));
-          case 'enable': return formatResult(await api('POST', '/chaos/enable', {}));
-          case 'disable': return formatResult(await api('POST', '/chaos/disable', {}));
-          case 'scenarios': return formatResult(await api('GET', '/chaos/scenarios'));
-          case 'connections': return formatResult(await api('GET', '/chaos/connections'));
-          case 'nodes': return formatResult(await api('GET', '/chaos/nodes'));
-          case 'events': return formatResult(await api('GET', '/chaos/events'));
-          case 'reset': return formatResult(await api('POST', '/chaos/reset', {}));
+          case 'status': return JSON.stringify(await api.chaos.status(), null, 2) + '\n';
+          case 'enable': return JSON.stringify(await api.chaos.enable(), null, 2) + '\n';
+          case 'disable': return JSON.stringify(await api.chaos.disable(), null, 2) + '\n';
+          case 'scenarios': return JSON.stringify(await api.chaos.scenarios(), null, 2) + '\n';
+          case 'connections': return JSON.stringify(await api.chaos.connections(), null, 2) + '\n';
+          case 'nodes': return JSON.stringify(await api.chaos.nodes(), null, 2) + '\n';
+          case 'events': return JSON.stringify(await api.chaos.events(), null, 2) + '\n';
+          case 'reset': return JSON.stringify(await api.chaos.reset(), null, 2) + '\n';
           default: return `Unknown chaos subcommand: ${action}\nAvailable: status, enable, disable, scenarios, connections, nodes, events, reset\n`;
         }
       }
       case 'network': {
         switch (action) {
-          case 'policies': case 'list': return formatResult(await api('GET', '/api/network/policies'));
-          case 'registry': return formatResult(await api('GET', '/api/network/registry'));
+          case 'policies': case 'list': return JSON.stringify(await api.network.policies(), null, 2) + '\n';
+          case 'registry': return JSON.stringify(await api.network.registry(), null, 2) + '\n';
           default: return `Unknown network subcommand: ${action}\nAvailable: policies, registry\n`;
         }
       }
       case 'server-config': {
         switch (action) {
-          case 'get': return formatResult(await api('GET', '/api/config'));
+          case 'get': return JSON.stringify(await api.serverConfig.get(), null, 2) + '\n';
           default: return `Unknown server-config subcommand: ${action}\nAvailable: get\n`;
         }
       }
@@ -1804,20 +1787,19 @@ commands['stark'] = async (ctx) => {
         if (action === 'set') {
           const key = cfgPos[0] || rest[0];
           const value = cfgPos[1] || rest[1];
-          const allowedKeys = ['apiUrl', 'supabaseUrl', 'supabaseAnonKey', 'defaultNamespace'];
-          if (!key || !value) return `Usage: stark config set <key> <value>\n  Keys: ${allowedKeys.join(', ')}\n`;
-          if (!allowedKeys.includes(String(key))) return `Invalid config key: ${key}\n  Allowed keys: ${allowedKeys.join(', ')}\n`;
-          const cur = loadCfg();
-          cur[String(key)] = String(value);
-          try { if (typeof localStorage !== 'undefined') localStorage.setItem('stark-cli-config', JSON.stringify(cur)); } catch { /* */ }
-          return `Config ${key} set to ${value}\n`;
+          if (!key || !value) {
+            const allowedKeys = ['apiUrl', 'supabaseUrl', 'supabaseAnonKey', 'defaultNamespace'];
+            return `Usage: stark config set <key> <value>\n  Keys: ${allowedKeys.join(', ')}\n`;
+          }
+          api.config.set(String(key), String(value));
+          return `✓ Config ${key} set to ${value}\n`;
         }
-        const cfg = loadCfg();
-        return JSON.stringify({ ...cfg, apiUrl: apiUrl }, null, 2) + '\n';
+        return JSON.stringify(api.config.get(), null, 2) + '\n';
       }
       case 'status': {
-        const authed = creds && creds.expiresAt && new Date(creds.expiresAt) > new Date();
-        return `Authenticated: ${authed ? 'Yes' : 'No'}\nAPI: ${apiUrl}\n`;
+        const s = api.auth.status();
+        const apiUrl = resolveApiUrl();
+        return `Authenticated: ${s.authenticated ? 'Yes' : 'No'}\nAPI: ${apiUrl}\n`;
       }
       default:
         return `Unknown command: ${subcmd}\nRun 'stark help' for available commands.\n`;

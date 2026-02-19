@@ -195,6 +195,7 @@ export class PackModel {
       description: this._pack.description,
       versionCount,
       ownerId: this._pack.ownerId,
+      grantedCapabilities: this._pack.grantedCapabilities,
       createdAt: this._pack.createdAt,
     };
   }
@@ -281,6 +282,7 @@ export function createReactivePackListItem(
     description: reactivePack.description,
     versionCount: versionCount.value,
     ownerId: reactivePack.ownerId,
+    grantedCapabilities: reactivePack.grantedCapabilities,
     createdAt: reactivePack.createdAt,
   }));
 }

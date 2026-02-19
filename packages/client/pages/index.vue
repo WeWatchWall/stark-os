@@ -306,7 +306,7 @@ async function handleRegister(): Promise<void> {
 }
 
 /** Name used when the start-menu pack is registered */
-const START_MENU_PACK_NAME = '@stark-o/start-menu';
+const START_MENU_PACK_NAME = 'start-menu';
 
 /**
  * Start the browser agent with the given auth token.

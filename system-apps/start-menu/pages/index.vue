@@ -84,8 +84,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { createStarkAPI, type StarkAPI } from '@stark-o/browser-runtime';
+import { effectiveCapabilities } from '@stark-o/shared';
 
 /* ── Types ── */
 
@@ -93,6 +94,7 @@ interface PackInfo {
   name: string;
   runtimeTag: 'node' | 'browser' | 'universal';
   grantedCapabilities: string[];
+  metadata?: { requestedCapabilities?: string[] };
   description?: string;
 }
 
@@ -138,7 +140,7 @@ const universalApps = computed(() =>
 /* ── Helpers ── */
 
 function categorize(pack: PackInfo): AppCategory {
-  const caps = pack.grantedCapabilities ?? [];
+  const caps = effectiveCapabilities(pack.metadata?.requestedCapabilities, pack.grantedCapabilities ?? []);
   // d. Universal apps: run on both browser and node runtimes
   if (pack.runtimeTag === 'universal') {
     return 'universal';
@@ -244,8 +246,22 @@ async function launchApp(app: AppEntry) {
   }
 }
 
+/** Re-query packs when the shell opens the start-menu panel */
+function onShow() {
+  loadPacks();
+}
+
 onMounted(() => {
   loadPacks();
+  try {
+    window.parent?.addEventListener('stark:start-menu:show', onShow);
+  } catch { /* cross-origin */ }
+});
+
+onUnmounted(() => {
+  try {
+    window.parent?.removeEventListener('stark:start-menu:show', onShow);
+  } catch { /* cross-origin */ }
 });
 </script>
 

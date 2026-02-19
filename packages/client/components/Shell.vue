@@ -34,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, watch } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
 defineProps<{ connectionState: string }>();
@@ -62,6 +62,13 @@ function onDesktopClick(e: MouseEvent) {
 function onStartMenuHide() {
   shell.hideStartMenu();
 }
+
+/** Tell the start-menu iframe to refresh its pack list whenever the panel opens */
+watch(() => shell.startMenuVisible, (visible) => {
+  if (visible) {
+    window.dispatchEvent(new CustomEvent('stark:start-menu:show'));
+  }
+});
 
 onMounted(() => {
   window.addEventListener('resize', onResize);

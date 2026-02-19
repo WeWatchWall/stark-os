@@ -350,6 +350,9 @@ export class ServiceQueries {
   ): Promise<ServiceResult<Service>> {
     const updates: Partial<Record<string, unknown>> = {};
 
+    if (input.packId !== undefined) {
+      updates.pack_id = input.packId;
+    }
     if (input.packVersion !== undefined) {
       updates.pack_version = input.packVersion;
     }

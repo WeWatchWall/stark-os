@@ -63,16 +63,16 @@ function onStartMenuHide() {
   shell.hideStartMenu();
 }
 
-/** Tell the start-menu iframe to refresh its pack list whenever the panel opens */
+/**
+ * Tell the start-menu to refresh its pack list whenever the panel opens.
+ * Uses a localStorage counter so the srcdoc iframe picks it up via the
+ * 'storage' event — no cross-frame dispatching needed.
+ */
+const STORAGE_KEY = 'stark:start-menu-opened';
 watch(() => shell.startMenuVisible, (visible) => {
   if (visible) {
-    // Dispatch directly into the iframe's own window so the listener fires reliably.
-    // Cross-frame addEventListener on window.parent doesn't deliver events in all browsers.
-    const surface = document.getElementById(shell.startMenuContainerId);
-    const iframe = surface?.querySelector('iframe') as HTMLIFrameElement | null;
-    try {
-      iframe?.contentWindow?.dispatchEvent(new CustomEvent('stark:start-menu:show'));
-    } catch { /* cross-origin or no iframe yet */ }
+    const prev = parseInt(localStorage.getItem(STORAGE_KEY) ?? '0', 10);
+    localStorage.setItem(STORAGE_KEY, String(prev + 1));
   }
 });
 

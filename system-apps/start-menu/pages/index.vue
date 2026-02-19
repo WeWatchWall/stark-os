@@ -246,19 +246,34 @@ async function launchApp(app: AppEntry) {
   }
 }
 
-/** Re-query packs when the shell opens the start-menu panel */
-function onShow() {
-  loadPacks();
-}
+/**
+ * Re-query packs when the shell opens the start-menu panel.
+ * Shell.vue increments a localStorage counter; we poll it here because the
+ * 'storage' event only fires across tabs, NOT within the same tab (srcdoc
+ * iframes are same-tab).  A 300 ms poll is cheap and completely reliable.
+ */
+const STORAGE_KEY = 'stark:start-menu-opened';
+let lastSeen = localStorage.getItem(STORAGE_KEY) ?? '0';
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
   loadPacks();
-  // Listen on our own window — Shell.vue dispatches directly into the iframe's contentWindow
-  window.addEventListener('stark:start-menu:show', onShow);
+  // Sync our baseline so we don't double-fire on mount
+  lastSeen = localStorage.getItem(STORAGE_KEY) ?? '0';
+  pollTimer = setInterval(() => {
+    const current = localStorage.getItem(STORAGE_KEY) ?? '0';
+    if (current !== lastSeen) {
+      lastSeen = current;
+      loadPacks();
+    }
+  }, 300);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('stark:start-menu:show', onShow);
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 });
 </script>
 

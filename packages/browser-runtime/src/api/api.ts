@@ -19,6 +19,7 @@ import {
   isAuthenticated,
   type BrowserApiConfig,
 } from './client.js';
+import { downloadVolume as downloadVolumeZip, archiveVolumePath as archiveVolumePathZip } from './volume.js';
 
 /**
  * API response wrapper used by orchestrator endpoints
@@ -88,6 +89,8 @@ export interface StarkAPI {
     list(options?: { nodeNameOrId?: string }): Promise<unknown>;
     create(name: string, nodeNameOrId: string): Promise<unknown>;
     download(name: string, nodeNameOrId: string): Promise<{ files: Array<{ path: string; data: string }> }>;
+    downloadAsZip(name: string, nodeNameOrId: string): Promise<Uint8Array>;
+    archivePathAsZip(nodeNameOrId: string, name: string, archivePath: string): Promise<Uint8Array>;
   };
   chaos: {
     status(): Promise<unknown>;
@@ -306,6 +309,12 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig>): StarkAPI 
         const params = new URLSearchParams({ nodeId });
         const url = `/api/volumes/name/${encodeURIComponent(name)}/download?${params.toString()}`;
         return handleResponse<{ files: Array<{ path: string; data: string }> }>(await api.get(url));
+      },
+      async downloadAsZip(name: string, nodeNameOrId: string) {
+        return downloadVolumeZip(name, nodeNameOrId);
+      },
+      async archivePathAsZip(nodeNameOrId: string, name: string, archivePath: string) {
+        return archiveVolumePathZip(nodeNameOrId, name, archivePath);
       },
     },
     chaos: {

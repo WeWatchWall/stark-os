@@ -227,9 +227,11 @@ export async function bundleNuxtProject(options: BundleOptions): Promise<BundleR
 
   try {
     // Step 1: Install dependencies
+    // Use --no-frozen-lockfile: the bundler's install step ensures deps are
+    // available for building, it is not a CI reproducibility check.
     if (!options.skipInstall) {
       info('Installing dependencies...');
-      execSync('pnpm install', {
+      execSync('pnpm install --no-frozen-lockfile', {
         cwd: sourceDir,
         stdio: 'inherit',
       });

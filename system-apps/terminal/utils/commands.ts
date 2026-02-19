@@ -1454,11 +1454,86 @@ commands['sum'] = async (ctx) => {
 // Stark Orchestrator CLI Command
 // ============================================================================
 
+// Plain-text formatting helpers that mirror packages/cli/src/output.ts
+// No chalk in the browser — we emit plain Unicode symbols.
+
+function statusBadge(status: string): string {
+  const s = (status || '').toLowerCase();
+  if (['running', 'healthy', 'active', 'ready'].includes(s)) return `● ${status}`;
+  if (['pending', 'scheduling', 'starting'].includes(s)) return `◐ ${status}`;
+  if (['failed', 'error', 'unhealthy', 'dead'].includes(s)) return `● ${status}`;
+  if (['stopped', 'terminated', 'completed'].includes(s)) return `○ ${status}`;
+  return `● ${status}`;
+}
+
+function relativeTime(date: string | Date): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffSec < 60) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return d.toLocaleDateString();
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function truncate(str: string, maxLength: number): string {
+  if (str.length <= maxLength) return str;
+  return str.slice(0, maxLength - 3) + '...';
+}
+
+function fmtTable<T extends Record<string, unknown>>(
+  data: T[],
+  columns?: Array<{ key: keyof T; header: string; width?: number }>,
+): string {
+  if (data.length === 0) return 'No data to display\n';
+  const cols = columns ?? Object.keys(data[0]!).map((key) => ({
+    key: key as keyof T,
+    header: key.charAt(0).toUpperCase() + key.slice(1),
+  }));
+  const widths = cols.map((col) => {
+    const hw = col.header.length;
+    const mw = Math.max(...data.map((row) => String(row[col.key] ?? '').length));
+    return col.width ?? Math.max(hw, mw, 4);
+  });
+  const lines: string[] = [];
+  lines.push(cols.map((col, i) => col.header.padEnd(widths[i]!)).join('  '));
+  lines.push(widths.map((w) => '─'.repeat(w)).join('──'));
+  for (const row of data) {
+    lines.push(cols.map((col, i) => String(row[col.key] ?? '').padEnd(widths[i]!)).join('  '));
+  }
+  return lines.join('\n') + '\n';
+}
+
+function fmtKeyValue(data: Record<string, unknown>): string {
+  const maxKeyLen = Math.max(...Object.keys(data).map((k) => k.length));
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    const fv = value === null || value === undefined ? '(none)'
+      : typeof value === 'object' ? JSON.stringify(value)
+      : String(value);
+    lines.push(`${key.padEnd(maxKeyLen)}  ${fv}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
 commands['stark'] = async (ctx) => {
   const [subcmd, action, ...rest] = ctx.args;
 
   // Lazy import to avoid bundling browser-runtime at module load time
-  const { createStarkAPI, resolveApiUrl, loadApiConfig, saveApiConfig, loadApiCredentials, clearApiCredentials, isApiAuthenticated, createBrowserAgent, getBrowserAccessToken, downloadVolume } = await import('@stark-o/browser-runtime');
+  const { createStarkAPI, resolveApiUrl, loadApiCredentials, clearApiCredentials, isApiAuthenticated, createBrowserAgent, getBrowserAccessToken } = await import('@stark-o/browser-runtime');
 
   const api = createStarkAPI();
 
@@ -1589,8 +1664,21 @@ commands['stark'] = async (ctx) => {
           }
           case 'list-users': case 'users': {
             if (!isApiAuthenticated()) return 'Not authenticated. Run `stark auth login` first.\n';
-            const data = await api.auth.listUsers();
-            return JSON.stringify(data, null, 2) + '\n';
+            const data = await api.auth.listUsers() as { users?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+            const users = Array.isArray(data) ? data : ((data as { users?: Array<Record<string, unknown>> }).users ?? []);
+            if (users.length === 0) return 'ℹ No users found\n';
+            return fmtTable(
+              users.map((u: Record<string, unknown>) => ({
+                email: String(u.email ?? ''),
+                id: String(u.id ?? ''),
+                roles: Array.isArray(u.roles) ? u.roles.join(', ') : String(u.roles ?? ''),
+              })),
+              [
+                { key: 'email', header: 'Email', width: 30 },
+                { key: 'id', header: 'User ID', width: 38 },
+                { key: 'roles', header: 'Roles', width: 25 },
+              ],
+            );
           }
           default: return `Unknown auth subcommand: ${action}\nAvailable: login, logout, whoami, status, setup, add-user, list-users\n`;
         }
@@ -1598,18 +1686,139 @@ commands['stark'] = async (ctx) => {
       case 'pack': {
         const { positionals } = parseOpts(rest);
         switch (action) {
-          case 'list': case 'ls': return JSON.stringify(await api.pack.list(), null, 2) + '\n';
-          case 'versions': { const n = positionals[0]; if (!n) return 'Usage: stark pack versions <name>\n'; return JSON.stringify(await api.pack.versions(n), null, 2) + '\n'; }
-          case 'info': { const n = positionals[0]; if (!n) return 'Usage: stark pack info <name>\n'; return JSON.stringify(await api.pack.info(n), null, 2) + '\n'; }
-          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark pack delete <name>\n'; await api.pack.delete(n); return '✓ Deleted successfully.\n'; }
+          case 'list': case 'ls': {
+            const data = await api.pack.list() as { packs?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
+            const packs = Array.isArray(data) ? data : (data.packs ?? []);
+            const total = Array.isArray(data) ? packs.length : (data.total ?? packs.length);
+            if (packs.length === 0) return 'ℹ No packs found\n';
+            return `\nPacks (${packs.length} of ${total})\n\n` + fmtTable(
+              packs.map((p: Record<string, unknown>) => ({
+                name: String(p.name ?? ''),
+                version: String(p.version ?? ''),
+                runtime: String(p.runtimeTag ?? ''),
+                description: truncate(String(p.description ?? ''), 30),
+                created: p.createdAt ? relativeTime(String(p.createdAt)) : '',
+              })),
+              [
+                { key: 'name', header: 'Name', width: 25 },
+                { key: 'version', header: 'Version', width: 12 },
+                { key: 'runtime', header: 'Runtime', width: 12 },
+                { key: 'description', header: 'Description', width: 30 },
+                { key: 'created', header: 'Created', width: 15 },
+              ],
+            );
+          }
+          case 'versions': {
+            const n = positionals[0]; if (!n) return 'Usage: stark pack versions <name>\n';
+            const data = await api.pack.versions(n) as { versions?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+            const versions = Array.isArray(data) ? data : (data.versions ?? []);
+            if (versions.length === 0) return `ℹ No versions found for pack: ${n}\n`;
+            return `\nVersions of ${n}\n\n` + fmtTable(
+              versions.map((v: Record<string, unknown>, i: number) => ({
+                version: String(v.version ?? ''),
+                created: v.createdAt ? relativeTime(String(v.createdAt)) : '',
+                latest: i === 0 ? '✓' : '',
+              })),
+              [
+                { key: 'version', header: 'Version', width: 15 },
+                { key: 'created', header: 'Created', width: 20 },
+                { key: 'latest', header: 'Latest', width: 8 },
+              ],
+            );
+          }
+          case 'info': {
+            const n = positionals[0]; if (!n) return 'Usage: stark pack info <name>\n';
+            const pack = await api.pack.info(n) as Record<string, unknown>;
+            return `\nPack: ${pack.name}\n\n` + fmtKeyValue({
+              'ID': pack.id,
+              'Name': pack.name,
+              'Version': pack.version,
+              'Runtime': pack.runtimeTag,
+              'Description': pack.description ?? '(none)',
+              'Owner ID': pack.ownerId,
+              'Bundle Path': pack.bundlePath,
+              'Created': pack.createdAt ? new Date(String(pack.createdAt)).toLocaleString() : '(none)',
+              'Updated': pack.updatedAt ? new Date(String(pack.updatedAt)).toLocaleString() : '(none)',
+            });
+          }
+          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark pack delete <name>\n'; await api.pack.delete(n); return `✓ Pack deleted: ${n}\n`; }
           default: return `Unknown pack subcommand: ${action}\nAvailable: list, versions, info, delete\n`;
         }
       }
       case 'node': {
         const { positionals, options } = parseOpts(rest);
         switch (action) {
-          case 'list': case 'ls': return JSON.stringify(await api.node.list(), null, 2) + '\n';
-          case 'status': case 'info': { const n = positionals[0]; if (!n) return 'Usage: stark node status <name>\n'; return JSON.stringify(await api.node.status(n), null, 2) + '\n'; }
+          case 'list': case 'ls': {
+            const data = await api.node.list() as { nodes?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
+            const nodes = Array.isArray(data) ? data : (data.nodes ?? []);
+            const total = Array.isArray(data) ? nodes.length : (data.total ?? nodes.length);
+            if (nodes.length === 0) return 'ℹ No nodes found\n';
+            return `\nNodes (${nodes.length} of ${total})\n\n` + fmtTable(
+              nodes.map((n: Record<string, unknown>) => {
+                const alloc = (n.allocated ?? {}) as Record<string, number>;
+                const cap = (n.allocatable ?? {}) as Record<string, number>;
+                return {
+                  name: String(n.name ?? ''),
+                  runtime: String(n.runtimeType ?? ''),
+                  status: statusBadge(String(n.status ?? '')),
+                  cpu: cap.cpu ? `${alloc.cpu ?? 0}/${cap.cpu}` : '-',
+                  memory: cap.memory ? `${alloc.memory ?? 0}/${cap.memory}` : '-',
+                  pods: cap.pods ? `${alloc.pods ?? 0}/${cap.pods}` : '-',
+                  heartbeat: n.lastHeartbeat ? relativeTime(String(n.lastHeartbeat)) : 'never',
+                };
+              }),
+              [
+                { key: 'name', header: 'Name', width: 25 },
+                { key: 'runtime', header: 'Runtime', width: 10 },
+                { key: 'status', header: 'Status', width: 15 },
+                { key: 'cpu', header: 'CPU', width: 8 },
+                { key: 'memory', header: 'Memory', width: 8 },
+                { key: 'pods', header: 'Pods', width: 10 },
+                { key: 'heartbeat', header: 'Last Seen', width: 15 },
+              ],
+            );
+          }
+          case 'status': case 'info': {
+            const n = positionals[0]; if (!n) return 'Usage: stark node status <name>\n';
+            const node = await api.node.status(n) as Record<string, unknown>;
+            const alloc = (node.allocated ?? {}) as Record<string, number>;
+            const cap = (node.allocatable ?? {}) as Record<string, number>;
+            let out = `\nNode: ${node.name}\n\n`;
+            out += 'General\n';
+            out += fmtKeyValue({
+              'ID': node.id,
+              'Name': node.name,
+              'Runtime': node.runtimeType,
+              'Status': statusBadge(String(node.status ?? '')),
+              'Registered By': node.registeredBy,
+              'Last Heartbeat': node.lastHeartbeat
+                ? `${relativeTime(String(node.lastHeartbeat))} (${new Date(String(node.lastHeartbeat)).toLocaleString()})`
+                : 'never',
+            });
+            out += '\nResources\n';
+            out += fmtKeyValue({
+              'CPU': `${alloc.cpu ?? 0}/${cap.cpu ?? 0}`,
+              'Memory': `${formatBytes(alloc.memory ?? 0)}/${formatBytes(cap.memory ?? 0)}`,
+              'Storage': `${formatBytes(alloc.storage ?? 0)}/${formatBytes(cap.storage ?? 0)}`,
+              'Pods': `${alloc.pods ?? 0}/${cap.pods ?? 0}`,
+            });
+            const labels = (node.labels ?? {}) as Record<string, string>;
+            if (Object.keys(labels).length > 0) {
+              out += '\nLabels\n';
+              for (const [key, value] of Object.entries(labels)) out += `  ${key}: ${value}\n`;
+            }
+            const taints = (node.taints ?? []) as Array<Record<string, string>>;
+            if (taints.length > 0) {
+              out += '\nTaints\n';
+              for (const t of taints) out += `  ${t.key}${t.value ? '=' + t.value : ''}:${t.effect}\n`;
+            }
+            out += '\nTimestamps\n';
+            out += fmtKeyValue({
+              'Created': node.createdAt ? new Date(String(node.createdAt)).toLocaleString() : '(none)',
+              'Updated': node.updatedAt ? new Date(String(node.updatedAt)).toLocaleString() : '(none)',
+            });
+            return out;
+          }
           case 'agent': {
             const [agentSub, ...agentArgs] = rest;
             if (agentSub !== 'start') return 'Usage: stark node agent start [options]\n';
@@ -1647,22 +1856,120 @@ commands['stark'] = async (ctx) => {
           case 'list': case 'ls': {
             const ns = options['namespace'] || options['n'];
             const st = options['status'] || options['s'];
-            return JSON.stringify(await api.pod.list({
+            const data = await api.pod.list({
               namespace: ns ? String(ns) : undefined,
               status: st ? String(st) : undefined,
-            }), null, 2) + '\n';
+            }) as { pods?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
+            const pods = Array.isArray(data) ? data : (data.pods ?? []);
+            const total = Array.isArray(data) ? pods.length : (data.total ?? pods.length);
+            if (pods.length === 0) return 'ℹ No pods found\n';
+            return `\nPods (${pods.length} of ${total})\n\n` + fmtTable(
+              pods.map((p: Record<string, unknown>) => ({
+                id: String(p.id ?? ''),
+                pack: String(p.packId ?? ''),
+                version: String(p.packVersion ?? ''),
+                node: String(p.nodeId ?? 'pending'),
+                status: statusBadge(String(p.status ?? '')),
+                namespace: String(p.namespace ?? ''),
+                age: p.createdAt ? relativeTime(String(p.createdAt)) : '',
+              })),
+              [
+                { key: 'id', header: 'Pod ID', width: 38 },
+                { key: 'pack', header: 'Pack', width: 38 },
+                { key: 'version', header: 'Version', width: 12 },
+                { key: 'node', header: 'Node', width: 38 },
+                { key: 'status', header: 'Status', width: 15 },
+                { key: 'namespace', header: 'Namespace', width: 12 },
+                { key: 'age', header: 'Age', width: 12 },
+              ],
+            );
           }
-          case 'status': { const id = positionals[0]; if (!id) return 'Usage: stark pod status <podId>\n'; return JSON.stringify(await api.pod.status(id), null, 2) + '\n'; }
+          case 'status': {
+            const id = positionals[0]; if (!id) return 'Usage: stark pod status <podId>\n';
+            const pod = await api.pod.status(id) as Record<string, unknown>;
+            let out = `\nPod: ${pod.id}\n\n`;
+            out += fmtKeyValue({
+              'Status': statusBadge(String(pod.status ?? '')),
+              'Message': pod.statusMessage ?? '(none)',
+              'Pack ID': pod.packId,
+              'Pack Version': pod.packVersion,
+              'Node ID': pod.nodeId ?? '(not scheduled)',
+              'Namespace': pod.namespace,
+              'Priority': pod.priority,
+              'Created By': pod.createdBy,
+              'Created': pod.createdAt ? new Date(String(pod.createdAt)).toLocaleString() : '(none)',
+              'Started': pod.startedAt ? new Date(String(pod.startedAt)).toLocaleString() : '(not started)',
+              'Stopped': pod.stoppedAt ? new Date(String(pod.stoppedAt)).toLocaleString() : '(running)',
+            });
+            const labels = (pod.labels ?? {}) as Record<string, string>;
+            if (Object.keys(labels).length > 0) {
+              out += '\nLabels\n';
+              for (const [key, value] of Object.entries(labels)) out += `  ${key}: ${value}\n`;
+            }
+            return out + '\n';
+          }
           case 'create': case 'run': {
             const pack = positionals[0] || options['pack'];
             if (!pack) return 'Usage: stark pod create <pack> [options]\n';
-            return JSON.stringify(await api.pod.create(String(pack), {
+            const result = await api.pod.create(String(pack), {
               namespace: String(options['namespace'] || options['n'] || 'default'),
-            }), null, 2) + '\n';
+            }) as { pod?: Record<string, unknown> } | Record<string, unknown>;
+            const pod = (result as { pod?: Record<string, unknown> }).pod ?? result as Record<string, unknown>;
+            let out = `✓ Deployed 1 pod(s)\n\n`;
+            out += fmtTable(
+              [{
+                id: String(pod.id ?? ''),
+                pack: String(pack),
+                version: String(pod.packVersion ?? ''),
+                node: String(pod.nodeId ?? 'pending'),
+                status: statusBadge(String(pod.status ?? '')),
+                namespace: String(pod.namespace ?? ''),
+              }],
+              [
+                { key: 'id', header: 'Pod ID', width: 38 },
+                { key: 'pack', header: 'Pack', width: 20 },
+                { key: 'version', header: 'Version', width: 12 },
+                { key: 'node', header: 'Node', width: 38 },
+                { key: 'status', header: 'Status', width: 15 },
+                { key: 'namespace', header: 'Namespace', width: 15 },
+              ],
+            );
+            out += `\nℹ Use 'stark pod status <pod-id>' to check service status\n`;
+            return out;
           }
-          case 'stop': { const id = positionals[0]; if (!id) return 'Usage: stark pod stop <podId>\n'; return JSON.stringify(await api.pod.stop(id), null, 2) + '\n'; }
-          case 'rollback': { const id = positionals[0]; if (!id) return 'Usage: stark pod rollback <podId>\n'; return JSON.stringify(await api.pod.rollback(id), null, 2) + '\n'; }
-          case 'history': { const id = positionals[0]; if (!id) return 'Usage: stark pod history <podId>\n'; return JSON.stringify(await api.pod.history(id), null, 2) + '\n'; }
+          case 'stop': {
+            const id = positionals[0]; if (!id) return 'Usage: stark pod stop <podId>\n';
+            await api.pod.stop(id);
+            return `✓ Pod ${id} stopped\n`;
+          }
+          case 'rollback': {
+            const id = positionals[0]; if (!id) return 'Usage: stark pod rollback <podId>\n';
+            const pod = await api.pod.rollback(id) as Record<string, unknown>;
+            return `✓ Rolled back to version ${pod.packVersion ?? 'unknown'}\n` +
+              fmtKeyValue({ 'Pod ID': pod.id, 'New Version': pod.packVersion, 'Status': statusBadge(String(pod.status ?? '')) });
+          }
+          case 'history': {
+            const id = positionals[0]; if (!id) return 'Usage: stark pod history <podId>\n';
+            const data = await api.pod.history(id) as { history?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+            const history = Array.isArray(data) ? data : (data.history ?? []);
+            if (history.length === 0) return 'ℹ No history entries found\n';
+            return `\nPod History: ${id}\n\n` + fmtTable(
+              history.map((h: Record<string, unknown>) => ({
+                action: String(h.action ?? ''),
+                status: `${h.previousStatus ?? '-'} → ${h.newStatus ?? '-'}`,
+                version: String(h.newVersion ?? h.previousVersion ?? '-'),
+                reason: String(h.reason ?? '-'),
+                when: h.createdAt ? relativeTime(String(h.createdAt)) : '',
+              })),
+              [
+                { key: 'action', header: 'Action', width: 15 },
+                { key: 'status', header: 'Status Change', width: 25 },
+                { key: 'version', header: 'Version', width: 12 },
+                { key: 'reason', header: 'Reason', width: 20 },
+                { key: 'when', header: 'When', width: 15 },
+              ],
+            );
+          }
           default: return `Unknown pod subcommand: ${action}\nAvailable: create, list, status, stop, rollback, history\n`;
         }
       }
@@ -1671,16 +1978,65 @@ commands['stark'] = async (ctx) => {
         switch (action) {
           case 'list': case 'ls': {
             const ns = options['namespace'] || options['n'];
-            return JSON.stringify(await api.service.list({ namespace: ns ? String(ns) : undefined }), null, 2) + '\n';
+            const data = await api.service.list({ namespace: ns ? String(ns) : undefined }) as { services?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+            const services = Array.isArray(data) ? data : (data.services ?? []);
+            if (services.length === 0) return 'ℹ No services found\n';
+            return `\nServices (${services.length})\n\n` + fmtTable(
+              services.map((d: Record<string, unknown>) => ({
+                name: String(d.name ?? ''),
+                pack: String(d.packVersion ?? ''),
+                replicas: d.replicas === 0 ? 'DaemonSet' : `${d.readyReplicas ?? 0}/${d.replicas}`,
+                status: statusBadge(String(d.status ?? '')),
+                namespace: String(d.namespace ?? ''),
+              })),
+              [
+                { key: 'name', header: 'Name', width: 25 },
+                { key: 'pack', header: 'Version', width: 15 },
+                { key: 'replicas', header: 'Ready', width: 12 },
+                { key: 'status', header: 'Status', width: 12 },
+                { key: 'namespace', header: 'Namespace', width: 15 },
+              ],
+            );
           }
-          case 'status': { const n = positionals[0]; if (!n) return 'Usage: stark service status <name>\n'; return JSON.stringify(await api.service.status(n), null, 2) + '\n'; }
+          case 'status': {
+            const n = positionals[0]; if (!n) return 'Usage: stark service status <name>\n';
+            const svc = await api.service.status(n) as Record<string, unknown>;
+            const replicaDisplay = svc.replicas === 0 ? 'DaemonSet (all nodes)' : String(svc.replicas);
+            return `\nService: ${svc.name}\n\n` + fmtKeyValue({
+              'ID': svc.id,
+              'Status': statusBadge(String(svc.status ?? '')),
+              'Message': svc.statusMessage ?? '(none)',
+              'Pack ID': svc.packId,
+              'Pack Version': svc.packVersion,
+              'Namespace': svc.namespace,
+              'Replicas': replicaDisplay,
+              'Ready': `${svc.readyReplicas ?? 0}/${svc.replicas === 0 ? 'N/A' : svc.replicas}`,
+              'Available': svc.availableReplicas,
+              'Updated': svc.updatedReplicas,
+              'Created': svc.createdAt ? new Date(String(svc.createdAt)).toLocaleString() : '(none)',
+              'Updated At': svc.updatedAt ? new Date(String(svc.updatedAt)).toLocaleString() : '(none)',
+            });
+          }
           case 'create': {
-            const pack = options['pack'];
-            if (!pack) return 'Usage: stark service create --pack <name> [options]\n';
-            return JSON.stringify(await api.service.create(String(pack), {
+            const pack = positionals[0] || options['pack'];
+            if (!pack) return 'Usage: stark service create <pack> [options]\n';
+            const svc = await api.service.create(String(pack), {
               namespace: String(options['namespace'] || 'default'),
               replicas: parseInt(String(options['replicas'] || '1'), 10),
-            }), null, 2) + '\n';
+            }) as { service?: Record<string, unknown> } | Record<string, unknown>;
+            const service = (svc as { service?: Record<string, unknown> }).service ?? svc as Record<string, unknown>;
+            let out = `✓ Service '${service.name ?? pack}' created\n\n`;
+            out += fmtKeyValue({
+              'ID': service.id,
+              'Name': service.name,
+              'Pack Version': service.packVersion,
+              'Namespace': service.namespace,
+              'Replicas': service.replicas === 0 ? 'DaemonSet (all nodes)' : String(service.replicas),
+              'Status': statusBadge(String(service.status ?? '')),
+            });
+            out += `\nℹ The service controller will create pods automatically.\n`;
+            out += `ℹ Use 'stark service status ${service.name ?? pack}' to check progress.\n`;
+            return out;
           }
           default: return `Unknown service subcommand: ${action}\nAvailable: create, list, status\n`;
         }
@@ -1688,11 +2044,71 @@ commands['stark'] = async (ctx) => {
       case 'namespace': case 'ns': {
         const { positionals } = parseOpts(rest);
         switch (action) {
-          case 'list': case 'ls': return JSON.stringify(await api.namespace.list(), null, 2) + '\n';
-          case 'get': { const n = positionals[0]; if (!n) return 'Usage: stark namespace get <name>\n'; return JSON.stringify(await api.namespace.get(n), null, 2) + '\n'; }
-          case 'create': { const n = positionals[0]; if (!n) return 'Usage: stark namespace create <name>\n'; return JSON.stringify(await api.namespace.create(n), null, 2) + '\n'; }
-          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark namespace delete <name>\n'; await api.namespace.delete(n); return '✓ Deleted successfully.\n'; }
-          case 'current': return `Current namespace: ${api.namespace.current()}\n`;
+          case 'list': case 'ls': {
+            const data = await api.namespace.list() as { namespaces?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
+            const namespaces = Array.isArray(data) ? data : (data.namespaces ?? []);
+            const total = Array.isArray(data) ? namespaces.length : (data.total ?? namespaces.length);
+            if (namespaces.length === 0) return 'ℹ No namespaces found\n';
+            return `\nNamespaces (${namespaces.length} of ${total})\n\n` + fmtTable(
+              namespaces.map((ns: Record<string, unknown>) => ({
+                name: String(ns.name ?? ''),
+                phase: statusBadge(String(ns.phase ?? '')),
+                maxPods: (ns.resourceQuota as Record<string, unknown>)?.maxPods ?? '∞',
+                maxMemory: (ns.resourceQuota as Record<string, unknown>)?.maxMemory
+                  ? formatBytes(Number((ns.resourceQuota as Record<string, unknown>).maxMemory)) : '∞',
+                age: ns.createdAt ? relativeTime(String(ns.createdAt)) : '',
+              })),
+              [
+                { key: 'name', header: 'Name', width: 25 },
+                { key: 'phase', header: 'Phase', width: 15 },
+                { key: 'maxPods', header: 'Max Pods', width: 12 },
+                { key: 'maxMemory', header: 'Max Memory', width: 12 },
+                { key: 'age', header: 'Age', width: 15 },
+              ],
+            );
+          }
+          case 'get': {
+            const n = positionals[0]; if (!n) return 'Usage: stark namespace get <name>\n';
+            const ns = await api.namespace.get(n) as Record<string, unknown>;
+            let out = `\nNamespace: ${ns.name}\n\n`;
+            out += 'General\n';
+            out += fmtKeyValue({
+              'ID': ns.id,
+              'Name': ns.name,
+              'Phase': statusBadge(String(ns.phase ?? '')),
+              'Created By': ns.createdBy,
+              'Created': ns.createdAt ? new Date(String(ns.createdAt)).toLocaleString() : '(none)',
+              'Updated': ns.updatedAt ? new Date(String(ns.updatedAt)).toLocaleString() : '(none)',
+            });
+            const rq = ns.resourceQuota as Record<string, unknown> | undefined;
+            if (rq) {
+              out += '\nResource Quota\n';
+              out += fmtKeyValue({
+                'Max Pods': rq.maxPods ?? 'unlimited',
+                'Max CPU': rq.maxCpu ?? 'unlimited',
+                'Max Memory': rq.maxMemory ? formatBytes(Number(rq.maxMemory)) : 'unlimited',
+                'Max Storage': rq.maxStorage ? formatBytes(Number(rq.maxStorage)) : 'unlimited',
+              });
+            }
+            const labels = (ns.labels ?? {}) as Record<string, string>;
+            if (Object.keys(labels).length > 0) {
+              out += '\nLabels\n';
+              for (const [key, value] of Object.entries(labels)) out += `  ${key}: ${value}\n`;
+            }
+            return out;
+          }
+          case 'create': {
+            const n = positionals[0]; if (!n) return 'Usage: stark namespace create <name>\n';
+            const ns = await api.namespace.create(n) as Record<string, unknown>;
+            return `✓ Namespace created: ${ns.name ?? n}\n` + fmtKeyValue({
+              'ID': ns.id,
+              'Name': ns.name,
+              'Phase': statusBadge(String(ns.phase ?? '')),
+              'Created': ns.createdAt ? new Date(String(ns.createdAt)).toLocaleString() : '(none)',
+            });
+          }
+          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark namespace delete <name>\n'; await api.namespace.delete(n); return `✓ Namespace deleted: ${n}\n`; }
+          case 'current': return `ℹ Current namespace: ${api.namespace.current()}\n`;
           case 'use': {
             const n = positionals[0]; if (!n) return 'Usage: stark namespace use <name>\n';
             api.namespace.use(n);
@@ -1706,9 +2122,45 @@ commands['stark'] = async (ctx) => {
         switch (action) {
           case 'list': case 'ls': {
             const ns = options['namespace'] || options['n'];
-            return JSON.stringify(await api.secret.list({ namespace: ns ? String(ns) : undefined }), null, 2) + '\n';
+            const data = await api.secret.list({ namespace: ns ? String(ns) : undefined }) as { secrets?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+            const secrets = Array.isArray(data) ? data : (data.secrets ?? []);
+            if (secrets.length === 0) return 'ℹ No secrets found\n';
+            return `\nSecrets (${secrets.length})\n\n` + fmtTable(
+              secrets.map((s: Record<string, unknown>) => ({
+                name: String(s.name ?? ''),
+                type: String(s.type ?? ''),
+                keys: String(s.keyCount ?? 0),
+                version: `v${s.version ?? 0}`,
+                namespace: String(s.namespace ?? ''),
+              })),
+              [
+                { key: 'name', header: 'Name', width: 25 },
+                { key: 'type', header: 'Type', width: 18 },
+                { key: 'keys', header: 'Keys', width: 6 },
+                { key: 'version', header: 'Ver', width: 6 },
+                { key: 'namespace', header: 'Namespace', width: 15 },
+              ],
+            );
           }
-          case 'get': { const n = positionals[0]; if (!n) return 'Usage: stark secret get <name>\n'; const ns = String(options['namespace'] || options['n'] || 'default'); return JSON.stringify(await api.secret.get(n, ns), null, 2) + '\n'; }
+          case 'get': {
+            const n = positionals[0]; if (!n) return 'Usage: stark secret get <name>\n';
+            const ns = String(options['namespace'] || options['n'] || 'default');
+            const secret = await api.secret.get(n, ns) as Record<string, unknown>;
+            let out = `\nSecret: ${secret.name}\n\n`;
+            out += fmtKeyValue({
+              'ID': secret.id,
+              'Name': secret.name,
+              'Type': secret.type,
+              'Namespace': secret.namespace,
+              'Keys': secret.keyCount,
+              'Version': secret.version,
+              'Created By': secret.createdBy,
+              'Created': secret.createdAt ? new Date(String(secret.createdAt)).toLocaleString() : '(none)',
+              'Updated': secret.updatedAt ? new Date(String(secret.updatedAt)).toLocaleString() : '(none)',
+            });
+            out += '\n⚠ Secret values are encrypted and never displayed.\n';
+            return out;
+          }
           default: return `Unknown secret subcommand: ${action}\nAvailable: list, get\n`;
         }
       }
@@ -1717,20 +2169,40 @@ commands['stark'] = async (ctx) => {
         switch (action) {
           case 'list': case 'ls': {
             const node = options['node'] || options['n'];
-            return JSON.stringify(await api.volume.list({ nodeNameOrId: node ? String(node) : undefined }), null, 2) + '\n';
+            const data = await api.volume.list({ nodeNameOrId: node ? String(node) : undefined }) as { volumes?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+            const volumes = Array.isArray(data) ? data : (data.volumes ?? []);
+            if (volumes.length === 0) return 'ℹ No volumes found\n';
+            return `\nVolumes (${volumes.length})\n\n` + fmtTable(
+              volumes.map((v: Record<string, unknown>) => ({
+                name: String(v.name ?? ''),
+                node: String(v.nodeId ?? ''),
+                age: v.createdAt ? relativeTime(String(v.createdAt)) : '',
+              })),
+              [
+                { key: 'name', header: 'Name', width: 25 },
+                { key: 'node', header: 'Node', width: 40 },
+                { key: 'age', header: 'Age', width: 15 },
+              ],
+            );
           }
           case 'create': {
             const n = positionals[0] || options['name'];
             const node = options['node'] || options['n'];
             if (!n || !node) return 'Usage: stark volume create <name> --node <nodeNameOrId>\n';
-            return JSON.stringify(await api.volume.create(String(n), String(node)), null, 2) + '\n';
+            const vol = await api.volume.create(String(n), String(node)) as Record<string, unknown>;
+            return `✓ Volume '${vol.name ?? n}' created\n\n` + fmtKeyValue({
+              'ID': vol.id,
+              'Name': vol.name,
+              'Node': vol.nodeId,
+              'Created': vol.createdAt ? new Date(String(vol.createdAt)).toLocaleString() : '(none)',
+            });
           }
           case 'download': {
             const n = positionals[0] || options['name'];
             const node = options['node'] || options['n'];
             if (!n || !node) return 'Usage: stark volume download <name> --node <nodeNameOrId>\n';
             ctx.write(`ℹ Downloading volume '${n}' from node ${node}\n`);
-            const zipData = await downloadVolume(String(n), String(node));
+            const zipData = await api.volume.downloadAsZip(String(n), String(node));
             // Save the zip to OPFS
             const outFile = String(options['O'] || options['out-file'] || `/tmp/${n}.zip`);
             const outPath = normalizePath(outFile, ctx.cwd);
@@ -1758,27 +2230,99 @@ commands['stark'] = async (ctx) => {
       }
       case 'chaos': {
         switch (action) {
-          case 'status': return JSON.stringify(await api.chaos.status(), null, 2) + '\n';
-          case 'enable': return JSON.stringify(await api.chaos.enable(), null, 2) + '\n';
-          case 'disable': return JSON.stringify(await api.chaos.disable(), null, 2) + '\n';
-          case 'scenarios': return JSON.stringify(await api.chaos.scenarios(), null, 2) + '\n';
-          case 'connections': return JSON.stringify(await api.chaos.connections(), null, 2) + '\n';
-          case 'nodes': return JSON.stringify(await api.chaos.nodes(), null, 2) + '\n';
+          case 'status': {
+            const status = await api.chaos.status() as Record<string, unknown>;
+            let out = '\n🔥 Chaos Status\n\n';
+            out += fmtKeyValue({
+              'Enabled': status.enabled ? 'Yes' : 'No',
+              'Current Scenario': status.currentScenario || 'None',
+              'Run Count': String(status.runCount ?? 0),
+            });
+            const stats = status.stats as Record<string, unknown> | undefined;
+            if (stats) {
+              out += '\n📊 Statistics\n\n';
+              out += fmtKeyValue({
+                'Messages Processed': String(stats.messagesProcessed ?? 0),
+                'Messages Dropped': String(stats.messagesDropped ?? 0),
+                'Latency Injections': String(stats.latencyInjected ?? 0),
+                'Connections Paused': String(stats.connectionsPaused ?? 0),
+                'Active Partitions': String(stats.partitionsActive ?? 0),
+              });
+            }
+            return out;
+          }
+          case 'enable': { await api.chaos.enable(); return '✓ Chaos mode enabled\n⚠ Chaos testing can disrupt service. Use with caution.\n'; }
+          case 'disable': { await api.chaos.disable(); return '✓ Chaos mode disabled\n'; }
+          case 'scenarios': {
+            const scenarios = await api.chaos.scenarios() as Array<Record<string, unknown>>;
+            if (!Array.isArray(scenarios) || scenarios.length === 0) return 'ℹ No scenarios available\n';
+            let out = '\n🎭 Available Chaos Scenarios\n\n';
+            for (const scenario of scenarios) {
+              out += `  ${scenario.id}\n`;
+              out += `    ${scenario.description}\n`;
+              const opts = scenario.options as Record<string, Record<string, unknown>> | undefined;
+              if (opts && Object.keys(opts).length > 0) {
+                out += '    Options:\n';
+                for (const [key, opt] of Object.entries(opts)) {
+                  out += `      --${key}: ${opt.description} (default: ${opt.default})\n`;
+                }
+              }
+              out += '\n';
+            }
+            return out;
+          }
+          case 'connections': {
+            const result = await api.chaos.connections() as { count?: number; connections?: Array<Record<string, unknown>> };
+            const conns = result.connections ?? [];
+            if (conns.length === 0) return 'ℹ No active connections\n';
+            return `\n🔌 Active Connections (${result.count ?? conns.length})\n\n` + fmtTable(
+              conns.map((c: Record<string, unknown>) => ({
+                ID: String(c.id ?? '').slice(0, 12) + '...',
+                Nodes: Array.isArray(c.nodeIds) ? c.nodeIds.join(', ') : '-',
+                User: String(c.userId || '-'),
+                IP: String(c.ipAddress || '-'),
+                Auth: c.isAuthenticated ? '✓' : '✗',
+                Connected: c.connectedAt ? relativeTime(String(c.connectedAt)) : '',
+              })),
+            );
+          }
+          case 'nodes': {
+            const result = await api.chaos.nodes() as { count?: number; nodes?: Array<Record<string, unknown>> };
+            const nodes = result.nodes ?? [];
+            if (nodes.length === 0) return 'ℹ No nodes connected\n';
+            return `\n🖥️  Connected Nodes (${result.count ?? nodes.length})\n\n` + fmtTable(
+              nodes.map((n: Record<string, unknown>) => ({
+                'Node ID': String(n.nodeId ?? ''),
+                'Connection ID': String(n.connectionId ?? '').slice(0, 12) + '...',
+                User: String(n.userId || '-'),
+                Connected: n.connectedAt ? relativeTime(String(n.connectedAt)) : '',
+              })),
+            );
+          }
           case 'events': return JSON.stringify(await api.chaos.events(), null, 2) + '\n';
-          case 'reset': return JSON.stringify(await api.chaos.reset(), null, 2) + '\n';
+          case 'reset': { await api.chaos.reset(); return '✓ Chaos state reset\n'; }
           default: return `Unknown chaos subcommand: ${action}\nAvailable: status, enable, disable, scenarios, connections, nodes, events, reset\n`;
         }
       }
       case 'network': {
         switch (action) {
-          case 'policies': case 'list': return JSON.stringify(await api.network.policies(), null, 2) + '\n';
-          case 'registry': return JSON.stringify(await api.network.registry(), null, 2) + '\n';
+          case 'policies': case 'list': {
+            const data = await api.network.policies() as Record<string, unknown>;
+            return JSON.stringify(data, null, 2) + '\n';
+          }
+          case 'registry': {
+            const data = await api.network.registry() as Record<string, unknown>;
+            return JSON.stringify(data, null, 2) + '\n';
+          }
           default: return `Unknown network subcommand: ${action}\nAvailable: policies, registry\n`;
         }
       }
       case 'server-config': {
         switch (action) {
-          case 'get': return JSON.stringify(await api.serverConfig.get(), null, 2) + '\n';
+          case 'get': {
+            const data = await api.serverConfig.get() as Record<string, unknown>;
+            return JSON.stringify(data, null, 2) + '\n';
+          }
           default: return `Unknown server-config subcommand: ${action}\nAvailable: get\n`;
         }
       }

@@ -1,14 +1,13 @@
 /**
  * Browser CLI Bridge
  *
- * Exposes the browser API to pods running in the browser runtime.
+ * Exposes the Stark API to pods running in the browser runtime.
  * Pods can call API operations through this bridge.
- * Uses the internal API module directly (no external browser-cli dependency).
+ * Always uses context.starkAPI — no direct imports of createStarkAPI.
  * @module @stark-o/browser-runtime/cli-bridge
  */
 
-import { createStarkAPI, type StarkAPI } from './api/api.js';
-import { downloadVolume, archiveVolumePath } from './api/volume.js';
+import type { StarkAPI } from './api/api.js';
 
 /**
  * CLI command result
@@ -27,19 +26,14 @@ export type CliBridgeWriter = (text: string) => void;
 
 /**
  * CLI bridge that exposes the Stark API to pods.
- * Uses the internal browser-runtime API module directly.
+ * Receives its StarkAPI instance from the pack execution context
+ * (context.starkAPI) rather than creating its own.
  */
 export class CliBridge {
-  private _api: StarkAPI | null = null;
+  private readonly _api: StarkAPI;
 
-  /**
-   * Get or create the StarkAPI instance
-   */
-  private getApi(): StarkAPI {
-    if (!this._api) {
-      this._api = createStarkAPI();
-    }
-    return this._api;
+  constructor(api: StarkAPI) {
+    this._api = api;
   }
 
   /**
@@ -56,7 +50,7 @@ export class CliBridge {
     }
 
     const [command, subcommand, ...rest] = args;
-    const api = this.getApi();
+    const api = this._api;
 
     try {
       switch (command) {
@@ -99,35 +93,27 @@ export class CliBridge {
   }
 
   /**
-   * Download a volume as a zip archive
+   * Download a volume as a zip archive via context.starkAPI
    */
   async downloadVolume(volumeName: string, nodeNameOrId: string): Promise<Uint8Array> {
-    return downloadVolume(volumeName, nodeNameOrId);
+    return this._api.volume.downloadAsZip(volumeName, nodeNameOrId);
   }
 
   /**
-   * Archive a path within a volume
+   * Archive a path within a volume via context.starkAPI
    */
   async archiveVolumePath(
     nodeNameOrId: string,
     volumeName: string,
     archivePath: string,
   ): Promise<Uint8Array> {
-    return archiveVolumePath(nodeNameOrId, volumeName, archivePath);
+    return this._api.volume.archivePathAsZip(nodeNameOrId, volumeName, archivePath);
   }
 }
 
 /**
- * Singleton CLI bridge instance
+ * Create a CliBridge from a StarkAPI (typically from context.starkAPI)
  */
-let defaultBridge: CliBridge | null = null;
-
-/**
- * Get the default CLI bridge instance
- */
-export function getCliBridge(): CliBridge {
-  if (!defaultBridge) {
-    defaultBridge = new CliBridge();
-  }
-  return defaultBridge;
+export function createCliBridge(api: StarkAPI): CliBridge {
+  return new CliBridge(api);
 }

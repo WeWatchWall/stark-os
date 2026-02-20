@@ -420,7 +420,7 @@ async function listPacks(req: Request, res: Response): Promise<void> {
       visibility: 'private' as PackVisibility, // List items don't have visibility, default to private
       bundlePath: `packs/${item.name}/${item.latestVersion}/bundle.js`,
       description: item.description,
-      metadata: {},
+      metadata: item.metadata ?? {},
       grantedCapabilities: item.grantedCapabilities,
       createdAt: item.createdAt,
       updatedAt: item.createdAt, // List items don't have updatedAt

@@ -165,6 +165,8 @@ export interface PackListItem {
   ownerId: string;
   /** Granted capabilities */
   grantedCapabilities: Capability[];
+  /** Pack metadata (includes requestedCapabilities) */
+  metadata?: PackMetadata;
   /** Creation timestamp */
   createdAt: Date;
 }

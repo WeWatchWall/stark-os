@@ -454,18 +454,6 @@ export async function handleNodeReconnect(
         stoppedCount: orphanResult.data.stoppedCount,
         podIds: orphanResult.data.podIds,
       });
-
-      // Trigger immediate reconciliation to create replacement pods for stopped orphans.
-      // This ensures DaemonSet pods are re-created without waiting for the next reconcile cycle.
-      const serviceController = getServiceController();
-      if (serviceController && serviceController.isActive()) {
-        // Run reconciliation asynchronously to not block the response
-        serviceController.triggerReconcile().catch((error) => {
-          logger.error('Failed to trigger reconciliation after orphan cleanup', error instanceof Error ? error : undefined, {
-            nodeId: payload.nodeId,
-          });
-        });
-      }
     }
 
     // Handle stale pods: pods the node is running but shouldn't be.
@@ -516,6 +504,19 @@ export async function handleNodeReconnect(
         }
       }
     }
+  }
+
+  // Always trigger immediate reconciliation when a node reconnects.
+  // This ensures DaemonSet services deploy pods to the newly-available node
+  // and services with followLatest get new-version pods, even when no
+  // orphaned pods were found (e.g., all pods were already stopped).
+  const serviceController = getServiceController();
+  if (serviceController && serviceController.isActive()) {
+    serviceController.triggerReconcile().catch((error) => {
+      logger.error('Failed to trigger reconciliation after node reconnect', error instanceof Error ? error : undefined, {
+        nodeId: payload.nodeId,
+      });
+    });
   }
 
   sendResponse(

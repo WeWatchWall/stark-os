@@ -324,12 +324,47 @@ export class ServiceController {
       newVersion,
     });
 
-    // Mark old pods for termination (they will be replaced by reconcileService)
+    const nodeQueries = getNodeQueries();
+
+    // Mark old pods for termination and send stop commands to nodes
     for (const pod of podsToUpdate) {
       await podQueries.updatePod(pod.id, { 
         status: 'stopping',
         statusMessage: `Rolling update to version ${newVersion}`,
       });
+
+      // Send pod:stop message to the node so it actually terminates the pod
+      if (pod.nodeId) {
+        const nodeResult = await nodeQueries.getNodeById(pod.nodeId);
+        if (nodeResult.data?.connectionId) {
+          const sent = sendToNode(nodeResult.data.connectionId, {
+            type: 'pod:stop',
+            payload: {
+              podId: pod.id,
+              reason: 'rolling_update',
+              message: `Rolling update to version ${newVersion}`,
+            },
+          });
+
+          if (sent) {
+            logger.info('Rolling update pod stop message sent to node', {
+              podId: pod.id,
+              nodeId: pod.nodeId,
+              connectionId: nodeResult.data.connectionId,
+            });
+          } else {
+            logger.warn('Failed to send rolling update pod stop message - node connection not found', {
+              podId: pod.id,
+              nodeId: pod.nodeId,
+            });
+          }
+        } else {
+          logger.debug('Node has no active connection, skipping rolling update WebSocket notification', {
+            podId: pod.id,
+            nodeId: pod.nodeId,
+          });
+        }
+      }
     }
   }
 
@@ -521,9 +556,11 @@ export class ServiceController {
       return;
     }
 
-    // Filter to active pods (not stopped/failed/evicted)
+    // Filter to active pods (not stopped/failed/evicted/stopping)
+    // 'stopping' pods are excluded so that rolling updates and DaemonSet
+    // reconciliation can immediately create replacement pods.
     const activePods = podsResult.data.filter(p => 
-      !['stopped', 'failed', 'evicted'].includes(p.status)
+      !['stopped', 'failed', 'evicted', 'stopping'].includes(p.status)
     );
 
     if (service.replicas === 0) {

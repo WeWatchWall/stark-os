@@ -16,8 +16,8 @@ import type { PackNamespace, RuntimeTag } from './pack.js';
  *
  * Special capabilities:
  * - 'root': Runs on main thread (not in worker pool), required for UI packs
- *           that need DOM access. Granted to all namespace packs by default
- *           so users can run UI apps on their own nodes.
+ *           that need DOM access. Must be explicitly requested via
+ *           --capabilities root when registering a pack.
  */
 export type Capability =
   // Root/privileged execution
@@ -155,6 +155,7 @@ export function requiresSystemNamespace(cap: Capability): boolean {
  * 4. 'root' capability is granted by default to both user and system namespace packs
  *    - This allows users to run UI apps on their own nodes
  *    - Root packs run on main thread (not in worker pool)
+ *    - Required for DOM access and UI rendering
  *
  * @param requested - Capabilities the pack is requesting
  * @param context - Context for the granting decision
@@ -248,7 +249,8 @@ export function validateCapabilities(requested: string[]): string[] {
 
 /**
  * Compute effective capabilities: the intersection of requested and granted.
- * If no requested capabilities are specified, all granted capabilities are effective.
+ * If no requested capabilities are specified, effective capabilities are empty —
+ * the pack runs with no special privileges (worker-only execution).
  *
  * @param requested - Capabilities the pack declared it needs (may be undefined)
  * @param granted - Capabilities the orchestrator actually granted
@@ -259,7 +261,7 @@ export function effectiveCapabilities(
   granted: Capability[]
 ): Capability[] {
   if (!requested || requested.length === 0) {
-    return granted;
+    return [];
   }
   return granted.filter((cap) => requested.includes(cap));
 }

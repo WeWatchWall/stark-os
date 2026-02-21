@@ -356,8 +356,8 @@ async function startAgent(authToken: string): Promise<void> {
     const handler = agent.getPodHandler();
     // handleStop checks state.status === 'running' internally, so calling
     // this when the pod is already stopped is a safe no-op.
-    handler.handleStop({ podId, reason: 'window_closed' }).catch(() => {
-      // best-effort — pod may already be stopped
+    handler.handleStop({ podId, reason: 'window_closed' }).catch((err) => {
+      console.debug('Pod stop on window close failed (may already be stopped):', err);
     });
   });
 

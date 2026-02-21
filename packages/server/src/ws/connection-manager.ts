@@ -75,6 +75,15 @@ export interface ConnectionInfo {
   isAuthenticated: boolean;
   /** Connection type: 'agent' for node agents (Supabase JWT), 'pod' for pod subprocesses (pod token) */
   connectionType?: 'agent' | 'pod';
+  /**
+   * Per-connection message processing queue.
+   * Each incoming message chains onto this promise so that messages from the
+   * same connection are processed strictly in order.  Without this, two
+   * rapid-fire status updates (e.g. 'starting' then 'running') can race
+   * through concurrent async handlers and the later DB write wins — which
+   * may be the earlier status, leaving the pod stuck.
+   */
+  messageQueue: Promise<void>;
 }
 
 /**
@@ -333,6 +342,7 @@ export class ConnectionManager {
       connectedAt: new Date(),
       lastActivity: new Date(),
       isAuthenticated: false,
+      messageQueue: Promise.resolve(),
     };
 
     this.connections.set(connectionId, connectionInfo);
@@ -360,9 +370,15 @@ export class ConnectionManager {
   }
 
   /**
-   * Handle incoming WebSocket message
+   * Handle incoming WebSocket message.
+   *
+   * Messages from the same connection are processed strictly in order by
+   * chaining onto `conn.messageQueue`.  Without serialisation, two rapid-fire
+   * status updates (e.g. 'starting' then 'running') race through concurrent
+   * async handlers and the later DB write wins — which may be the earlier
+   * status, leaving the pod stuck.
    */
-  private async handleMessage(connectionId: string, data: unknown): Promise<void> {
+  private handleMessage(connectionId: string, data: unknown): void {
     const conn = this.connections.get(connectionId);
     if (!conn) return;
 
@@ -396,8 +412,17 @@ export class ConnectionManager {
       correlationId: message.correlationId,
     });
 
-    // Route message to appropriate handler
-    await this.routeMessage(conn, message);
+    // Chain onto the per-connection queue so async handlers run sequentially.
+    conn.messageQueue = conn.messageQueue.then(async () => {
+      try {
+        await this.routeMessage(conn, message);
+      } catch (error) {
+        logger.error('Unhandled error routing message', error instanceof Error ? error : undefined, {
+          connectionId,
+          type: message.type,
+        });
+      }
+    });
   }
 
   /**

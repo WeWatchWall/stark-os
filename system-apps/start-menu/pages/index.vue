@@ -86,7 +86,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { createStarkAPI, type StarkAPI } from '@stark-o/browser-runtime';
-import { effectiveCapabilities } from '@stark-o/shared';
+import { effectiveCapabilities, type PackMessageHandler } from '@stark-o/shared';
 
 /* ── Types ── */
 

@@ -450,10 +450,10 @@ export class PackExecutor {
         shutdownHandlers.push(handler);
       },
       onMessage: (handler: PackMessageHandler) => {
-        // Registration is populated later; for main-thread packs the executor
-        // stores the handlers in mainThreadMessageHandlers.  For worker packs
-        // the context is recreated inside the worker and onMessage is wired to
-        // the postMessage bridge (see pack-worker.ts).
+        // For main-thread packs the executor stores the handlers here.
+        // For worker packs this closure is stripped before postMessage;
+        // the worker recreates onMessage wired to the postMessage bridge
+        // (see pack-worker.ts).
         let arr = this.mainThreadMessageHandlers.get(pod.id);
         if (!arr) {
           arr = [];
@@ -766,7 +766,7 @@ export class PackExecutor {
         executionId: context.executionId,
       });
 
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, onMessage: _om, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
       
       // Add networking config for pack-worker
       const workerContext = {

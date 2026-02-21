@@ -716,7 +716,7 @@ export class PackExecutor {
         executionId: context.executionId,
       });
 
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, onMessage: _om, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
       const workerContext = {
         ...serializableContext,
         // Networking: pod connects directly to orchestrator for signaling

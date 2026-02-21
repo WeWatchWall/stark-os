@@ -43,10 +43,10 @@ export type { PackExecutionContext, PackExecutionResult, ExecutionHandle };
 
 /**
  * Create a StarkAPI instance for the pack execution context.
- * Lazily wraps createStarkAPI so that it picks up the resolved API URL.
+ * Passes the user access token so API calls are authenticated from the start.
  */
-function createStarkAPIForContext(): ReturnType<typeof createStarkAPI> {
-  return createStarkAPI();
+function createStarkAPIForContext(accessToken?: string): ReturnType<typeof createStarkAPI> {
+  return createStarkAPI(accessToken ? { accessToken } : undefined);
 }
 
 /**
@@ -502,8 +502,24 @@ export class PackExecutor {
         }),
       } : {}),
       // Stark API — programmatic API for orchestrator operations
-      starkAPI: createStarkAPIForContext(),
+      starkAPI: createStarkAPIForContext(this.config.authToken),
     };
+
+    // Set user access token on context for cross-frame StarkAPI resolution
+    // (srcdoc iframes read this via __STARK_CONTEXT__._userAccessToken)
+    (context as Record<string, unknown>)._userAccessToken = this.config.authToken;
+
+    // Auto-update the access token when the node refreshes it via sendMessage
+    context.onMessage((msg) => {
+      if (msg.type === 'auth:token-refreshed') {
+        const payload = msg.payload as { authToken?: string } | undefined;
+        if (payload?.authToken) {
+          (context as Record<string, unknown>)._userAccessToken = payload.authToken;
+          const api = context.starkAPI as { auth?: { updateAccessToken?: (t: string) => void } } | undefined;
+          api?.auth?.updateAccessToken?.(payload.authToken);
+        }
+      }
+    });
 
     this.config.logger.info('Starting pack execution', {
       executionId,

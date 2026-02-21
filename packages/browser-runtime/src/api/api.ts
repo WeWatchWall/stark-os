@@ -45,6 +45,8 @@ export interface StarkAPI {
     whoami(): { email: string; userId: string } | null;
     isAuthenticated(): boolean;
     status(): { authenticated: boolean; email?: string; expiresAt?: string };
+    /** Update the in-memory access token (called by runtime on auth:token-refreshed) */
+    updateAccessToken(token: string): void;
     setup(email: string, password: string, displayName?: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
     setupStatus(): Promise<{ needsSetup: boolean }>;
     addUser(email: string, password: string, options?: { displayName?: string; roles?: string[] }): Promise<{ user: { id: string; email: string; roles?: string[] } }>;
@@ -145,7 +147,10 @@ async function handleDeleteResponse(response: Response): Promise<void> {
  * @returns StarkAPI object suitable for use as context.starkAPI
  */
 export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessToken?: string }): StarkAPI {
-  const { accessToken: explicitToken, ...configOverrides } = overrides ?? {};
+  const { accessToken: initialToken, ...configOverrides } = overrides ?? {};
+
+  // Mutable access token — updated in-memory by auth:token-refreshed messages
+  let currentAccessToken = initialToken;
 
   const getConfig = (): BrowserApiConfig => {
     const base = loadConfig();
@@ -153,7 +158,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
     return { ...base, ...configOverrides, apiUrl };
   };
 
-  const getApi = () => createApiClient(getConfig(), explicitToken);
+  const getApi = () => createApiClient(getConfig(), currentAccessToken);
 
   return {
     auth: {
@@ -191,6 +196,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           expiresAt: authed ? creds?.expiresAt : undefined,
         };
       },
+      updateAccessToken(token: string) { currentAccessToken = token; },
       async setup(email: string, password: string, displayName?: string) {
         const api = getApi();
         const response = await api.post('/auth/setup', { email, password, displayName: displayName || undefined });

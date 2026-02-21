@@ -163,7 +163,6 @@ export class SchedulerService {
       // This ensures newly created pods or newly online nodes are handled promptly.
       if (this.pendingSchedule) {
         logger.debug('Running queued scheduling cycle');
-        this.pendingSchedule = false;
         // Use setImmediate to avoid stack overflow on rapid triggers
         setImmediate(() => this.runSchedulingCycle());
       }

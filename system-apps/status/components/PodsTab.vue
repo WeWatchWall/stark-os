@@ -201,7 +201,12 @@ async function refresh() {
       api.pack.list() as Promise<{ packs: PackData[] }>,
     ]);
 
-    const pods: PodData[] = podResult.pods ?? [];
+    const STALE_POD_THRESHOLD_MS = 5 * 60 * 1000;
+    const pods: PodData[] = (podResult.pods ?? []).filter((p) => {
+      if (!['stopped', 'failed', 'evicted'].includes(p.status)) return true;
+      const referenceTime = new Date(p.stoppedAt ?? p.createdAt).getTime();
+      return Date.now() - referenceTime < STALE_POD_THRESHOLD_MS;
+    });
     const nodes: NodeData[] = nodeResult.nodes ?? [];
     const packs: PackData[] = packResult.packs ?? [];
 

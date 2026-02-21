@@ -751,7 +751,19 @@ export class PackExecutor {
         const mainThreadResult = await new Promise<PackExecutionResult>((resolve, reject) => {
           setTimeout(() => {
             this.executeOnMainThread(bundleCode, context, args, state.logSink)
-              .then((result) => {
+              .then(async ({ result, cleanup }) => {
+                // Root packs (UI apps) mount their interface and return immediately,
+                // but the UI stays alive in the DOM. Keep the execution promise pending
+                // until shutdown is explicitly requested so the pod remains in "running"
+                // state and __STARK_CONTEXT__ stays available for API calls.
+                if (!context.lifecycle.isShuttingDown) {
+                  await new Promise<void>((shutdownResolve) => {
+                    context.onShutdown(() => shutdownResolve());
+                  });
+                }
+                // Now that the pod is actually stopping, tear down the globals
+                // and console patches that were kept alive for the running UI.
+                cleanup();
                 resolve({
                   executionId: context.executionId,
                   podId: context.podId,
@@ -1071,7 +1083,7 @@ export class PackExecutor {
     context: PackExecutionContext,
     args: unknown[],
     _logSink: PodLogSink
-  ): Promise<unknown> {
+  ): Promise<{ result: unknown; cleanup: () => void }> {
     const env = context.env;
 
     // Make environment variables available via a global object
@@ -1101,6 +1113,36 @@ export class PackExecutor {
       originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
     console.error = (...logArgs: unknown[]) =>
       originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
+
+    // Build a cleanup function that the caller invokes when the pod actually
+    // stops. For root packs the entry function returns immediately after
+    // mounting UI, but the UI continues running on the main thread. If we
+    // cleaned up in a finally block here, __STARK_CONTEXT__ (which carries
+    // the auth token) and console log formatting would be torn down while
+    // the pod is still "running."
+    const cleanup = (): void => {
+      console.log = originalConsole.log;
+      console.info = originalConsole.info;
+      console.warn = originalConsole.warn;
+      console.error = originalConsole.error;
+      console.debug = originalConsole.debug;
+
+      if ((globalScope as Record<string, unknown>).__STARK_ENV__ === env) {
+        delete (globalScope as Record<string, unknown>).__STARK_ENV__;
+      }
+      // Only delete __STARK_CONTEXT__ if no other main-thread packs are still
+      // running. The global is shared: every main-thread pack overwrites it on
+      // start, and every running pack's API calls read _userAccessToken from it.
+      // Deleting it while siblings are active strips auth from all of them.
+      // The localStorage fallback (stark-cli-credentials) now exists as a safety
+      // net, but keeping the global avoids unnecessary fallback round-trips.
+      const otherActive = this.getActiveExecutions().some(
+        (e) => e.podId !== context.podId
+      );
+      if (!otherActive && (globalScope as Record<string, unknown>).__STARK_CONTEXT__ === context) {
+        delete (globalScope as Record<string, unknown>).__STARK_CONTEXT__;
+      }
+    };
 
     try {
       // Evaluate the pack bundle code.
@@ -1163,18 +1205,11 @@ export class PackExecutor {
       const result: unknown = await Promise.resolve(
         (entrypointFn as (ctx: PackExecutionContext, ...args: unknown[]) => unknown)(context, ...args)
       );
-      return result;
-    } finally {
-      // Restore original console methods
-      console.log = originalConsole.log;
-      console.info = originalConsole.info;
-      console.warn = originalConsole.warn;
-      console.error = originalConsole.error;
-      console.debug = originalConsole.debug;
-
-      // Clean up globals
-      delete (globalScope as Record<string, unknown>).__STARK_ENV__;
-      delete (globalScope as Record<string, unknown>).__STARK_CONTEXT__;
+      return { result, cleanup };
+    } catch (error) {
+      // On error, clean up immediately — the pack won't be running.
+      cleanup();
+      throw error;
     }
   }
 

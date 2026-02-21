@@ -356,9 +356,8 @@ async function listHandler(options: {
     const STALE_POD_THRESHOLD_MS = 5 * 60 * 1000;
     const pods = result.data.pods.filter((p) => {
       if (!['stopped', 'failed', 'evicted'].includes(p.status)) return true;
-      if (!p.stoppedAt) return true;
-      const stoppedTime = new Date(p.stoppedAt).getTime();
-      return Date.now() - stoppedTime < STALE_POD_THRESHOLD_MS;
+      const referenceTime = new Date(p.stoppedAt ?? p.createdAt).getTime();
+      return Date.now() - referenceTime < STALE_POD_THRESHOLD_MS;
     });
 
     if (getOutputFormat() === 'json') {

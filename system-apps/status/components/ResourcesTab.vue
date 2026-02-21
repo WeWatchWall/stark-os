@@ -116,6 +116,8 @@ interface NodeData {
 interface PodData {
   id: string;
   status: string;
+  createdAt: string;
+  stoppedAt?: string;
 }
 
 interface ResourceState {
@@ -246,7 +248,12 @@ async function fetchResources() {
     ]);
 
     const nodes: NodeData[] = nodeResult.nodes ?? [];
-    const pods: PodData[] = podResult.pods ?? [];
+    const STALE_POD_THRESHOLD_MS = 5 * 60 * 1000;
+    const pods: PodData[] = (podResult.pods ?? []).filter((p) => {
+      if (!['stopped', 'failed', 'evicted'].includes(p.status)) return true;
+      const referenceTime = new Date(p.stoppedAt ?? p.createdAt).getTime();
+      return Date.now() - referenceTime < STALE_POD_THRESHOLD_MS;
+    });
 
     // Node counts
     const online = nodes.filter((n) => n.status === 'online').length;

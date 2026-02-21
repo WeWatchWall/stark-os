@@ -683,7 +683,19 @@ export class PackExecutor {
           // This allows the caller to receive the ExecutionHandle before execution starts
           setImmediate(() => {
             this.executeOnMainThread(bundleCode, context, args, state.logSink)
-              .then((result) => {
+              .then(async ({ result, cleanup }) => {
+                // Root packs (UI/privileged apps) may return immediately after setup,
+                // but the effects (servers, listeners) stay alive.  Keep the execution
+                // promise pending until shutdown is explicitly requested so the pod
+                // remains in "running" state.
+                if (!context.lifecycle.isShuttingDown) {
+                  await new Promise<void>((shutdownResolve) => {
+                    context.onShutdown(() => shutdownResolve());
+                  });
+                }
+                // Now that the pod is actually stopping, tear down the console
+                // patches and env vars that were kept alive for the running pack.
+                cleanup();
                 resolve({
                   executionId: context.executionId,
                   podId: context.podId,
@@ -915,7 +927,7 @@ export class PackExecutor {
     context: PackExecutionContext,
     args: unknown[],
     _logSink: PodLogSink
-  ): Promise<unknown> {
+  ): Promise<{ result: unknown; cleanup: () => void }> {
     // Set up environment variables
     const env = context.env;
     const originalEnv: Record<string, string | undefined> = {};
@@ -951,6 +963,27 @@ export class PackExecutor {
       originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
     console.error = (...logArgs: unknown[]) =>
       originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
+
+    // Build a cleanup function that the caller invokes when the pod actually
+    // stops. For root packs the entry function returns immediately after setup,
+    // but side-effects (servers, listeners) stay alive. If we cleaned up in a
+    // finally block here, console log formatting and env vars would be torn
+    // down while the pod is still "running."
+    const cleanup = (): void => {
+      console.log = originalConsole.log;
+      console.info = originalConsole.info;
+      console.warn = originalConsole.warn;
+      console.error = originalConsole.error;
+      console.debug = originalConsole.debug;
+
+      for (const [key, originalValue] of Object.entries(originalEnv)) {
+        if (originalValue === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = originalValue;
+        }
+      }
+    };
 
     try {
       // Evaluate the pack bundle code using Node.js vm module.
@@ -1018,23 +1051,11 @@ export class PackExecutor {
       const result: unknown = await Promise.resolve(
         (entrypointFn as (ctx: PackExecutionContext, ...args: unknown[]) => unknown)(context, ...args)
       );
-      return result;
-    } finally {
-      // Restore original console methods
-      console.log = originalConsole.log;
-      console.info = originalConsole.info;
-      console.warn = originalConsole.warn;
-      console.error = originalConsole.error;
-      console.debug = originalConsole.debug;
-      
-      // Restore original environment variables
-      for (const [key, originalValue] of Object.entries(originalEnv)) {
-        if (originalValue === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = originalValue;
-        }
-      }
+      return { result, cleanup };
+    } catch (error) {
+      // On error, clean up immediately — the pack won't be running.
+      cleanup();
+      throw error;
     }
   }
 

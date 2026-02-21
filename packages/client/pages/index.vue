@@ -349,6 +349,18 @@ async function startAgent(authToken: string): Promise<void> {
     agent?.getExecutor().sendMessage(podId, message);
   });
 
+  // When a window is closed by the user, stop the corresponding pod so the
+  // orchestrator removes it from the running list.
+  shell.setOnWindowClose((podId) => {
+    if (!agent) return;
+    const handler = agent.getPodHandler();
+    // handleStop checks state.status === 'running' internally, so calling
+    // this when the pod is already stopped is a safe no-op.
+    handler.handleStop({ podId, reason: 'window_closed' }).catch((err) => {
+      console.debug('Pod stop on window close failed (may already be stopped):', err);
+    });
+  });
+
   agent.on((event, _data) => {
     if (event === 'connecting') connectionState.value = 'connecting';
     else if (event === 'connected') connectionState.value = 'connected';

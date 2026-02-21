@@ -1870,9 +1870,8 @@ commands['stark'] = async (ctx) => {
             const pods = allPods.filter((p: Record<string, unknown>) => {
               const status = String(p.status ?? '');
               if (!['stopped', 'failed', 'evicted'].includes(status)) return true;
-              if (!p.stoppedAt) return true;
-              const stoppedTime = new Date(String(p.stoppedAt)).getTime();
-              return Date.now() - stoppedTime < STALE_POD_THRESHOLD_MS;
+              const referenceTime = new Date(String(p.stoppedAt ?? p.createdAt)).getTime();
+              return Date.now() - referenceTime < STALE_POD_THRESHOLD_MS;
             });
             const total = Array.isArray(data) ? pods.length : (data.total ?? pods.length);
             if (pods.length === 0) return 'ℹ No pods found\n';

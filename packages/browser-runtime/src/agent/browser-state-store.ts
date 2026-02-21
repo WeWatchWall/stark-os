@@ -106,6 +106,14 @@ export function saveBrowserCredentials(credentials: BrowserNodeCredentials): voi
   
   try {
     localStorage.setItem(STORAGE_KEYS.CREDENTIALS, JSON.stringify(credentials));
+    // Also save under the API client's credential key so that getAccessToken()
+    // can find the token when __STARK_CONTEXT__ is unavailable (e.g. after a
+    // main-thread pod is stopped and its cleanup deletes the global).
+    // The API client reads from 'stark-cli-credentials' as its localStorage
+    // fallback, but the agent stores under 'stark:agent:credentials'.
+    // Without this bridge, stopping any main-thread pod strips auth from
+    // every other running pack.
+    localStorage.setItem('stark-cli-credentials', JSON.stringify(credentials));
   } catch (error) {
     console.error('Failed to save credentials to localStorage:', error);
   }
@@ -121,6 +129,7 @@ export function clearBrowserCredentials(): void {
   
   try {
     localStorage.removeItem(STORAGE_KEYS.CREDENTIALS);
+    localStorage.removeItem('stark-cli-credentials');
   } catch {
     // Ignore errors
   }

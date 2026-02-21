@@ -93,6 +93,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useToast } from 'primevue/usetoast';
 import { useStarkApi } from '../composables/useStarkApi';
 
 /* ── Types ── */
@@ -137,6 +138,7 @@ const allPods = ref<PodRow[]>([]);
 const stoppingPods = ref<Set<string>>(new Set());
 
 const api = useStarkApi();
+const toast = useToast();
 
 /* ── Helpers ── */
 
@@ -248,7 +250,7 @@ async function stopPod(podId: string) {
     await refresh();
   } catch (err: unknown) {
     console.error('Failed to stop pod:', err);
-    alert(`Failed to stop pod: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    toast.add({ severity: 'error', summary: 'Stop Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
   } finally {
     stoppingPods.value.delete(podId);
   }

@@ -1,5 +1,6 @@
 <template>
   <div class="status-page">
+    <Toast position="top-right" />
     <Tabs :value="activeTab" @update:value="activeTab = $event" class="status-tabs">
       <TabList>
         <Tab value="pods">Pods</Tab>

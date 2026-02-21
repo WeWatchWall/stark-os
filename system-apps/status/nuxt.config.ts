@@ -61,6 +61,9 @@ export default defineNuxtConfig({
         },
       },
     },
+    components: {
+      include: ['DataTable', 'Column', 'Button', 'Tag', 'ProgressSpinner', 'ProgressBar', 'Card', 'Knob', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel', 'Toast'],
+    },
   },
 
   // Output directory for the static build

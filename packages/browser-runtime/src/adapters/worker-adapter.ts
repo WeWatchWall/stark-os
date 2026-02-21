@@ -83,6 +83,14 @@ export interface BrowserWorkerRequest {
 }
 
 /**
+ * Data-update message pushed to a running Web Worker via postMessage.
+ */
+export interface BrowserWorkerDataUpdate {
+  type: 'data-update';
+  message: { type: string; payload?: unknown };
+}
+
+/**
  * Message sent back from the Web Worker to the main thread.
  */
 export interface BrowserWorkerResponse {
@@ -190,6 +198,18 @@ export class WorkerAdapter implements IWorkerAdapter {
       task.worker.postMessage(message);
     } else {
       console.warn('[WorkerAdapter] Cannot push message to worker - not found', { workerId });
+    }
+  }
+
+  /**
+   * Push a data-update message to a running Web Worker via postMessage.
+   * Used by the executor's sendMessage() to relay messages to packs.
+   */
+  sendDataToWorker(workerId: string, message: { type: string; payload?: unknown }): void {
+    const task = this.runningTasks.get(workerId);
+    if (task?.worker) {
+      const update: BrowserWorkerDataUpdate = { type: 'data-update', message };
+      task.worker.postMessage(update);
     }
   }
 
@@ -354,7 +374,7 @@ export class WorkerAdapter implements IWorkerAdapter {
     context: unknown,
     args: unknown[] = [],
     options: TaskOptions = {}
-  ): TaskHandle<T> {
+  ): TaskHandle<T> & { taskId: string } {
     this.ensureInitialized();
 
     const taskId = this.generateTaskId();
@@ -494,6 +514,7 @@ export class WorkerAdapter implements IWorkerAdapter {
     };
 
     return {
+      taskId,
       promise,
       cancel,
       forceTerminate,

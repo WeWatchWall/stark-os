@@ -743,6 +743,14 @@ export class NodeAgent {
           
           // Update the executor's auth token in-place (preserves running pods)
           this.executor.updateAuthToken(this.authToken);
+
+          // Broadcast the refreshed token to all running pods
+          for (const exec of this.executor.getActiveExecutions()) {
+            this.executor.sendMessage(exec.podId, {
+              type: 'auth:token-refreshed',
+              payload: { authToken: this.authToken },
+            });
+          }
         }
       }
 
@@ -1427,6 +1435,14 @@ export class NodeAgent {
     // Update the executor's auth token in-place (preserves running pods)
     this.executor.updateAuthToken(this.authToken);
 
+    // Broadcast the refreshed token to all running pods
+    for (const exec of this.executor.getActiveExecutions()) {
+      this.executor.sendMessage(exec.podId, {
+        type: 'auth:token-refreshed',
+        payload: { authToken: credentials.accessToken },
+      });
+    }
+
     this.config.logger.info('Saved node credentials', { userId: credentials.userId, email: credentials.email });
   }
 
@@ -1452,6 +1468,14 @@ export class NodeAgent {
     
     // Update the executor's auth token in-place (preserves running pods)
     this.executor.updateAuthToken(this.authToken);
+
+    // Broadcast the refreshed token to all running pods
+    for (const exec of this.executor.getActiveExecutions()) {
+      this.executor.sendMessage(exec.podId, {
+        type: 'auth:token-refreshed',
+        payload: { authToken: token },
+      });
+    }
   }
 }
 

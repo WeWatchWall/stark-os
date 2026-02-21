@@ -84,9 +84,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { createStarkAPI, type StarkAPI } from '@stark-o/browser-runtime';
-import { effectiveCapabilities } from '@stark-o/shared';
+import { effectiveCapabilities, type PackMessageHandler } from '@stark-o/shared';
 
 /* ── Types ── */
 
@@ -248,32 +248,30 @@ async function launchApp(app: AppEntry) {
 
 /**
  * Re-query packs when the shell opens the start-menu panel.
- * Shell.vue increments a localStorage counter; we poll it here because the
- * 'storage' event only fires across tabs, NOT within the same tab (srcdoc
- * iframes are same-tab).  A 300 ms poll is cheap and completely reliable.
+ * Listens for 'start-menu:opened' messages pushed by the executor
+ * via the standardised onMessage / sendMessage API.
  */
-const STORAGE_KEY = 'stark:start-menu-opened';
-let lastSeen = localStorage.getItem(STORAGE_KEY) ?? '0';
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Register with the standardised onMessage API from the pack context */
+function registerOnMessage(): void {
+  try {
+    const ctx = (window.parent as Record<string, unknown>).__STARK_CONTEXT__ as
+      { onMessage?: (handler: PackMessageHandler) => void } | undefined;
+    if (ctx?.onMessage) {
+      ctx.onMessage((msg) => {
+        if (msg.type === 'start-menu:opened') {
+          loadPacks();
+        }
+      });
+    }
+  } catch {
+    /* cross-origin or no parent — ignore */
+  }
+}
 
 onMounted(() => {
   loadPacks();
-  // Sync our baseline so we don't double-fire on mount
-  lastSeen = localStorage.getItem(STORAGE_KEY) ?? '0';
-  pollTimer = setInterval(() => {
-    const current = localStorage.getItem(STORAGE_KEY) ?? '0';
-    if (current !== lastSeen) {
-      lastSeen = current;
-      loadPacks();
-    }
-  }, 300);
-});
-
-onUnmounted(() => {
-  if (pollTimer !== null) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
+  registerOnMessage();
 });
 </script>
 

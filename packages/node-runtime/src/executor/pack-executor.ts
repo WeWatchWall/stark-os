@@ -28,6 +28,8 @@ import {
   type Logger,
   type Pack,
   type Pod,
+  type PackDataMessage,
+  type PackMessageHandler,
   type PackExecutionContext,
   type PackExecutionResult,
   type ExecutionHandle,
@@ -97,6 +99,8 @@ interface ExecutionState {
   requestShutdown: (reason?: string) => void;
   /** Log sink for stdout/stderr */
   logSink: PodLogSink;
+  /** Worker adapter taskId (set when pack runs in a subprocess) */
+  workerTaskId?: string;
 }
 
 /**
@@ -130,6 +134,8 @@ export class PackExecutor {
   private initialized = false;
   private readonly executions: Map<string, ExecutionState> = new Map();
   private readonly podExecutions: Map<string, string> = new Map(); // podId -> executionId
+  /** Message handlers for main-thread packs (keyed by podId) */
+  private readonly mainThreadMessageHandlers: Map<string, Array<(msg: { type: string; payload?: unknown }) => void>> = new Map();
 
   constructor(config: PackExecutorConfig = {}) {
     this.config = {
@@ -191,6 +197,40 @@ export class PackExecutor {
     if (this.httpAdapter) {
       this.httpAdapter.setAuthToken(token);
     }
+  }
+
+  /**
+   * Send a data-update message to a running pod.
+   *
+   * Transport is chosen automatically:
+   *  - main-thread packs → direct callback invocation
+   *  - subprocess packs  → IPC (process.send)
+   *
+   * @returns `true` if the message was delivered, `false` if the pod was
+   *          not found or not running.
+   */
+  sendMessage(podId: string, message: PackDataMessage): boolean {
+    const executionId = this.podExecutions.get(podId);
+    if (!executionId) return false;
+    const state = this.executions.get(executionId);
+    if (!state || (state.status !== 'running' && state.status !== 'pending')) return false;
+
+    // Main-thread packs: invoke registered handlers directly
+    const handlers = this.mainThreadMessageHandlers.get(podId);
+    if (handlers && handlers.length > 0) {
+      for (const h of handlers) {
+        try { h(message); } catch { /* ignore handler errors */ }
+      }
+      return true;
+    }
+
+    // Subprocess packs: relay through the worker adapter
+    if (state.workerTaskId) {
+      this.workerAdapter.sendDataToWorker(state.workerTaskId, message);
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -341,6 +381,14 @@ export class PackExecutor {
       onShutdown: (handler: ShutdownHandler) => {
         shutdownHandlers.push(handler);
       },
+      onMessage: (handler: PackMessageHandler) => {
+        let arr = this.mainThreadMessageHandlers.get(pod.id);
+        if (!arr) {
+          arr = [];
+          this.mainThreadMessageHandlers.set(pod.id, arr);
+        }
+        arr.push(handler);
+      },
       // Networking: service ID for policy checks
       serviceId,
       // Authentication: pod token for data plane auth (prevents spoofing)
@@ -451,6 +499,8 @@ export class PackExecutor {
         state.logSink.close();
         // Dispose ephemeral data plane if it was created
         context.ephemeral?.dispose();
+        // Clean up main-thread message handlers
+        this.mainThreadMessageHandlers.delete(pod.id);
         this.config.logger.info('Pack execution completed', {
           executionId,
           podId: pod.id,
@@ -476,6 +526,8 @@ export class PackExecutor {
         state.logSink.close();
         // Dispose ephemeral data plane if it was created
         context.ephemeral?.dispose();
+        // Clean up main-thread message handlers
+        this.mainThreadMessageHandlers.delete(pod.id);
         this.config.logger.error(
           'Pack execution failed',
           error instanceof Error ? error : new Error(String(error)),
@@ -664,7 +716,7 @@ export class PackExecutor {
         executionId: context.executionId,
       });
 
-      const { lifecycle: _lc, onShutdown: _os, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, onMessage: _om, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
       const workerContext = {
         ...serializableContext,
         // Networking: pod connects directly to orchestrator for signaling
@@ -680,6 +732,7 @@ export class PackExecutor {
       );
 
       state.handle = taskHandle;
+      state.workerTaskId = taskHandle.taskId;
 
       const result = await taskHandle.promise;
 

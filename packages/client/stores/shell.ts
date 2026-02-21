@@ -145,6 +145,23 @@ export const useShellStore = defineStore('shell', () => {
   const startMenuContainerId = 'stark-start-menu-surface';
   /** Whether the start-menu pod has been attached */
   const startMenuAttached = ref(false);
+  /** Pod ID of the start-menu (set by containerIdProvider) */
+  const startMenuPodId = ref<string | null>(null);
+  /**
+   * Callback set by the page to send messages to packs via the executor.
+   * @internal Set by index.vue after the agent is created.
+   */
+  let sendMessageFn: ((podId: string, message: { type: string; payload?: unknown }) => void) | null = null;
+  function setSendMessage(fn: (podId: string, message: { type: string; payload?: unknown }) => void): void {
+    sendMessageFn = fn;
+  }
+
+  /** Notify the start-menu pack that it was opened (for pack-list refresh). */
+  function notifyStartMenuOpened(): void {
+    if (startMenuPodId.value && sendMessageFn) {
+      sendMessageFn(startMenuPodId.value, { type: 'start-menu:opened' });
+    }
+  }
 
   function toggleStartMenu() {
     startMenuVisible.value = !startMenuVisible.value;
@@ -281,6 +298,9 @@ export const useShellStore = defineStore('shell', () => {
     startMenuVisible,
     startMenuContainerId,
     startMenuAttached,
+    startMenuPodId,
+    setSendMessage,
+    notifyStartMenuOpened,
     toggleStartMenu,
     showStartMenu,
     hideStartMenu,

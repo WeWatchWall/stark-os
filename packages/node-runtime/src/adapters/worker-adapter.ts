@@ -59,6 +59,14 @@ export interface WorkerRequest {
 }
 
 /**
+ * Data-update message pushed to a running worker subprocess via IPC.
+ */
+export interface WorkerDataUpdate {
+  type: 'data-update';
+  message: { type: string; payload?: unknown };
+}
+
+/**
  * Message sent back from the worker subprocess to the parent.
  */
 export interface WorkerResponse {
@@ -268,7 +276,7 @@ export class WorkerAdapter implements IWorkerAdapter {
     context: unknown,
     args: unknown[] = [],
     options: TaskOptions = {}
-  ): TaskHandle<T> {
+  ): TaskHandle<T> & { taskId: string } {
     this.ensureInitialized();
 
     const taskId = this.generateTaskId();
@@ -397,6 +405,7 @@ export class WorkerAdapter implements IWorkerAdapter {
     };
 
     return {
+      taskId,
       promise,
       cancel,
       forceTerminate,
@@ -468,6 +477,18 @@ export class WorkerAdapter implements IWorkerAdapter {
       pendingTasks: 0,
       activeTasks,
     };
+  }
+
+  /**
+   * Push a data-update message to a running worker subprocess via IPC.
+   * Used by the executor's sendMessage() to relay messages to packs.
+   */
+  sendDataToWorker(taskId: string, message: { type: string; payload?: unknown }): void {
+    const task = this.runningTasks.get(taskId);
+    if (task?.process.connected) {
+      const update: WorkerDataUpdate = { type: 'data-update', message };
+      task.process.send(update);
+    }
   }
 
   /**

@@ -65,14 +65,12 @@ function onStartMenuHide() {
 
 /**
  * Tell the start-menu to refresh its pack list whenever the panel opens.
- * Uses a localStorage counter so the srcdoc iframe picks it up via the
- * 'storage' event — no cross-frame dispatching needed.
+ * Uses the standardised sendMessage API (via shell store) and falls back
+ * to a localStorage counter for environments where the context is unavailable.
  */
-const STORAGE_KEY = 'stark:start-menu-opened';
 watch(() => shell.startMenuVisible, (visible) => {
   if (visible) {
-    const prev = parseInt(localStorage.getItem(STORAGE_KEY) ?? '0', 10);
-    localStorage.setItem(STORAGE_KEY, String(prev + 1));
+    shell.notifyStartMenuOpened();
   }
 });
 

@@ -279,7 +279,7 @@ async function fetchResources() {
 onMounted(() => {
   fetchResources();
   // Refresh every second
-  intervalId = setInterval(fetchResources, 1000);
+  intervalId = setInterval(fetchResources, 5000);
 });
 
 onBeforeUnmount(() => {

@@ -115,9 +115,38 @@ export function clearCredentials(): void {
 }
 
 /**
+ * Resolve an access token from the pod execution context (__STARK_CONTEXT__).
+ * The pack executor sets `_userAccessToken` on the context and updates it
+ * when `auth:token-refreshed` messages arrive via sendMessage.
+ * Checks both own global and parent window (for srcdoc iframes).
+ */
+function getContextAccessToken(): string | null {
+  try {
+    const ctx = (globalThis as Record<string, unknown>).__STARK_CONTEXT__ as
+      { _userAccessToken?: string } | undefined;
+    if (ctx?._userAccessToken) return ctx._userAccessToken;
+  } catch { /* ignore */ }
+
+  try {
+    const g = globalThis as Record<string, unknown>;
+    if (g.parent && g.parent !== globalThis) {
+      const ctx = (g.parent as Record<string, unknown>).__STARK_CONTEXT__ as
+        { _userAccessToken?: string } | undefined;
+      if (ctx?._userAccessToken) return ctx._userAccessToken;
+    }
+  } catch { /* cross-origin — ignore */ }
+
+  return null;
+}
+
+/**
  * Check if user is authenticated
  */
 export function isAuthenticated(): boolean {
+  // In-memory context token (set by pack executor, refreshed via sendMessage)
+  if (getContextAccessToken()) return true;
+
+  // Fallback to localStorage (for the node shell, not running as a pod)
   const creds = loadCredentials();
   if (!creds) return false;
   const expiresAt = new Date(creds.expiresAt);
@@ -128,6 +157,11 @@ export function isAuthenticated(): boolean {
  * Get the current access token
  */
 export function getAccessToken(): string | null {
+  // In-memory context token (set by pack executor, refreshed via sendMessage)
+  const contextToken = getContextAccessToken();
+  if (contextToken) return contextToken;
+
+  // Fallback to localStorage (for the node shell, not running as a pod)
   const creds = loadCredentials();
   if (!creds) return null;
   const expiresAt = new Date(creds.expiresAt);

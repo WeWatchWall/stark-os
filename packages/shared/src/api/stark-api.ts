@@ -32,6 +32,8 @@ export interface StarkAPI {
     whoami(): { email: string; userId: string } | null;
     isAuthenticated(): boolean;
     status(): { authenticated: boolean; email?: string; expiresAt?: string };
+    /** Update the in-memory access token (called by runtime on auth:token-refreshed) */
+    updateAccessToken(token: string): void;
     setup(email: string, password: string, displayName?: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
     setupStatus(): Promise<{ needsSetup: boolean }>;
     addUser(email: string, password: string, options?: { displayName?: string; roles?: string[] }): Promise<{ user: { id: string; email: string; roles?: string[] } }>;
@@ -190,19 +192,38 @@ function resolveApiUrl(explicitUrl?: string): string {
  */
 export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
   const baseUrl = resolveApiUrl(config?.apiUrl);
-  const accessToken = config?.accessToken;
+  let currentAccessToken = config?.accessToken;
 
   let currentNamespace = 'default';
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+  /**
+   * Resolve the access token dynamically on each request:
+   * 1. Mutable token (set explicitly or updated via auth:token-refreshed)
+   * 2. __STARK_CONTEXT__._userAccessToken (set by pack executor, updated on refresh)
+   */
+  const resolveAccessToken = (): string | undefined => {
+    if (currentAccessToken) return currentAccessToken;
+
+    try {
+      const ctx = (globalThis as Record<string, unknown>).__STARK_CONTEXT__ as
+        { _userAccessToken?: string } | undefined;
+      if (ctx?._userAccessToken) return ctx._userAccessToken;
+    } catch { /* ignore */ }
+
+    return undefined;
   };
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
-  }
+
+  const getHeaders = (): Record<string, string> => {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = resolveAccessToken();
+    if (token) {
+      h['Authorization'] = `Bearer ${token}`;
+    }
+    return h;
+  };
 
   const apiFetch = (path: string, init?: RequestInit): Promise<Response> =>
-    fetch(`${baseUrl}${path}`, { ...init, headers: { ...headers, ...init?.headers } });
+    fetch(`${baseUrl}${path}`, { ...init, headers: { ...getHeaders(), ...init?.headers } });
 
   const apiGet = (path: string) => apiFetch(path, { method: 'GET' });
   const apiPost = (path: string, body?: unknown) =>
@@ -217,10 +238,11 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       },
       logout() { /* no-op — no localStorage to clear */ },
       whoami() { return null; /* no persistent credential store */ },
-      isAuthenticated() { return !!accessToken; },
+      isAuthenticated() { return !!resolveAccessToken(); },
       status() {
-        return { authenticated: !!accessToken, email: undefined, expiresAt: undefined };
+        return { authenticated: !!resolveAccessToken(), email: undefined, expiresAt: undefined };
       },
+      updateAccessToken(token: string) { currentAccessToken = token; },
       async setup(email: string, password: string, displayName?: string) {
         const response = await apiPost('/auth/setup', { email, password, displayName });
         return handleResponse<{ accessToken: string; user: { id: string; email: string } }>(response);

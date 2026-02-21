@@ -199,9 +199,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest | { type: 'data-update
   // Recreate starkAPI for worker context — the original was stripped before postMessage
   // because it contains closures that cannot survive structured clone.
   // Web Workers lack localStorage, so pass the auth token explicitly.
-  (context as Record<string, unknown>).starkAPI = createPortableStarkAPI({
+  const starkApi = createPortableStarkAPI({
     accessToken: context.authToken,
   });
+  (context as Record<string, unknown>).starkAPI = starkApi;
 
   // Wire up onMessage handler so pack code can receive data updates via postMessage.
   (context as Record<string, unknown>).onMessage = (
@@ -209,6 +210,17 @@ self.onmessage = async (event: MessageEvent<WorkerRequest | { type: 'data-update
   ) => {
     messageHandlers.push(handler);
   };
+
+  // Auto-update the access token when the node refreshes it via sendMessage
+  messageHandlers.push((msg) => {
+    if (msg.type === 'auth:token-refreshed') {
+      const payload = msg.payload as { authToken?: string } | undefined;
+      if (payload?.authToken) {
+        (context as Record<string, unknown>)._userAccessToken = payload.authToken;
+        starkApi.auth.updateAccessToken(payload.authToken);
+      }
+    }
+  });
 
   // ── Initialize networking (if orchestrator URL AND serviceId provided) ──
   let networkInitialized = false;

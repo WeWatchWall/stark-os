@@ -1130,7 +1130,16 @@ export class PackExecutor {
       if ((globalScope as Record<string, unknown>).__STARK_ENV__ === env) {
         delete (globalScope as Record<string, unknown>).__STARK_ENV__;
       }
-      if ((globalScope as Record<string, unknown>).__STARK_CONTEXT__ === context) {
+      // Only delete __STARK_CONTEXT__ if no other main-thread packs are still
+      // running. The global is shared: every main-thread pack overwrites it on
+      // start, and every running pack's API calls read _userAccessToken from it.
+      // Deleting it while siblings are active strips auth from all of them.
+      // The localStorage fallback (stark-cli-credentials) now exists as a safety
+      // net, but keeping the global avoids unnecessary fallback round-trips.
+      const otherActive = this.getActiveExecutions().some(
+        (e) => e.podId !== context.podId
+      );
+      if (!otherActive && (globalScope as Record<string, unknown>).__STARK_CONTEXT__ === context) {
         delete (globalScope as Record<string, unknown>).__STARK_CONTEXT__;
       }
     };

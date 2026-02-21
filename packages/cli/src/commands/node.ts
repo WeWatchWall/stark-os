@@ -47,6 +47,7 @@ interface Node {
   status: NodeStatus;
   lastHeartbeat: string | null;
   registeredBy: string;
+  machineId?: string;
   labels: Record<string, string>;
   annotations: Record<string, string>;
   taints: Array<{ key: string; value?: string; effect: string }>;
@@ -156,6 +157,7 @@ async function listHandler(options: {
         name: n.name,
         runtime: n.runtimeType,
         status: formatNodeStatus(n.status),
+        machineId: n.machineId ? n.machineId.slice(0, 8) : chalk.gray('—'),
         cpu: formatResourceUsage(n.allocated.cpu, n.allocatable.cpu),
         memory: formatResourceUsage(n.allocated.memory, n.allocatable.memory),
         pods: `${n.allocated.pods}/${n.allocatable.pods}`,
@@ -165,6 +167,7 @@ async function listHandler(options: {
         { key: 'name', header: 'Name', width: 25 },
         { key: 'runtime', header: 'Runtime', width: 10 },
         { key: 'status', header: 'Status', width: 15 },
+        { key: 'machineId', header: 'Machine', width: 10 },
         { key: 'cpu', header: 'CPU', width: 8 },
         { key: 'memory', header: 'Memory', width: 8 },
         { key: 'pods', header: 'Pods', width: 10 },
@@ -220,6 +223,7 @@ async function statusHandler(nodeNameOrId: string): Promise<void> {
       'Name': node.name,
       'Runtime': node.runtimeType,
       'Status': formatNodeStatus(node.status),
+      'Machine ID': node.machineId ?? chalk.gray('unknown'),
       'Registered By': node.registeredBy,
       'Last Heartbeat': node.lastHeartbeat
         ? `${relativeTime(node.lastHeartbeat)} (${new Date(node.lastHeartbeat).toLocaleString()})`

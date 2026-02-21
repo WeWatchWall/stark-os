@@ -460,6 +460,7 @@ export class NodeModel {
       labels: input.labels ?? {},
       annotations: input.annotations ?? {},
       taints: input.taints ?? [],
+      machineId: input.machineId,
       unschedulable: false,
       createdAt: now,
       updatedAt: now,

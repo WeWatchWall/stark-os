@@ -88,6 +88,8 @@ export interface Node {
   annotations: Annotations;
   /** Taints to repel pods */
   taints: Taint[];
+  /** UUID identifying the machine this node runs on */
+  machineId?: string;
   /** Whether node is unschedulable */
   unschedulable: boolean;
   /** Creation timestamp */
@@ -114,6 +116,8 @@ export interface RegisterNodeInput {
   annotations?: Annotations;
   /** Taints */
   taints?: Taint[];
+  /** UUID identifying the machine this node runs on */
+  machineId?: string;
 }
 
 /**
@@ -163,6 +167,8 @@ export interface NodeListItem {
   registeredBy?: string;
   /** Node capabilities including runtime version */
   capabilities?: NodeCapabilities;
+  /** UUID identifying the machine this node runs on */
+  machineId?: string;
 }
 
 /**

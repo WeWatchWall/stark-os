@@ -1757,10 +1757,12 @@ commands['stark'] = async (ctx) => {
               nodes.map((n: Record<string, unknown>) => {
                 const alloc = (n.allocated ?? {}) as Record<string, number>;
                 const cap = (n.allocatable ?? {}) as Record<string, number>;
+                const mid = n.machineId ? String(n.machineId).slice(0, 8) : '—';
                 return {
                   name: String(n.name ?? ''),
                   runtime: String(n.runtimeType ?? ''),
                   status: statusBadge(String(n.status ?? '')),
+                  machine: mid,
                   cpu: cap.cpu ? `${alloc.cpu ?? 0}/${cap.cpu}` : '-',
                   memory: cap.memory ? `${alloc.memory ?? 0}/${cap.memory}` : '-',
                   pods: cap.pods ? `${alloc.pods ?? 0}/${cap.pods}` : '-',
@@ -1771,6 +1773,7 @@ commands['stark'] = async (ctx) => {
                 { key: 'name', header: 'Name', width: 25 },
                 { key: 'runtime', header: 'Runtime', width: 10 },
                 { key: 'status', header: 'Status', width: 15 },
+                { key: 'machine', header: 'Machine', width: 10 },
                 { key: 'cpu', header: 'CPU', width: 8 },
                 { key: 'memory', header: 'Memory', width: 8 },
                 { key: 'pods', header: 'Pods', width: 10 },
@@ -1790,6 +1793,7 @@ commands['stark'] = async (ctx) => {
               'Name': node.name,
               'Runtime': node.runtimeType,
               'Status': statusBadge(String(node.status ?? '')),
+              'Machine ID': node.machineId ?? 'unknown',
               'Registered By': node.registeredBy,
               'Last Heartbeat': node.lastHeartbeat
                 ? `${relativeTime(String(node.lastHeartbeat))} (${new Date(String(node.lastHeartbeat)).toLocaleString()})`

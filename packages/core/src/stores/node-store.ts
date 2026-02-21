@@ -102,6 +102,7 @@ export function addNode(input: RegisterNodeInput & { id?: string; registeredBy?:
     labels: input.labels ?? {},
     annotations: input.annotations ?? {},
     taints: input.taints ?? [],
+    machineId: input.machineId,
     unschedulable: false,
     createdAt: now,
     updatedAt: now,

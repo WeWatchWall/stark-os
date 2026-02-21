@@ -6,12 +6,15 @@
  * Uses localStorage for persistence across browser sessions.
  */
 
+import { generateUUID } from '@stark-o/shared';
+
 /**
  * Storage keys for browser agent state
  */
 const STORAGE_KEYS = {
   CREDENTIALS: 'stark:agent:credentials',
   REGISTERED_NODES: 'stark:agent:nodes',
+  MACHINE_ID: 'stark:agent:machine-id',
 } as const;
 
 /**
@@ -186,6 +189,36 @@ export function getBrowserAccessToken(): string | null {
   if (expiresAt <= new Date()) return null;
 
   return creds.accessToken;
+}
+
+/**
+ * Get or create the browser machine UUID.
+ * The machine UUID is generated once and persisted in localStorage.
+ * It uniquely identifies the browser instance that node agents run on.
+ */
+export function getBrowserMachineId(): string {
+  if (isLocalStorageAvailable()) {
+    try {
+      const existing = localStorage.getItem(STORAGE_KEYS.MACHINE_ID);
+      if (existing) {
+        return existing;
+      }
+    } catch {
+      // Fall through to generate a new ID
+    }
+  }
+
+  const machineId = generateUUID();
+
+  if (isLocalStorageAvailable()) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.MACHINE_ID, machineId);
+    } catch {
+      // If we can't persist, still return the generated ID for this session
+    }
+  }
+
+  return machineId;
 }
 
 /**
@@ -427,6 +460,13 @@ export class BrowserStateStore {
    */
   isStorageAvailable(): boolean {
     return isLocalStorageAvailable();
+  }
+
+  /**
+   * Get or create the machine UUID for this browser
+   */
+  getMachineId(): string {
+    return getBrowserMachineId();
   }
 }
 

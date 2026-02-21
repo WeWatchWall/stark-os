@@ -1216,6 +1216,7 @@ export class BrowserAgent {
       labels: this.config.labels,
       annotations: this.config.annotations,
       taints: this.config.taints,
+      machineId: this.stateStore.getMachineId(),
     };
 
     try {
@@ -1330,6 +1331,7 @@ export class BrowserAgent {
       const response = await this.sendRequest<{ node: Node }>('node:reconnect', {
         nodeId: this.nodeId,
         runningPodIds,
+        machineId: this.stateStore.getMachineId(),
       });
 
       // Update the lastStarted timestamp in persisted state

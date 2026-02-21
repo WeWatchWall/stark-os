@@ -811,6 +811,7 @@ export class NodeAgent {
       labels: this.config.labels,
       annotations: this.config.annotations,
       taints: this.config.taints,
+      machineId: this.stateStore.getMachineId(),
     };
 
     try {
@@ -930,6 +931,7 @@ export class NodeAgent {
         nodeId: this.nodeId,
         capabilities: this.config.capabilities,
         runningPodIds,
+        machineId: this.stateStore.getMachineId(),
       });
 
       // Update the lastStarted timestamp in persisted state

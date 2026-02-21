@@ -9,6 +9,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Directory for node agent state files
@@ -24,6 +25,11 @@ const NODE_CREDENTIALS_FILE = path.join(NODE_STATE_DIR, 'credentials.json');
  * File path for storing registered nodes
  */
 const REGISTERED_NODES_FILE = path.join(NODE_STATE_DIR, 'registered-nodes.json');
+
+/**
+ * File path for storing the machine UUID
+ */
+const MACHINE_ID_FILE = path.join(NODE_STATE_DIR, 'machine-id');
 
 /**
  * Stored node credentials (separate from CLI user credentials)
@@ -201,6 +207,29 @@ export function loadRegisteredNodes(): RegisteredNodesMap {
 export function saveRegisteredNodes(nodes: RegisteredNodesMap): void {
   ensureStateDir();
   fs.writeFileSync(REGISTERED_NODES_FILE, JSON.stringify(nodes, null, 2), { mode: 0o600 });
+}
+
+/**
+ * Get or create the machine UUID.
+ * The machine UUID is generated once and persisted in ~/.stark/nodes/machine-id.
+ * It uniquely identifies the physical/virtual machine that node agents run on.
+ */
+export function getMachineId(): string {
+  ensureStateDir();
+  try {
+    if (fs.existsSync(MACHINE_ID_FILE)) {
+      const content = fs.readFileSync(MACHINE_ID_FILE, 'utf-8').trim();
+      if (content) {
+        return content;
+      }
+    }
+  } catch {
+    // Fall through to generate a new ID
+  }
+
+  const machineId = randomUUID();
+  fs.writeFileSync(MACHINE_ID_FILE, machineId, { mode: 0o600 });
+  return machineId;
 }
 
 /**
@@ -399,6 +428,13 @@ export class NodeStateStore {
    */
   updateLastStarted(nodeName: string): void {
     updateNodeLastStarted(this.orchestratorUrl, nodeName);
+  }
+
+  /**
+   * Get or create the machine UUID for this machine
+   */
+  getMachineId(): string {
+    return getMachineId();
   }
 }
 

@@ -82,6 +82,7 @@ class InMemoryNodeStore {
       annotations: input.annotations ?? {},
       taints: input.taints ?? [],
       unschedulable: false,
+      machineId: input.machineId,
       createdAt: now,
       updatedAt: now,
     };

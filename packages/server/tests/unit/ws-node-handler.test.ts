@@ -95,6 +95,7 @@ const sampleNode: Node = {
   annotations: {},
   taints: [],
   unschedulable: false,
+  machineId: '22222222-2222-4222-8222-222222222222',
   createdAt: new Date(),
   updatedAt: new Date(),
 };

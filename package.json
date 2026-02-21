@@ -60,8 +60,8 @@
     "prepublishOnly": "pnpm -r run build",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
-    "db:reset": "supabase db reset",
-    "db:migrate": "supabase db reset --no-seed"
+    "db:reset": "supabase db reset --no-seed",
+    "db:migrate": "supabase migration up"
   },
   "dependencies": {
     "@casl/ability": "^6.7.5",

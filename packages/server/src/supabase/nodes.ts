@@ -43,6 +43,7 @@ interface NodeRow {
   annotations: Annotations;
   taints: Taint[];
   unschedulable: boolean;
+  machine_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -78,6 +79,7 @@ function rowToNode(row: NodeRow): Node {
     annotations: row.annotations ?? {},
     taints: row.taints ?? [],
     unschedulable: row.unschedulable ?? false,
+    machineId: row.machine_id ?? undefined,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -100,6 +102,7 @@ function rowToNodeListItem(row: NodeRow & { pod_count?: number }): NodeListItem 
     connectionId: row.connection_id ?? undefined,
     registeredBy: row.registered_by ?? undefined,
     capabilities: row.capabilities ?? undefined,
+    machineId: row.machine_id ?? undefined,
   };
 }
 
@@ -135,6 +138,7 @@ export class NodeQueries {
         annotations: input.annotations ?? {},
         taints: input.taints ?? [],
         unschedulable: false,
+        machine_id: input.machineId ?? null,
       })
       .select()
       .single();
@@ -405,7 +409,8 @@ export class NodeQueries {
   async reconnectNode(
     id: string,
     connectionId: string,
-    capabilities?: NodeCapabilities
+    capabilities?: NodeCapabilities,
+    machineId?: string
   ): Promise<NodeResult<Node>> {
     const updates: Record<string, unknown> = {
       connection_id: connectionId,
@@ -417,6 +422,11 @@ export class NodeQueries {
     // Update capabilities if provided (e.g., Node.js version changed after upgrade)
     if (capabilities !== undefined) {
       updates.capabilities = capabilities;
+    }
+
+    // Update machine ID if provided
+    if (machineId !== undefined) {
+      updates.machine_id = machineId;
     }
 
     const { data, error } = await this.client

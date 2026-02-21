@@ -35,6 +35,7 @@ export {
   removeRegisteredNode,
   getRegisteredNodesForOrchestrator,
   updateNodeLastStarted,
+  getMachineId,
   type NodeCredentials,
   type RegisteredNode,
   type RegisteredNodesMap,

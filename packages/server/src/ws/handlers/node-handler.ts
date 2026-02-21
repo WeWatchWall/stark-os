@@ -169,6 +169,7 @@ export async function handleNodeRegister(
     registeredBy: ws.userId,
     connectionId: ws.id,
     trusted: isAdmin,
+    machineId: payload.machineId,
   });
 
   if (createResult.error || !createResult.data) {
@@ -304,6 +305,8 @@ export interface ReconnectNodePayload {
    * If a pod is in the DB but not in this list, it means the node lost it (e.g., after restart).
    */
   runningPodIds?: string[];
+  /** UUID identifying the machine this node runs on */
+  machineId?: string;
 }
 
 /**
@@ -408,7 +411,8 @@ export async function handleNodeReconnect(
   const reconnectResult = await nodeQueries.reconnectNode(
     payload.nodeId,
     ws.id,
-    payload.capabilities
+    payload.capabilities,
+    payload.machineId
   );
   if (reconnectResult.error || !reconnectResult.data) {
     sendResponse(

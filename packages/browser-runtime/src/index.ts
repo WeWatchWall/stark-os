@@ -20,6 +20,7 @@ export {
   clearBrowserCredentials,
   areBrowserCredentialsValid,
   getBrowserAccessToken,
+  getBrowserMachineId,
   loadRegisteredBrowserNodes,
   saveRegisteredBrowserNodes,
   getRegisteredBrowserNode,

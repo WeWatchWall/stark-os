@@ -1757,10 +1757,12 @@ commands['stark'] = async (ctx) => {
               nodes.map((n: Record<string, unknown>) => {
                 const alloc = (n.allocated ?? {}) as Record<string, number>;
                 const cap = (n.allocatable ?? {}) as Record<string, number>;
+                const mid = n.machineId ? String(n.machineId).slice(0, 8) : '—';
                 return {
                   name: String(n.name ?? ''),
                   runtime: String(n.runtimeType ?? ''),
                   status: statusBadge(String(n.status ?? '')),
+                  machine: mid,
                   cpu: cap.cpu ? `${alloc.cpu ?? 0}/${cap.cpu}` : '-',
                   memory: cap.memory ? `${alloc.memory ?? 0}/${cap.memory}` : '-',
                   pods: cap.pods ? `${alloc.pods ?? 0}/${cap.pods}` : '-',
@@ -1771,6 +1773,7 @@ commands['stark'] = async (ctx) => {
                 { key: 'name', header: 'Name', width: 25 },
                 { key: 'runtime', header: 'Runtime', width: 10 },
                 { key: 'status', header: 'Status', width: 15 },
+                { key: 'machine', header: 'Machine', width: 10 },
                 { key: 'cpu', header: 'CPU', width: 8 },
                 { key: 'memory', header: 'Memory', width: 8 },
                 { key: 'pods', header: 'Pods', width: 10 },
@@ -1790,6 +1793,7 @@ commands['stark'] = async (ctx) => {
               'Name': node.name,
               'Runtime': node.runtimeType,
               'Status': statusBadge(String(node.status ?? '')),
+              'Machine ID': node.machineId ?? 'unknown',
               'Registered By': node.registeredBy,
               'Last Heartbeat': node.lastHeartbeat
                 ? `${relativeTime(String(node.lastHeartbeat))} (${new Date(String(node.lastHeartbeat)).toLocaleString()})`
@@ -1860,7 +1864,16 @@ commands['stark'] = async (ctx) => {
               namespace: ns ? String(ns) : undefined,
               status: st ? String(st) : undefined,
             }) as { pods?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
-            const pods = Array.isArray(data) ? data : (data.pods ?? []);
+            const STALE_POD_THRESHOLD_MS = 5 * 60 * 1000;
+            const allPods = Array.isArray(data) ? data : (data.pods ?? []);
+            // Filter out pods that have been non-running for more than 5 minutes
+            const pods = allPods.filter((p: Record<string, unknown>) => {
+              const status = String(p.status ?? '');
+              if (!['stopped', 'failed', 'evicted'].includes(status)) return true;
+              if (!p.stoppedAt) return true;
+              const stoppedTime = new Date(String(p.stoppedAt)).getTime();
+              return Date.now() - stoppedTime < STALE_POD_THRESHOLD_MS;
+            });
             const total = Array.isArray(data) ? pods.length : (data.total ?? pods.length);
             if (pods.length === 0) return 'ℹ No pods found\n';
             return `\nPods (${pods.length} of ${total})\n\n` + fmtTable(

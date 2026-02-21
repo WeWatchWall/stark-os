@@ -350,10 +350,19 @@ async function listHandler(options: {
       process.exit(1);
     }
 
-    const { pods, total } = result.data;
+    const { total } = result.data;
+
+    // Filter out pods that have been non-running for more than 5 minutes
+    const STALE_POD_THRESHOLD_MS = 5 * 60 * 1000;
+    const pods = result.data.pods.filter((p) => {
+      if (!['stopped', 'failed', 'evicted'].includes(p.status)) return true;
+      if (!p.stoppedAt) return true;
+      const stoppedTime = new Date(p.stoppedAt).getTime();
+      return Date.now() - stoppedTime < STALE_POD_THRESHOLD_MS;
+    });
 
     if (getOutputFormat() === 'json') {
-      console.log(JSON.stringify(result.data, null, 2));
+      console.log(JSON.stringify({ ...result.data, pods }, null, 2));
       return;
     }
 

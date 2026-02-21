@@ -881,9 +881,9 @@ export class BrowserAgent {
     this.boundWindowUnloadHandler = () => {
       if (this.isShuttingDown) return;
       this.logger.info('Window unloading — stopping agent');
-      // Use synchronous-safe shutdown: stop timers, notify orchestrator,
-      // and close the WebSocket. Full graceful shutdown (await stopAll)
-      // is not possible inside beforeunload/pagehide.
+      // Use synchronous-safe shutdown: stop timers and notify orchestrator.
+      // Full graceful shutdown (await stopAll) is not possible inside
+      // beforeunload/pagehide — async work may be killed by the browser.
       this.isShuttingDown = true;
       this.stopHeartbeat();
       this.stopMetricsCollection();
@@ -892,20 +892,27 @@ export class BrowserAgent {
 
       // Send a status update for every running pod so the orchestrator
       // marks them as stopped rather than leaving them in "running" state.
+      // Use ws.send() directly with a try-catch per message so a single
+      // failure doesn't prevent the remaining pods from being reported.
+      // Do NOT call ws.close() — let the browser tear down the connection
+      // naturally after flushing the send buffer.
       const runningPods = this.podHandler.getRunningPods();
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         for (const podId of runningPods) {
-          this.send({
-            type: 'pod:status:update',
-            payload: {
-              podId,
-              status: 'stopped',
-              message: 'Browser window closed',
-              reason: 'window_unload',
-            },
-          });
+          try {
+            this.ws.send(JSON.stringify({
+              type: 'pod:status:update',
+              payload: {
+                podId,
+                status: 'stopped',
+                message: 'Browser window closed',
+                reason: 'window_unload',
+              },
+            }));
+          } catch {
+            // Best-effort — browser may already be tearing down the connection
+          }
         }
-        this.ws.close(1000, 'Window unloading');
       }
     };
 

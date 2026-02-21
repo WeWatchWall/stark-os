@@ -25,6 +25,8 @@ import {
   type Pack,
   type Pod,
   type RuntimeTag,
+  type PackDataMessage,
+  type PackMessageHandler,
   type PackExecutionContext,
   type PackExecutionResult,
   type ExecutionHandle,
@@ -127,6 +129,8 @@ interface ExecutionState {
   requestShutdown: (reason?: string) => void;
   /** Log sink for stdout/stderr */
   logSink: PodLogSink;
+  /** Worker adapter taskId (set when pack runs in a web worker) */
+  workerTaskId?: string;
 }
 
 /**
@@ -160,6 +164,8 @@ export class PackExecutor {
   private initialized = false;
   private readonly executions: Map<string, ExecutionState> = new Map();
   private readonly podExecutions: Map<string, string> = new Map(); // podId -> executionId
+  /** Message handlers for main-thread packs (keyed by podId) */
+  private readonly mainThreadMessageHandlers: Map<string, Array<(msg: { type: string; payload?: unknown }) => void>> = new Map();
 
   constructor(config: PackExecutorConfig = {}) {
     this.config = {
@@ -228,6 +234,40 @@ export class PackExecutor {
     if (this.httpAdapter) {
       this.httpAdapter.setAuthToken(token);
     }
+  }
+
+  /**
+   * Send a data-update message to a running pod.
+   *
+   * Transport is chosen automatically:
+   *  - main-thread packs → direct callback invocation
+   *  - Web Worker packs  → worker.postMessage()
+   *
+   * @returns `true` if the message was delivered, `false` if the pod was
+   *          not found or not running.
+   */
+  sendMessage(podId: string, message: PackDataMessage): boolean {
+    const executionId = this.podExecutions.get(podId);
+    if (!executionId) return false;
+    const state = this.executions.get(executionId);
+    if (!state || (state.status !== 'running' && state.status !== 'pending')) return false;
+
+    // Main-thread packs: invoke registered handlers directly
+    const handlers = this.mainThreadMessageHandlers.get(podId);
+    if (handlers && handlers.length > 0) {
+      for (const h of handlers) {
+        try { h(message); } catch { /* ignore handler errors */ }
+      }
+      return true;
+    }
+
+    // Web Worker packs: relay through the worker adapter
+    if (state.workerTaskId) {
+      this.workerAdapter.sendDataToWorker(state.workerTaskId, message);
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -409,6 +449,18 @@ export class PackExecutor {
       onShutdown: (handler: ShutdownHandler) => {
         shutdownHandlers.push(handler);
       },
+      onMessage: (handler: PackMessageHandler) => {
+        // Registration is populated later; for main-thread packs the executor
+        // stores the handlers in mainThreadMessageHandlers.  For worker packs
+        // the context is recreated inside the worker and onMessage is wired to
+        // the postMessage bridge (see pack-worker.ts).
+        let arr = this.mainThreadMessageHandlers.get(pod.id);
+        if (!arr) {
+          arr = [];
+          this.mainThreadMessageHandlers.set(pod.id, arr);
+        }
+        arr.push(handler);
+      },
       // Volume mounts — expose to pack code so it can detect mounted volumes
       volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
       // Volume I/O helpers — backed by OPFS via StorageAdapter
@@ -506,6 +558,8 @@ export class PackExecutor {
         state.logSink.close();
         // Dispose ephemeral data plane if it was created
         context.ephemeral?.dispose();
+        // Clean up main-thread message handlers
+        this.mainThreadMessageHandlers.delete(pod.id);
         this.config.logger.info('Pack execution completed', {
           executionId,
           podId: pod.id,
@@ -531,6 +585,8 @@ export class PackExecutor {
         state.logSink.close();
         // Dispose ephemeral data plane if it was created
         context.ephemeral?.dispose();
+        // Clean up main-thread message handlers
+        this.mainThreadMessageHandlers.delete(pod.id);
         this.config.logger.error(
           'Pack execution failed',
           error instanceof Error ? error : new Error(String(error)),
@@ -739,6 +795,7 @@ export class PackExecutor {
       );
 
       state.handle = taskHandle;
+      state.workerTaskId = taskHandle.taskId;
 
       const result = await taskHandle.promise;
 

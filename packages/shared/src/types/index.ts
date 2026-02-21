@@ -347,6 +347,8 @@ export type {
   PodLifecyclePhase,
   PodLifecycleFacts,
   ShutdownHandler,
+  PackDataMessage,
+  PackMessageHandler,
   PackExecutionContext,
   PackExecutionResult,
   ExecutionHandle,

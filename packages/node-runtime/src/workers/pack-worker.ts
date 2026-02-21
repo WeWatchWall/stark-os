@@ -71,6 +71,15 @@ interface WorkerResponse {
   errorStack?: string;
 }
 
+/** Data-update message pushed from the parent process via IPC. */
+interface WorkerDataUpdate {
+  type: 'data-update';
+  message: { type: string; payload?: unknown };
+}
+
+/** Registered message handlers (set during pack execution). */
+const messageHandlers: Array<(msg: { type: string; payload?: unknown }) => void> = [];
+
 // ── Main execution ──────────────────────────────────────────────────
 
 /** Active network stack for cleanup on shutdown */
@@ -124,6 +133,13 @@ async function executePack(request: WorkerRequest): Promise<void> {
   (context as Record<string, unknown>).starkAPI = createPortableStarkAPI({
     accessToken: context.authToken,
   });
+
+  // 2c. Wire up onMessage handler so pack code can receive data updates via IPC.
+  (context as Record<string, unknown>).onMessage = (
+    handler: (msg: { type: string; payload?: unknown }) => void,
+  ) => {
+    messageHandlers.push(handler);
+  };
 
   // 3. Initialize WebRTC networking (if orchestrator URL AND serviceId provided)
   let networkStack: PodNetworkStack | null = null;
@@ -393,18 +409,27 @@ async function executePack(request: WorkerRequest): Promise<void> {
 
 // ── IPC message handler ─────────────────────────────────────────────
 
-process.on('message', (msg: WorkerRequest) => {
+process.on('message', (msg: WorkerRequest | WorkerDataUpdate) => {
   if (msg.type === 'execute') {
-    executePack(msg).catch((error) => {
+    executePack(msg as WorkerRequest).catch((error) => {
       // Last-resort error handler
       const response: WorkerResponse = {
         type: 'error',
-        taskId: msg.taskId,
+        taskId: (msg as WorkerRequest).taskId,
         error: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
       };
       process.send!(response);
     });
+  } else if (msg.type === 'data-update') {
+    const { message } = msg as WorkerDataUpdate;
+    for (const handler of messageHandlers) {
+      try {
+        handler(message);
+      } catch {
+        // Ignore handler errors
+      }
+    }
   }
 });
 

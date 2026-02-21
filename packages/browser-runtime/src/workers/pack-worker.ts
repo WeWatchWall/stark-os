@@ -126,14 +126,31 @@ let registrationContext: {
   onMessage: (msg: WsMessage) => void;
 } | null = null;
 
+// ── Registered message handlers (set during pack execution) ──────────
+const messageHandlers: Array<(msg: { type: string; payload?: unknown }) => void> = [];
+
 // ── Main message handler ────────────────────────────────────────────
 
-self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
+self.onmessage = async (event: MessageEvent<WorkerRequest | { type: 'data-update'; message: { type: string; payload?: unknown } }>): Promise<void> => {
   // In dedicated workers, origin is always empty string; validate message structure instead
   if (event.origin !== '' && event.origin !== self.location?.origin) {
     return;
   }
   const msg = event.data;
+
+  // Route data-update messages to registered handlers
+  if (msg.type === 'data-update' && 'message' in msg) {
+    const { message } = msg;
+    for (const handler of messageHandlers) {
+      try {
+        handler(message);
+      } catch {
+        // Ignore handler errors
+      }
+    }
+    return;
+  }
+
   if (msg.type !== 'execute') return;
 
   const { taskId, bundleCode, context, args } = msg;
@@ -185,6 +202,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
   (context as Record<string, unknown>).starkAPI = createPortableStarkAPI({
     accessToken: context.authToken,
   });
+
+  // Wire up onMessage handler so pack code can receive data updates via postMessage.
+  (context as Record<string, unknown>).onMessage = (
+    handler: (msg: { type: string; payload?: unknown }) => void,
+  ) => {
+    messageHandlers.push(handler);
+  };
 
   // ── Initialize networking (if orchestrator URL AND serviceId provided) ──
   let networkInitialized = false;

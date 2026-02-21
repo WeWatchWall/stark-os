@@ -160,6 +160,27 @@ export interface PodLifecycleFacts {
 export type ShutdownHandler = (reason?: string) => void | Promise<void>;
 
 /**
+ * Data message pushed to a running pack by the runtime.
+ * Used for auth token refreshes, open-count changes, and other live updates.
+ *
+ * Transport is runtime-specific but the shape is identical everywhere:
+ *  - browser / Node.js main thread → direct callback ("mock sendMessage")
+ *  - browser Web Worker            → postMessage()
+ *  - Node.js subprocess            → IPC (process.send)
+ */
+export interface PackDataMessage {
+  /** Discriminator, e.g. 'auth:token-refreshed', 'start-menu:opened' */
+  type: string;
+  /** Arbitrary payload associated with the message */
+  payload?: unknown;
+}
+
+/**
+ * Handler for receiving data update messages inside a running pack.
+ */
+export type PackMessageHandler = (message: PackDataMessage) => void;
+
+/**
  * Pack execution context passed to the pack's entry point.
  * Shared between Node.js and Browser runtimes.
  */
@@ -218,6 +239,26 @@ export interface PackExecutionContext {
    * ```
    */
   onShutdown: (handler: ShutdownHandler) => void;
+
+  /**
+   * Register a handler to receive data-update messages from the runtime.
+   * The transport is runtime-specific but the API is identical:
+   *
+   *  - **browser / Node.js main thread** – direct callback invocation
+   *  - **browser Web Worker**            – `postMessage()` bridge
+   *  - **Node.js subprocess**            – IPC bridge
+   *
+   * @param handler - Callback invoked for every incoming message
+   * @example
+   * ```typescript
+   * context.onMessage((msg) => {
+   *   if (msg.type === 'auth:token-refreshed') {
+   *     updateToken(msg.payload);
+   *   }
+   * });
+   * ```
+   */
+  onMessage: (handler: PackMessageHandler) => void;
 
   /**
    * The service ID for this pod (set by the runtime when networking is enabled).

@@ -459,15 +459,21 @@ async function listPods(req: Request, res: Response): Promise<void> {
     // Filter out pods that have been in a terminal state for more than 5 minutes
     const STALE_POD_THRESHOLD_MS = 5 * 60 * 1000;
     const terminalStatuses: PodStatus[] = ['stopped', 'failed', 'evicted'];
+    const now = Date.now();
     const filteredPods = pods.filter((p) => {
       if (!terminalStatuses.includes(p.status)) return true;
-      const referenceTime = new Date(p.stoppedAt ?? p.createdAt).getTime();
-      return Date.now() - referenceTime < STALE_POD_THRESHOLD_MS;
+      const ref = p.stoppedAt ?? p.createdAt;
+      const referenceTime = ref instanceof Date ? ref.getTime() : new Date(ref).getTime();
+      const age = now - referenceTime;
+      if (age >= STALE_POD_THRESHOLD_MS) {
+        logger.debug('Filtering stale pod', { podId: p.id, status: p.status, ageMs: age, stoppedAt: p.stoppedAt?.toISOString(), createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt });
+      }
+      return age < STALE_POD_THRESHOLD_MS;
     });
 
     const response: PodListResponse = {
       pods: filteredPods,
-      total: countResult.data ?? 0,
+      total: filteredPods.length,
       page,
       pageSize,
     };

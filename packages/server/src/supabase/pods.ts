@@ -311,12 +311,6 @@ export class PodQueries {
       }
     }
 
-    // Exclude terminated pods (stopped/failed/evicted) that have been non-running for more than 5 minutes
-    if (!options?.status) {
-      const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      query = query.or(`status.not.in.(stopped,failed,evicted),stopped_at.gte.${cutoff},and(stopped_at.is.null,created_at.gte.${cutoff})`);
-    }
-
     const orderBy = options?.orderBy ?? 'created_at';
     const ascending = options?.orderDirection === 'asc';
     query = query.order(orderBy, { ascending });
@@ -1026,12 +1020,6 @@ export class PodQueries {
       } else {
         query = query.eq('status', options.status);
       }
-    }
-
-    // Exclude terminated pods (stopped/failed/evicted) that have been non-running for more than 5 minutes
-    if (!options?.status) {
-      const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      query = query.or(`status.not.in.(stopped,failed,evicted),stopped_at.gte.${cutoff},and(stopped_at.is.null,created_at.gte.${cutoff})`);
     }
 
     const { count, error } = await query;

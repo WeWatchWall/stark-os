@@ -333,6 +333,7 @@ async function startAgent(authToken: string): Promise<void> {
       // Start-menu pack: attach to the dedicated chromeless surface
       if (packName === START_MENU_PACK_NAME) {
         shell.startMenuAttached = true;
+        shell.startMenuPodId = podId;
         // Hide immediately — logo click will toggle visibility
         shell.hideStartMenu();
         return shell.startMenuContainerId;
@@ -341,6 +342,11 @@ async function startAgent(authToken: string): Promise<void> {
       const win = shell.openWindow({ podId, title: packName });
       return win.containerId;
     },
+  });
+
+  // Wire the shell store's sendMessage to the executor
+  shell.setSendMessage((podId, message) => {
+    agent?.getExecutor().sendMessage(podId, message);
   });
 
   agent.on((event, _data) => {

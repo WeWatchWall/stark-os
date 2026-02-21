@@ -1027,6 +1027,14 @@ export class BrowserAgent {
 
       // Update the executor's auth token in-place (preserves running pods)
       this.executor.updateAuthToken(this.authToken);
+
+      // Broadcast the refreshed token to all running pods
+      for (const exec of this.executor.getActiveExecutions()) {
+        this.executor.sendMessage(exec.podId, {
+          type: 'auth:token-refreshed',
+          payload: { authToken: this.authToken },
+        });
+      }
       return;
     }
 
@@ -1078,25 +1086,21 @@ export class BrowserAgent {
       });
     }
 
-    // Update the executor with the new auth token
-    this.executor = new PackExecutor({
-      bundlePath: this.config.bundlePath,
-      orchestratorUrl: this.getHttpBaseUrl(),
-      orchestratorWsUrl: this.config.orchestratorUrl,
-      workerScriptUrl: this.config.workerScriptUrl,
-      authToken: this.authToken,
-    });
+    // Update the executor with the new auth token in-place (preserves running pods)
+    this.executor.updateAuthToken(this.authToken);
 
-    // Initialize the new executor so metrics collection works
-    await this.executor.initialize();
+    // Ensure the executor is initialised (no-op when already initialised)
+    if (!this.executor.isInitialized()) {
+      await this.executor.initialize();
+    }
 
-    // Re-initialize the pod handler with the new executor
-    this.podHandler = createPodHandler({
-      executor: this.executor,
-      onStatusChange: (podId, status, message) => {
-        this.handlePodStatusChange(podId, status, message);
-      },
-    });
+    // Broadcast the refreshed token to all running pods
+    for (const exec of this.executor.getActiveExecutions()) {
+      this.executor.sendMessage(exec.podId, {
+        type: 'auth:token-refreshed',
+        payload: { authToken: this.authToken },
+      });
+    }
   }
 
   /**
@@ -1755,6 +1759,14 @@ export class BrowserAgent {
       this.authToken = newCredentials.accessToken;
       this.executor.updateAuthToken(this.authToken);
 
+      // Broadcast the refreshed token to all running pods
+      for (const exec of this.executor.getActiveExecutions()) {
+        this.executor.sendMessage(exec.podId, {
+          type: 'auth:token-refreshed',
+          payload: { authToken: newCredentials.accessToken },
+        });
+      }
+
       this.logger.info('Access token refreshed successfully', {
         userId: newCredentials.userId,
         expiresAt: newCredentials.expiresAt,
@@ -1917,14 +1929,16 @@ export class BrowserAgent {
     this.stateStore.saveCredentials(credentials);
     this.authToken = credentials.accessToken;
     
-    // Update the executor with the new auth token
-    this.executor = new PackExecutor({
-      bundlePath: this.config.bundlePath,
-      orchestratorUrl: this.getHttpBaseUrl(),
-      orchestratorWsUrl: this.config.orchestratorUrl,
-      workerScriptUrl: this.config.workerScriptUrl,
-      authToken: this.authToken,
-    });
+    // Update the executor's auth token in-place (preserves running pods)
+    this.executor.updateAuthToken(this.authToken);
+
+    // Broadcast the refreshed token to all running pods
+    for (const exec of this.executor.getActiveExecutions()) {
+      this.executor.sendMessage(exec.podId, {
+        type: 'auth:token-refreshed',
+        payload: { authToken: credentials.accessToken },
+      });
+    }
 
     this.logger.info('Saved credentials', { userId: credentials.userId, email: credentials.email });
   }
@@ -1949,14 +1963,16 @@ export class BrowserAgent {
   setAuthToken(token: string): void {
     this.authToken = token;
     
-    // Update the executor with the new auth token
-    this.executor = new PackExecutor({
-      bundlePath: this.config.bundlePath,
-      orchestratorUrl: this.getHttpBaseUrl(),
-      orchestratorWsUrl: this.config.orchestratorUrl,
-      workerScriptUrl: this.config.workerScriptUrl,
-      authToken: this.authToken,
-    });
+    // Update the executor's auth token in-place (preserves running pods)
+    this.executor.updateAuthToken(this.authToken);
+
+    // Broadcast the refreshed token to all running pods
+    for (const exec of this.executor.getActiveExecutions()) {
+      this.executor.sendMessage(exec.podId, {
+        type: 'auth:token-refreshed',
+        payload: { authToken: token },
+      });
+    }
   }
 }
 

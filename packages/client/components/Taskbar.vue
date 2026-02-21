@@ -3,7 +3,7 @@
     <!-- Left: Logo / brand -->
     <div class="taskbar-left">
       <button class="logo-btn" @click="shell.toggleStartMenu()" title="Start Menu" aria-label="Start Menu">
-        <img src="~/assets/Logo2.png" alt="StarkOS" class="taskbar-logo" />
+        <img src="~/assets/Logo2Small.png" alt="StarkOS" class="taskbar-logo" />
       </button>
       <span class="taskbar-title">StarkOS</span>
 

@@ -751,7 +751,16 @@ export class PackExecutor {
         const mainThreadResult = await new Promise<PackExecutionResult>((resolve, reject) => {
           setTimeout(() => {
             this.executeOnMainThread(bundleCode, context, args, state.logSink)
-              .then((result) => {
+              .then(async (result) => {
+                // Root packs (UI apps) mount their interface and return immediately,
+                // but the UI stays alive in the DOM. Keep the execution promise pending
+                // until shutdown is explicitly requested so the pod remains in "running"
+                // state and __STARK_CONTEXT__ stays available for API calls.
+                if (!context.lifecycle.isShuttingDown) {
+                  await new Promise<void>((shutdownResolve) => {
+                    context.onShutdown(() => shutdownResolve());
+                  });
+                }
                 resolve({
                   executionId: context.executionId,
                   podId: context.podId,
@@ -1172,9 +1181,16 @@ export class PackExecutor {
       console.error = originalConsole.error;
       console.debug = originalConsole.debug;
 
-      // Clean up globals
-      delete (globalScope as Record<string, unknown>).__STARK_ENV__;
-      delete (globalScope as Record<string, unknown>).__STARK_CONTEXT__;
+      // Clean up globals — only if they still point to THIS execution's objects.
+      // Multiple root packs can run on the main thread; deleting a shared global
+      // that now belongs to a different pod would strip authentication tokens
+      // and environment variables from all other running packs.
+      if ((globalScope as Record<string, unknown>).__STARK_ENV__ === env) {
+        delete (globalScope as Record<string, unknown>).__STARK_ENV__;
+      }
+      if ((globalScope as Record<string, unknown>).__STARK_CONTEXT__ === context) {
+        delete (globalScope as Record<string, unknown>).__STARK_CONTEXT__;
+      }
     }
   }
 

@@ -249,6 +249,8 @@ export class BrowserAgent {
   private podHandler: PodHandler;
   /** Main thread network manager for WebRTC connections (workers don't have RTCPeerConnection access) */
   private networkManager: MainThreadNetworkManager | null = null;
+  /** Bound handler for window beforeunload/pagehide events */
+  private boundWindowUnloadHandler: (() => void) | null = null;
 
   constructor(config: BrowserAgentConfig) {
     const debug = config.debug ?? false;
@@ -385,6 +387,10 @@ export class BrowserAgent {
     // Start token refresh timer to keep credentials fresh
     this.startTokenRefresh();
 
+    // Register window lifecycle handlers so closing the browser tab/window
+    // gracefully stops all running pods and notifies the orchestrator.
+    this.setupWindowLifecycleHandlers();
+
     await this.connect();
   }
 
@@ -398,6 +404,7 @@ export class BrowserAgent {
     this.stopTokenRefresh();
     this.cancelReconnect();
     this.clearPendingRequests('Agent stopped');
+    this.removeWindowLifecycleHandlers();
 
     // Stop all running pods
     await this.podHandler.stopAll();
@@ -858,6 +865,63 @@ export class BrowserAgent {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
+
+  /**
+   * Set up window lifecycle event handlers.
+   *
+   * When the user closes or navigates away from the browser tab/window, we
+   * need to notify the orchestrator that running pods should be considered
+   * stopped. Without this, pods remain in "running" state on the server
+   * indefinitely after the window is gone.
+   */
+  private setupWindowLifecycleHandlers(): void {
+    if (typeof window === 'undefined') return;
+
+    this.boundWindowUnloadHandler = () => {
+      if (this.isShuttingDown) return;
+      this.logger.info('Window unloading — stopping agent');
+      // Use synchronous-safe shutdown: stop timers, notify orchestrator,
+      // and close the WebSocket. Full graceful shutdown (await stopAll)
+      // is not possible inside beforeunload/pagehide.
+      this.isShuttingDown = true;
+      this.stopHeartbeat();
+      this.stopMetricsCollection();
+      this.stopTokenRefresh();
+      this.cancelReconnect();
+
+      // Send a status update for every running pod so the orchestrator
+      // marks them as stopped rather than leaving them in "running" state.
+      const runningPods = this.podHandler.getRunningPods();
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        for (const podId of runningPods) {
+          this.send({
+            type: 'pod:status:update',
+            payload: {
+              podId,
+              status: 'stopped',
+              message: 'Browser window closed',
+              reason: 'window_unload',
+            },
+          });
+        }
+        this.ws.close(1000, 'Window unloading');
+      }
+    };
+
+    window.addEventListener('beforeunload', this.boundWindowUnloadHandler);
+    // pagehide fires reliably on mobile Safari where beforeunload may not
+    window.addEventListener('pagehide', this.boundWindowUnloadHandler);
+  }
+
+  /**
+   * Remove window lifecycle event handlers (called during normal stop)
+   */
+  private removeWindowLifecycleHandlers(): void {
+    if (typeof window === 'undefined' || !this.boundWindowUnloadHandler) return;
+    window.removeEventListener('beforeunload', this.boundWindowUnloadHandler);
+    window.removeEventListener('pagehide', this.boundWindowUnloadHandler);
+    this.boundWindowUnloadHandler = null;
   }
 
   /**

@@ -683,7 +683,16 @@ export class PackExecutor {
           // This allows the caller to receive the ExecutionHandle before execution starts
           setImmediate(() => {
             this.executeOnMainThread(bundleCode, context, args, state.logSink)
-              .then((result) => {
+              .then(async (result) => {
+                // Root packs (UI/privileged apps) may return immediately after setup,
+                // but the effects (servers, listeners) stay alive.  Keep the execution
+                // promise pending until shutdown is explicitly requested so the pod
+                // remains in "running" state.
+                if (!context.lifecycle.isShuttingDown) {
+                  await new Promise<void>((shutdownResolve) => {
+                    context.onShutdown(() => shutdownResolve());
+                  });
+                }
                 resolve({
                   executionId: context.executionId,
                   podId: context.podId,

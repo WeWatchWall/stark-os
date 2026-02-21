@@ -2,8 +2,9 @@
  * Pod Scheduler Service
  * @module @stark-o/server/services/scheduler-service
  *
- * Background service that periodically checks for pending pods and schedules
- * them to available nodes, then notifies nodes to start execution.
+ * Reactive background service that schedules pending pods to available nodes.
+ * Triggers immediately on pod creation and node registration/reconnection,
+ * with a fallback interval for consistency.
  */
 
 import { createServiceLogger } from '@stark-o/shared';
@@ -46,7 +47,8 @@ const DEFAULT_CONFIG: Required<SchedulerServiceConfig> = {
 /**
  * Pod Scheduler Service
  *
- * Runs a background loop that:
+ * Reactive scheduler that runs on-demand when pods are created or nodes
+ * come online, with a fallback interval for consistency:
  * 1. Queries pending pods ordered by priority
  * 2. Finds compatible online nodes for each pod
  * 3. Schedules pods to nodes (updates database)
@@ -58,6 +60,19 @@ export class SchedulerService {
   private intervalTimer: NodeJS.Timeout | null = null;
   private isRunning = false;
   private isProcessing = false;
+  /**
+   * Set to true when triggerSchedule() is called during an active cycle.
+   * Causes another scheduling cycle to run immediately after the current one finishes.
+   */
+  private pendingSchedule = false;
+  /**
+   * Timestamp of last completed scheduling cycle.
+   * Used to debounce triggerSchedule() calls that arrive shortly after
+   * a cycle already ran (e.g. pod creation + interval timer racing).
+   */
+  private lastScheduleAt = 0;
+  /** Minimum gap in ms between scheduling cycles triggered externally */
+  private static readonly SCHEDULE_DEBOUNCE_MS = 1000;
 
   constructor(config: SchedulerServiceConfig = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -125,13 +140,16 @@ export class SchedulerService {
    * Run a single scheduling cycle
    */
   private async runSchedulingCycle(): Promise<void> {
-    // Prevent overlapping runs
+    // Prevent overlapping runs - but queue a follow-up if triggered during processing
     if (this.isProcessing) {
-      logger.debug('Skipping scheduling cycle - previous cycle still running');
+      logger.debug('Queueing scheduling cycle - previous cycle still running');
+      this.pendingSchedule = true;
       return;
     }
 
     this.isProcessing = true;
+    // Clear pending flag before running - we're about to process
+    this.pendingSchedule = false;
 
     try {
       await this.schedulePendingPods();
@@ -139,6 +157,15 @@ export class SchedulerService {
       logger.error('Error in scheduling cycle', error instanceof Error ? error : undefined);
     } finally {
       this.isProcessing = false;
+      this.lastScheduleAt = Date.now();
+
+      // If a schedule was requested while we were processing, run again immediately.
+      // This ensures newly created pods or newly online nodes are handled promptly.
+      if (this.pendingSchedule) {
+        logger.debug('Running queued scheduling cycle');
+        // Use setImmediate to avoid stack overflow on rapid triggers
+        setImmediate(() => this.runSchedulingCycle());
+      }
     }
   }
 
@@ -437,9 +464,24 @@ export class SchedulerService {
   }
 
   /**
-   * Trigger an immediate scheduling cycle (for testing or manual trigger)
+   * Trigger an immediate scheduling cycle (reactive trigger).
+   * Debounced: if a scheduling cycle completed within SCHEDULE_DEBOUNCE_MS,
+   * the call is coalesced into a pending flag so the next cycle picks it up
+   * instead of racing with the just-finished cycle.
    */
   async triggerSchedule(): Promise<void> {
+    if (!this.isRunning) {
+      return;
+    }
+    const elapsed = Date.now() - this.lastScheduleAt;
+    if (elapsed < SchedulerService.SCHEDULE_DEBOUNCE_MS) {
+      logger.debug('Debouncing triggerSchedule — recent cycle completed', {
+        elapsedMs: elapsed,
+        debounceMs: SchedulerService.SCHEDULE_DEBOUNCE_MS,
+      });
+      this.pendingSchedule = true;
+      return;
+    }
     await this.runSchedulingCycle();
   }
 

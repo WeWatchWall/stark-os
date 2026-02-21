@@ -107,6 +107,12 @@ function toggleLayout() {
   height: 48px;
   width: auto;
   object-fit: contain;
+  image-rendering: auto;
+  filter: blur(0.4px) drop-shadow(0 0 6px rgba(99, 179, 237, 0.45));
+  transition: filter 0.2s ease;
+}
+.logo-btn:hover .taskbar-logo {
+  filter: blur(0.2px) drop-shadow(0 0 10px rgba(99, 179, 237, 0.75));
 }
 .logo-btn {
   background: none;

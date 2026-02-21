@@ -315,6 +315,7 @@ export interface PodListItem {
   createdAt: Date;
   updatedAt: Date;
   startedAt?: Date;
+  stoppedAt?: Date;
 }
 
 /**

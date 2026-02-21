@@ -149,12 +149,14 @@ function rowToPodListItem(row: PodRow): PodListItem {
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
     startedAt: row.started_at ? new Date(row.started_at) : undefined,
+    stoppedAt: row.stopped_at ? new Date(row.stopped_at) : undefined,
   };
 }
 
 /**
  * Converts a database row to a PodHistoryEntry
  */
+
 function rowToPodHistoryEntry(row: PodHistoryRow): PodHistoryEntry {
   return {
     id: row.id,
@@ -307,6 +309,12 @@ export class PodQueries {
       for (const [key, value] of Object.entries(options.labelSelector)) {
         query = query.eq(`labels->>${key}`, value);
       }
+    }
+
+    // Exclude terminated pods (stopped/failed/evicted) that have been non-running for more than 5 minutes
+    if (!options?.status) {
+      const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      query = query.or(`status.not.in.(stopped,failed,evicted),stopped_at.is.null,stopped_at.gte.${cutoff}`);
     }
 
     const orderBy = options?.orderBy ?? 'created_at';
@@ -1018,6 +1026,12 @@ export class PodQueries {
       } else {
         query = query.eq('status', options.status);
       }
+    }
+
+    // Exclude terminated pods (stopped/failed/evicted) that have been non-running for more than 5 minutes
+    if (!options?.status) {
+      const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      query = query.or(`status.not.in.(stopped,failed,evicted),stopped_at.is.null,stopped_at.gte.${cutoff}`);
     }
 
     const { count, error } = await query;

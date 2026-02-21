@@ -79,6 +79,7 @@ interface PodListResponse {
     createdBy: string;
     createdAt: Date;
     startedAt?: Date;
+    stoppedAt?: Date;
   }>;
   total: number;
   page: number;

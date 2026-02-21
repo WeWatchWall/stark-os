@@ -1864,7 +1864,16 @@ commands['stark'] = async (ctx) => {
               namespace: ns ? String(ns) : undefined,
               status: st ? String(st) : undefined,
             }) as { pods?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
-            const pods = Array.isArray(data) ? data : (data.pods ?? []);
+            const STALE_POD_THRESHOLD_MS = 5 * 60 * 1000;
+            const allPods = Array.isArray(data) ? data : (data.pods ?? []);
+            // Filter out pods that have been non-running for more than 5 minutes
+            const pods = allPods.filter((p: Record<string, unknown>) => {
+              const status = String(p.status ?? '');
+              if (!['stopped', 'failed', 'evicted'].includes(status)) return true;
+              if (!p.stoppedAt) return true;
+              const stoppedTime = new Date(String(p.stoppedAt)).getTime();
+              return Date.now() - stoppedTime < STALE_POD_THRESHOLD_MS;
+            });
             const total = Array.isArray(data) ? pods.length : (data.total ?? pods.length);
             if (pods.length === 0) return 'ℹ No pods found\n';
             return `\nPods (${pods.length} of ${total})\n\n` + fmtTable(

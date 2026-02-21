@@ -11,6 +11,7 @@ import { getNodeQueries } from '../../supabase/nodes.js';
 import { getPodQueriesAdmin } from '../../supabase/pods.js';
 import { getConnectionManager, sendToNode } from '../../services/connection-service.js';
 import { getServiceController } from '../../services/service-controller.js';
+import { getSchedulerService } from '../../services/scheduler-service.js';
 import { getChaosProxy } from '../../services/chaos-proxy.js';
 
 /**
@@ -187,6 +188,18 @@ export async function handleNodeRegister(
   const connManager = getConnectionManager();
   if (connManager) {
     connManager.registerNodeToConnection(ws.id, createResult.data.id);
+  }
+
+  const registeredNodeId = createResult.data.id;
+
+  // Trigger reactive scheduling — pending pods may now have a compatible node
+  const scheduler = getSchedulerService();
+  if (scheduler.isActive()) {
+    scheduler.triggerSchedule().catch((error) => {
+      logger.error('Failed to trigger scheduler after node register', error instanceof Error ? error : undefined, {
+        nodeId: registeredNodeId,
+      });
+    });
   }
 
   sendResponse(
@@ -518,6 +531,16 @@ export async function handleNodeReconnect(
   if (serviceController && serviceController.isActive()) {
     serviceController.triggerReconcile().catch((error) => {
       logger.error('Failed to trigger reconciliation after node reconnect', error instanceof Error ? error : undefined, {
+        nodeId: payload.nodeId,
+      });
+    });
+  }
+
+  // Trigger reactive scheduling — pending pods may now have a compatible node
+  const scheduler = getSchedulerService();
+  if (scheduler.isActive()) {
+    scheduler.triggerSchedule().catch((error) => {
+      logger.error('Failed to trigger scheduler after node reconnect', error instanceof Error ? error : undefined, {
         nodeId: payload.nodeId,
       });
     });

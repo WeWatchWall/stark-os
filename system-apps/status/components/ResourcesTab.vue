@@ -218,10 +218,12 @@ const chartOptions = {
 };
 
 function makeChartData(history: number[], color: string, bgColor: string) {
+  // Spread-copy arrays to break Vue reactivity chain — Chart.js mutates
+  // these internally which would otherwise trigger an infinite reactive loop.
   return {
-    labels: timeLabels.value,
+    labels: [...timeLabels.value],
     datasets: [{
-      data: history,
+      data: [...history],
       borderColor: color,
       backgroundColor: bgColor,
       fill: true,

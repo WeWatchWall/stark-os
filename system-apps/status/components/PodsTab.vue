@@ -48,6 +48,7 @@
           <span class="mono">{{ data.shortId }}</span>
         </template>
       </Column>
+      <Column field="packName" header="Pack" />
       <Column field="nodeName" header="Node" />
       <Column field="status" header="Status">
         <template #body="{ data }">
@@ -118,9 +119,15 @@ interface NodeData {
   machineId?: string;
 }
 
+interface PackData {
+  id: string;
+  name: string;
+}
+
 interface PodRow {
   id: string;
   shortId: string;
+  packName: string;
   packVersion: string;
   status: string;
   namespace: string;
@@ -192,17 +199,22 @@ async function refresh() {
   errorMsg.value = '';
 
   try {
-    const [podResult, nodeResult] = await Promise.all([
+    const [podResult, nodeResult, packResult] = await Promise.all([
       api.pod.list() as Promise<{ pods: PodData[] }>,
       api.node.list() as Promise<{ nodes: NodeData[] }>,
+      api.pack.list() as Promise<{ packs: PackData[] }>,
     ]);
 
     const pods: PodData[] = podResult.pods ?? [];
     const nodes: NodeData[] = nodeResult.nodes ?? [];
+    const packs: PackData[] = packResult.packs ?? [];
 
     // Build lookups
     const nodeMap = new Map<string, NodeData>();
     for (const n of nodes) nodeMap.set(n.id, n);
+
+    const packMap = new Map<string, string>();
+    for (const p of packs) packMap.set(p.id, p.name);
 
     // Assign stable machine indices (grouped by machineId, ordered by first appearance)
     const machineIds: string[] = [];
@@ -221,9 +233,11 @@ async function refresh() {
       }
       const nodeName = node?.name ?? (p.nodeId ? shortUuid(p.nodeId) : 'Unassigned');
       const nodeStatus = node?.status ?? 'unknown';
+      const packName = packMap.get(p.packId) ?? shortUuid(p.packId);
       return {
         id: p.id,
         shortId: shortUuid(p.id),
+        packName,
         packVersion: p.packVersion,
         status: p.status,
         namespace: p.namespace,

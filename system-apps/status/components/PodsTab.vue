@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { useStarkApi } from '../composables/useStarkApi';
 
@@ -144,6 +144,7 @@ const loading = ref(true);
 const errorMsg = ref('');
 const allPods = ref<PodRow[]>([]);
 const stoppingPods = ref<Set<string>>(new Set());
+let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const api = useStarkApi();
 const toast = useToast();
@@ -273,6 +274,15 @@ async function stopPod(podId: string) {
 
 onMounted(() => {
   refresh();
+  // Auto-refresh every 5 seconds so status transitions are visible
+  refreshIntervalId = setInterval(refresh, 5000);
+});
+
+onBeforeUnmount(() => {
+  if (refreshIntervalId !== null) {
+    clearInterval(refreshIntervalId);
+    refreshIntervalId = null;
+  }
 });
 </script>
 

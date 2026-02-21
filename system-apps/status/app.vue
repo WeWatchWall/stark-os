@@ -13,8 +13,8 @@
 
 html, body, #app, #__nuxt {
   width: 100%;
-  height: 100%;
-  overflow: hidden;
+  height: 100% !important;
+  overflow: hidden !important;
   background: #1e1e1e !important;
   color: #e2e8f0;
 }

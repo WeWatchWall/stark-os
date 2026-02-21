@@ -236,7 +236,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
       },
     },
     pack: {
-      async list() { return handleResponse<unknown>(await getApi().get('/api/packs')); },
+      async list() { return handleResponse<unknown>(await getApi().get('/api/packs?pageSize=100')); },
       async versions(name: string) { return handleResponse<unknown>(await getApi().get(`/api/packs/name/${encodeURIComponent(name)}/versions`)); },
       async info(name: string) { return handleResponse<unknown>(await getApi().get(`/api/packs/name/${encodeURIComponent(name)}`)); },
       async delete(name: string) { await handleDeleteResponse(await getApi().delete(`/api/packs/name/${encodeURIComponent(name)}`)); },

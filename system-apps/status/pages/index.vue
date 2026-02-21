@@ -52,5 +52,6 @@ const activeTab = ref('pods');
 
 .status-tabs :deep(.p-tabpanel) {
   height: 100%;
+  overflow: hidden;
 }
 </style>

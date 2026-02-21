@@ -193,7 +193,7 @@ const chartOptions = {
       bodyColor: '#94a3b8',
       borderColor: 'rgba(255,255,255,0.1)',
       borderWidth: 1,
-      callbacks: { label: (ctx: { parsed: { y: number } }) => `${ctx.parsed.y}%` },
+      callbacks: { label: (ctx: unknown) => `${(ctx as { parsed: { y: number } }).parsed.y}%` },
     },
   },
   scales: {

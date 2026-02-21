@@ -147,8 +147,12 @@ export class PodHandler {
     this.pods.set(podId, state);
 
     try {
-      // Update status to starting
-      this.updateStatus(podId, 'starting');
+      // Update local status to starting — do NOT send to orchestrator.
+      // The orchestrator already set the pod to 'scheduled' when it sent pod:deploy.
+      // Sending 'starting' creates a race: the server processes WS messages
+      // concurrently, so the 'starting' DB write can land AFTER the 'running'
+      // write, leaving the pod stuck in 'starting' instead of 'running'.
+      state.status = 'starting';
 
       // Build Pack and Pod objects for executor
       const packObj: Pack = {

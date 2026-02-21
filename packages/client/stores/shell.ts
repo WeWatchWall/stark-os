@@ -156,6 +156,15 @@ export const useShellStore = defineStore('shell', () => {
     sendMessageFn = fn;
   }
 
+  /**
+   * Callback set by the page to stop a pod when its window is closed.
+   * @internal Set by index.vue after the agent is created.
+   */
+  let onWindowCloseFn: ((podId: string) => void) | null = null;
+  function setOnWindowClose(fn: (podId: string) => void): void {
+    onWindowCloseFn = fn;
+  }
+
   /** Notify the start-menu pack that it was opened (for pack-list refresh). */
   function notifyStartMenuOpened(): void {
     if (startMenuPodId.value && sendMessageFn) {
@@ -212,12 +221,18 @@ export const useShellStore = defineStore('shell', () => {
   }
 
   function closeWindow(id: string) {
+    const win = windows.value.find((w) => w.id === id);
     windows.value = windows.value.filter((w) => w.id !== id);
     if (focusedWindowId.value === id) {
       const remaining = activeWindows.value;
       focusedWindowId.value = remaining.length
         ? remaining.reduce((a, b) => (a.zIndex > b.zIndex ? a : b)).id
         : null;
+    }
+    // Notify the page to stop the pod so the orchestrator removes it from the
+    // running list.  Without this, closing a window leaves the pod running.
+    if (win?.podId && onWindowCloseFn) {
+      onWindowCloseFn(win.podId);
     }
   }
 
@@ -300,6 +315,7 @@ export const useShellStore = defineStore('shell', () => {
     startMenuAttached,
     startMenuPodId,
     setSendMessage,
+    setOnWindowClose,
     notifyStartMenuOpened,
     toggleStartMenu,
     showStartMenu,

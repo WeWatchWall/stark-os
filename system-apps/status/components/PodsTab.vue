@@ -1,25 +1,31 @@
 <template>
   <div class="pods-tab">
-    <!-- Loading state -->
-    <div v-if="loading" class="state-msg">
+    <!-- Refreshing indicator — subtle top bar, keeps data visible -->
+    <div v-if="refreshing && hasData" class="refresh-bar">
+      <ProgressSpinner style="width: 14px; height: 14px" strokeWidth="5" />
+      <span>Updating…</span>
+    </div>
+
+    <!-- Initial loading state (no data yet) -->
+    <div v-if="!hasData && refreshing" class="state-msg">
       <ProgressSpinner style="width: 24px; height: 24px" strokeWidth="4" />
       <span>Loading pods…</span>
     </div>
 
-    <!-- Error state -->
-    <div v-else-if="errorMsg" class="state-msg error">
+    <!-- Error state (no data yet) -->
+    <div v-else-if="!hasData && errorMsg" class="state-msg error">
       <span>{{ errorMsg }}</span>
       <Button label="Retry" severity="secondary" size="small" @click="refresh" />
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="allPods.length === 0" class="state-msg">
+    <div v-else-if="hasData && allPods.length === 0" class="state-msg">
       No pods found.
     </div>
 
     <!-- Grouped pod table -->
     <DataTable
-      v-else
+      v-else-if="hasData"
       :value="allPods"
       rowGroupMode="subheader"
       groupRowsBy="groupKey"
@@ -34,13 +40,14 @@
       class="pods-table"
     >
       <template #groupheader="{ data }">
-        <div class="group-header">
-          <span class="machine-label">Machine {{ data.machineIndex }}</span>
-          <span class="node-divider">›</span>
-          <span class="node-icon">⎈</span>
-          <span class="node-name">{{ data.nodeName }}</span>
-          <Tag :value="data.nodeStatus" :severity="nodeStatusSeverity(data.nodeStatus)" class="node-tag" />
-        </div>
+        <td :colspan="8" class="group-header-cell">
+          <div class="group-header">
+            <span class="machine-badge">{{ data.machineIndex }}</span>
+            <span class="node-icon">⎈</span>
+            <span class="node-name">{{ data.nodeName }}</span>
+            <Tag :value="data.nodeStatus" :severity="nodeStatusSeverity(data.nodeStatus)" class="node-tag" />
+          </div>
+        </td>
       </template>
 
       <Column field="shortId" header="ID">
@@ -77,19 +84,6 @@
         </template>
       </Column>
     </DataTable>
-
-    <!-- Toolbar -->
-    <div class="toolbar">
-      <Button
-        icon="pi pi-refresh"
-        label="Refresh"
-        severity="secondary"
-        size="small"
-        outlined
-        :loading="loading"
-        @click="refresh"
-      />
-    </div>
   </div>
 </template>
 
@@ -140,7 +134,8 @@ interface PodRow {
 
 /* ── State ── */
 
-const loading = ref(true);
+const refreshing = ref(false);
+const hasData = ref(false);
 const errorMsg = ref('');
 const allPods = ref<PodRow[]>([]);
 const stoppingPods = ref<Set<string>>(new Set());
@@ -196,7 +191,7 @@ function nodeStatusSeverity(status: string): string {
 /* ── Data loading ── */
 
 async function refresh() {
-  loading.value = true;
+  refreshing.value = true;
   errorMsg.value = '';
 
   try {
@@ -251,11 +246,12 @@ async function refresh() {
     });
 
     allPods.value = rows;
+    hasData.value = true;
   } catch (err: unknown) {
     console.error('Failed to load pods:', err);
     errorMsg.value = err instanceof Error ? err.message : 'Failed to load pods';
   } finally {
-    loading.value = false;
+    refreshing.value = false;
   }
 }
 
@@ -292,6 +288,26 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
+}
+
+/* ── Refresh indicator ── */
+.refresh-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 0.7rem;
+  color: #64748b;
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(4px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .state-msg {
@@ -314,47 +330,52 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+/* ── Group header styling ── */
+.group-header-cell {
+  padding: 0 !important;
+  border: none !important;
+}
+
 .group-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 12px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.10) 0%, transparent 100%);
+  border-left: 3px solid #3b82f6;
 }
 
-.machine-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #64748b;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.node-divider {
-  color: #475569;
+.machine-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  font-size: 0.65rem;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .node-icon {
   color: #60a5fa;
+  font-size: 0.85rem;
 }
 
 .node-name {
   font-weight: 600;
+  font-size: 0.82rem;
   color: #e2e8f0;
 }
 
 .node-tag {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
 }
 
 .mono {
   font-family: 'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
   font-size: 0.8em;
-}
-
-.toolbar {
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
 }
 </style>

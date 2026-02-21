@@ -256,7 +256,7 @@ async function launchApp(app: AppEntry) {
 function registerOnMessage(): void {
   try {
     const ctx = (window.parent as Record<string, unknown>).__STARK_CONTEXT__ as
-      { onMessage?: (handler: (msg: { type: string; payload?: unknown }) => void) => void } | undefined;
+      { onMessage?: (handler: PackMessageHandler) => void } | undefined;
     if (ctx?.onMessage) {
       ctx.onMessage((msg) => {
         if (msg.type === 'start-menu:opened') {

@@ -13,6 +13,7 @@ import { getPackQueriesAdmin } from '../supabase/packs.js';
 import { getNodeQueries } from '../supabase/nodes.js';
 import { getVolumeQueries } from '../supabase/volumes.js';
 import { sendToNode, getConnectionManager } from '../services/connection-service.js';
+import { getSchedulerService } from '../services/scheduler-service.js';
 import {
   authMiddleware,
   abilityMiddleware,
@@ -357,6 +358,14 @@ async function createPod(req: Request, res: Response): Promise<void> {
     });
 
     sendSuccess(res, response, 201);
+
+    // Trigger reactive scheduling for the newly created pod
+    const scheduler = getSchedulerService();
+    if (scheduler.isActive()) {
+      scheduler.triggerSchedule().catch((err) => {
+        requestLogger.error('Failed to trigger scheduler', err instanceof Error ? err : undefined);
+      });
+    }
   } catch (error) {
     requestLogger.error('Error creating pod', error instanceof Error ? error : undefined, {
       body: req.body,

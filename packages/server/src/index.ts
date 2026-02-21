@@ -20,7 +20,7 @@ import { createServiceLogger, getNetworkPolicyEngine, getServiceRegistry } from 
 import { createApiRouter } from './api/router.js';
 import { createConnectionManager, type ConnectionManagerOptions } from './ws/connection-manager.js';
 import { getCentralPodGroupStore } from './ws/handlers/podgroup-handler.js';
-import { createSchedulerService } from './services/scheduler-service.js';
+import { getSchedulerService } from './services/scheduler-service.js';
 import { getServiceController } from './services/service-controller.js';
 import { createNodeHealthService } from './services/node-health-service.js';
 import { getIngressManager } from './services/ingress-manager.js';
@@ -138,7 +138,7 @@ export interface ServerInstance {
   /** Connection manager for WebSocket */
   connectionManager: ReturnType<typeof createConnectionManager>;
   /** Scheduler service for pod scheduling */
-  schedulerService: ReturnType<typeof createSchedulerService>;
+  schedulerService: ReturnType<typeof getSchedulerService>;
   /** Service controller for reconciling services */
   serviceController: ReturnType<typeof getServiceController>;
   /** Node health service for stale node detection */
@@ -229,7 +229,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
   let httpsServer: https.Server;
   let wss: WebSocketServer;
   let connectionManager: ReturnType<typeof createConnectionManager>;
-  let schedulerService: ReturnType<typeof createSchedulerService>;
+  let schedulerService: ReturnType<typeof getSchedulerService>;
   let serviceController: ReturnType<typeof getServiceController>;
   let nodeHealthService: ReturnType<typeof createNodeHealthService>;
   let ingressManager: ReturnType<typeof getIngressManager>;
@@ -411,7 +411,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
       logger.debug('WebSocket server attached', { path: finalConfig.wsPath });
 
       // Create scheduler service for pod scheduling
-      schedulerService = createSchedulerService({
+      schedulerService = getSchedulerService({
         scheduleInterval: 5000,
         maxPodsPerRun: 10,
         autoStart: false, // We'll start it after the server is listening

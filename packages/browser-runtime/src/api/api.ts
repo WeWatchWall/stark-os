@@ -66,7 +66,7 @@ export interface StarkAPI {
     list(options?: { namespace?: string; status?: string }): Promise<unknown>;
     status(podId: string): Promise<unknown>;
     create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }> }): Promise<unknown>;
-    stop(podId: string): Promise<unknown>;
+    stop(podId: string): Promise<void>;
     rollback(podId: string): Promise<unknown>;
     history(podId: string): Promise<unknown>;
   };
@@ -236,22 +236,22 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
       },
     },
     pack: {
-      async list() { return handleResponse<unknown>(await getApi().get('/api/packs')); },
+      async list() { return handleResponse<unknown>(await getApi().get('/api/packs?pageSize=100')); },
       async versions(name: string) { return handleResponse<unknown>(await getApi().get(`/api/packs/name/${encodeURIComponent(name)}/versions`)); },
       async info(name: string) { return handleResponse<unknown>(await getApi().get(`/api/packs/name/${encodeURIComponent(name)}`)); },
       async delete(name: string) { await handleDeleteResponse(await getApi().delete(`/api/packs/name/${encodeURIComponent(name)}`)); },
     },
     node: {
-      async list() { return handleResponse<unknown>(await getApi().get('/api/nodes')); },
+      async list() { return handleResponse<unknown>(await getApi().get('/api/nodes?pageSize=100')); },
       async status(nameOrId: string) { return handleResponse<unknown>(await getApi().get(`/api/nodes/name/${encodeURIComponent(nameOrId)}`)); },
     },
     pod: {
       async list(options?: { namespace?: string; status?: string }) {
         const params = new URLSearchParams();
+        params.set('pageSize', '100');
         if (options?.namespace) params.set('namespace', options.namespace);
         if (options?.status) params.set('status', options.status);
-        const qs = params.toString();
-        return handleResponse<unknown>(await getApi().get(`/api/pods${qs ? '?' + qs : ''}`));
+        return handleResponse<unknown>(await getApi().get(`/api/pods?${params.toString()}`));
       },
       async status(podId: string) { return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}`)); },
       async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }> }) {
@@ -261,7 +261,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
         if (options?.volumeMounts) body.volumeMounts = options.volumeMounts;
         return handleResponse<unknown>(await getApi().post('/api/pods', body));
       },
-      async stop(podId: string) { return handleResponse<unknown>(await getApi().post(`/api/pods/${podId}/stop`, {})); },
+      async stop(podId: string) { return handleDeleteResponse(await getApi().delete(`/api/pods/${podId}`)); },
       async rollback(podId: string) { return handleResponse<unknown>(await getApi().post(`/api/pods/${podId}/rollback`, {})); },
       async history(podId: string) { return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}/history`)); },
     },

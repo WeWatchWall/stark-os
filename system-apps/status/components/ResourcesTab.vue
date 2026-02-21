@@ -14,15 +14,12 @@
 
     <!-- Resource dashboard -->
     <div v-else class="dashboard">
-      <!-- Cluster summary cards -->
-      <div class="card-grid">
+      <!-- Summary cards row -->
+      <div class="cards-row">
         <!-- Nodes card -->
-        <Card class="resource-card">
+        <Card class="summary-card">
           <template #title>
-            <div class="card-title">
-              <span class="card-icon nodes-icon">⎈</span>
-              Nodes
-            </div>
+            <div class="card-title"><span class="card-icon nodes-icon">⎈</span> Nodes</div>
           </template>
           <template #content>
             <div class="stat-row">
@@ -33,6 +30,7 @@
                 :strokeWidth="6"
                 valueColor="#3b82f6"
                 rangeColor="#334155"
+                textColor="#e2e8f0"
                 readonly
                 valueTemplate="{value}"
               />
@@ -46,12 +44,9 @@
         </Card>
 
         <!-- Pods card -->
-        <Card class="resource-card">
+        <Card class="summary-card">
           <template #title>
-            <div class="card-title">
-              <span class="card-icon pods-icon">◉</span>
-              Pods
-            </div>
+            <div class="card-title"><span class="card-icon pods-icon">◉</span> Pods</div>
           </template>
           <template #content>
             <div class="stat-row">
@@ -62,6 +57,7 @@
                 :strokeWidth="6"
                 valueColor="#22c55e"
                 rangeColor="#334155"
+                textColor="#e2e8f0"
                 readonly
                 valueTemplate="{value}"
               />
@@ -75,82 +71,29 @@
             </div>
           </template>
         </Card>
+      </div>
 
-        <!-- CPU card -->
-        <Card class="resource-card">
-          <template #title>
-            <div class="card-title">
-              <span class="card-icon cpu-icon">⚡</span>
-              CPU
-            </div>
-          </template>
-          <template #content>
-            <div class="bar-section">
-              <div class="bar-label">
-                <span>{{ formatCpu(resources.cpu.allocated) }} / {{ formatCpu(resources.cpu.total) }}</span>
-                <span class="bar-pct">{{ resources.cpu.percent }}%</span>
-              </div>
-              <ProgressBar :value="resources.cpu.percent" :showValue="false" class="resource-bar cpu-bar" />
-            </div>
-          </template>
-        </Card>
+      <!-- Resource graphs -->
+      <div class="graphs-grid">
+        <div class="graph-panel">
+          <div class="graph-title"><span class="card-icon cpu-icon">⚡</span> CPU <span class="graph-subtitle">{{ formatCpu(resources.cpu.allocated) }} / {{ formatCpu(resources.cpu.total) }}</span></div>
+          <Chart type="line" :data="cpuChartData" :options="chartOptions" class="resource-chart" />
+        </div>
 
-        <!-- Memory card -->
-        <Card class="resource-card">
-          <template #title>
-            <div class="card-title">
-              <span class="card-icon mem-icon">🧠</span>
-              Memory
-            </div>
-          </template>
-          <template #content>
-            <div class="bar-section">
-              <div class="bar-label">
-                <span>{{ formatMemory(resources.memory.allocated) }} / {{ formatMemory(resources.memory.total) }}</span>
-                <span class="bar-pct">{{ resources.memory.percent }}%</span>
-              </div>
-              <ProgressBar :value="resources.memory.percent" :showValue="false" class="resource-bar mem-bar" />
-            </div>
-          </template>
-        </Card>
+        <div class="graph-panel">
+          <div class="graph-title"><span class="card-icon mem-icon">🧠</span> Memory <span class="graph-subtitle">{{ formatMemory(resources.memory.allocated) }} / {{ formatMemory(resources.memory.total) }}</span></div>
+          <Chart type="line" :data="memoryChartData" :options="chartOptions" class="resource-chart" />
+        </div>
 
-        <!-- Storage card -->
-        <Card class="resource-card">
-          <template #title>
-            <div class="card-title">
-              <span class="card-icon storage-icon">💾</span>
-              Storage
-            </div>
-          </template>
-          <template #content>
-            <div class="bar-section">
-              <div class="bar-label">
-                <span>{{ formatMemory(resources.storage.allocated) }} / {{ formatMemory(resources.storage.total) }}</span>
-                <span class="bar-pct">{{ resources.storage.percent }}%</span>
-              </div>
-              <ProgressBar :value="resources.storage.percent" :showValue="false" class="resource-bar storage-bar" />
-            </div>
-          </template>
-        </Card>
+        <div class="graph-panel">
+          <div class="graph-title"><span class="card-icon storage-icon">💾</span> Storage <span class="graph-subtitle">{{ formatMemory(resources.storage.allocated) }} / {{ formatMemory(resources.storage.total) }}</span></div>
+          <Chart type="line" :data="storageChartData" :options="chartOptions" class="resource-chart" />
+        </div>
 
-        <!-- Pod capacity card -->
-        <Card class="resource-card">
-          <template #title>
-            <div class="card-title">
-              <span class="card-icon cap-icon">📦</span>
-              Pod Capacity
-            </div>
-          </template>
-          <template #content>
-            <div class="bar-section">
-              <div class="bar-label">
-                <span>{{ resources.podCapacity.allocated }} / {{ resources.podCapacity.total }}</span>
-                <span class="bar-pct">{{ resources.podCapacity.percent }}%</span>
-              </div>
-              <ProgressBar :value="resources.podCapacity.percent" :showValue="false" class="resource-bar cap-bar" />
-            </div>
-          </template>
-        </Card>
+        <div class="graph-panel">
+          <div class="graph-title"><span class="card-icon cap-icon">📦</span> Pod Capacity <span class="graph-subtitle">{{ resources.podCapacity.allocated }} / {{ resources.podCapacity.total }}</span></div>
+          <Chart type="line" :data="podCapChartData" :options="chartOptions" class="resource-chart" />
+        </div>
       </div>
     </div>
   </div>
@@ -184,6 +127,10 @@ interface ResourceState {
   podCapacity: { total: number; allocated: number; percent: number };
 }
 
+/* ── Constants ── */
+
+const MAX_HISTORY = 60; // keep last 60 samples (60 seconds at 1s interval)
+
 /* ── State ── */
 
 const loading = ref(true);
@@ -199,6 +146,13 @@ const resources = reactive<ResourceState>({
   storage: { total: 0, allocated: 0, percent: 0 },
   podCapacity: { total: 0, allocated: 0, percent: 0 },
 });
+
+// Rolling history for charts
+const cpuHistory = ref<number[]>([]);
+const memoryHistory = ref<number[]>([]);
+const storageHistory = ref<number[]>([]);
+const podCapHistory = ref<number[]>([]);
+const timeLabels = ref<string[]>([]);
 
 const api = useStarkApi();
 
@@ -218,6 +172,67 @@ function pct(used: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((used / total) * 100);
 }
+
+function pushHistory(arr: number[], value: number) {
+  arr.push(value);
+  if (arr.length > MAX_HISTORY) arr.shift();
+}
+
+/* ── Chart config ── */
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 0 },
+  interaction: { intersect: false, mode: 'index' as const },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#1e293b',
+      titleColor: '#e2e8f0',
+      bodyColor: '#94a3b8',
+      borderColor: 'rgba(255,255,255,0.1)',
+      borderWidth: 1,
+      callbacks: { label: (ctx: { parsed: { y: number } }) => `${ctx.parsed.y}%` },
+    },
+  },
+  scales: {
+    x: {
+      display: true,
+      grid: { color: 'rgba(255,255,255,0.04)', drawTicks: false },
+      ticks: { display: false },
+      border: { color: 'rgba(255,255,255,0.08)' },
+    },
+    y: {
+      min: 0,
+      max: 100,
+      grid: { color: 'rgba(255,255,255,0.04)', drawTicks: false },
+      ticks: { color: '#64748b', font: { size: 10 }, callback: (v: number | string) => `${v}%` },
+      border: { color: 'rgba(255,255,255,0.08)' },
+    },
+  },
+  elements: {
+    point: { radius: 0, hoverRadius: 3 },
+    line: { tension: 0.3, borderWidth: 2 },
+  },
+};
+
+function makeChartData(history: number[], color: string, bgColor: string) {
+  return {
+    labels: timeLabels.value,
+    datasets: [{
+      data: history,
+      borderColor: color,
+      backgroundColor: bgColor,
+      fill: true,
+    }],
+  };
+}
+
+const cpuChartData = computed(() => makeChartData(cpuHistory.value, '#f59e0b', 'rgba(245,158,11,0.1)'));
+const memoryChartData = computed(() => makeChartData(memoryHistory.value, '#a78bfa', 'rgba(167,139,250,0.1)'));
+const storageChartData = computed(() => makeChartData(storageHistory.value, '#6366f1', 'rgba(99,102,241,0.1)'));
+const podCapChartData = computed(() => makeChartData(podCapHistory.value, '#ec4899', 'rgba(236,72,153,0.1)'));
 
 /* ── Data loading ── */
 
@@ -266,6 +281,17 @@ async function fetchResources() {
     resources.storage = { total: totalStorage, allocated: allocStorage, percent: pct(allocStorage, totalStorage) };
     resources.podCapacity = { total: totalPodCap, allocated: allocPodCap, percent: pct(allocPodCap, totalPodCap) };
 
+    // Update rolling history
+    const now = new Date();
+    const label = `${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    timeLabels.value.push(label);
+    if (timeLabels.value.length > MAX_HISTORY) timeLabels.value.shift();
+
+    pushHistory(cpuHistory.value, resources.cpu.percent);
+    pushHistory(memoryHistory.value, resources.memory.percent);
+    pushHistory(storageHistory.value, resources.storage.percent);
+    pushHistory(podCapHistory.value, resources.podCapacity.percent);
+
     hasData.value = true;
     errorMsg.value = '';
   } catch (err: unknown) {
@@ -278,8 +304,7 @@ async function fetchResources() {
 
 onMounted(() => {
   fetchResources();
-  // Refresh every second
-  intervalId = setInterval(fetchResources, 5000);
+  intervalId = setInterval(fetchResources, 1000);
 });
 
 onBeforeUnmount(() => {
@@ -318,29 +343,22 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-}
-
-.dashboard::-webkit-scrollbar {
-  width: 4px;
-}
-.dashboard::-webkit-scrollbar-track {
-  background: transparent;
-}
-.dashboard::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-}
-
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
-/* ── Cards ── */
-.resource-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+/* ── Summary cards row ── */
+.cards-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.summary-card {
+  background: #181818 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .card-title {
@@ -397,27 +415,44 @@ onBeforeUnmount(() => {
 .stat-line.danger .stat-value { color: #f87171; }
 .stat-line.muted .stat-value { color: #94a3b8; }
 
-/* ── Progress bars ── */
-.bar-section {
+/* ── Graph panels ── */
+.graphs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.graph-panel {
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  min-height: 200px;
 }
 
-.bar-label {
+.graph-title {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.8rem;
-  color: #94a3b8;
-}
-
-.bar-pct {
-  font-weight: 700;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: #e2e8f0;
+  margin-bottom: 12px;
 }
 
-.resource-bar {
-  height: 8px;
-  border-radius: 4px;
+.graph-subtitle {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-left: auto;
+}
+
+.resource-chart {
+  flex: 1;
+  min-height: 0;
 }
 </style>

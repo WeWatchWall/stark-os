@@ -11,6 +11,6 @@
       "#imports": ["./.nuxt/types/imports.d.ts"]
     }
   },
-  "include": ["composables/**/*", "components/**/*", "pages/**/*", "app.vue"],
+  "include": ["composables/**/*", "components/**/*", "pages/**/*", "plugins/**/*", "app.vue"],
   "exclude": ["node_modules", "dist", ".output", ".nuxt"]
 }

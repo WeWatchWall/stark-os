@@ -30,6 +30,7 @@
       :rowHover="true"
       size="small"
       stripedRows
+      tableStyle="min-width: 50rem"
       class="pods-table"
     >
       <template #groupheader="{ data }">
@@ -42,25 +43,25 @@
         </div>
       </template>
 
-      <Column field="shortId" header="ID" style="min-width: 90px">
+      <Column field="shortId" header="ID">
         <template #body="{ data }">
           <span class="mono">{{ data.shortId }}</span>
         </template>
       </Column>
-      <Column field="nodeName" header="Node" style="min-width: 120px" />
-      <Column field="status" header="Status" style="min-width: 100px">
+      <Column field="nodeName" header="Node" />
+      <Column field="status" header="Status">
         <template #body="{ data }">
           <Tag :value="data.status" :severity="podStatusSeverity(data.status)" />
         </template>
       </Column>
-      <Column field="packVersion" header="Version" style="min-width: 80px">
+      <Column field="packVersion" header="Version">
         <template #body="{ data }">
           <span class="mono">{{ data.packVersion }}</span>
         </template>
       </Column>
-      <Column field="namespace" header="Namespace" style="min-width: 100px" />
-      <Column field="age" header="Age" style="min-width: 60px" />
-      <Column header="Actions" style="min-width: 90px">
+      <Column field="namespace" header="Namespace" />
+      <Column field="age" header="Age" />
+      <Column header="Actions">
         <template #body="{ data }">
           <Button
             v-if="canStop(data.status)"

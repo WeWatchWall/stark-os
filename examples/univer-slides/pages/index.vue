@@ -10,16 +10,19 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
-import { Univer, LocaleType, UniverInstanceType } from '@univerjs/core';
+import { Univer, LocaleType, UniverInstanceType, mergeLocales } from '@univerjs/core';
 import { defaultTheme } from '@univerjs/design';
 import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
 import { UniverUIPlugin } from '@univerjs/ui';
+import uiEnUS from '@univerjs/ui/lib/locale/en-US';
 import { UniverDocsPlugin } from '@univerjs/docs';
 import { UniverDocsUIPlugin } from '@univerjs/docs-ui';
+import docsUIEnUS from '@univerjs/docs-ui/lib/locale/en-US';
 import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
 import { UniverDrawingPlugin } from '@univerjs/drawing';
 import { UniverSlidesPlugin } from '@univerjs/slides';
 import { UniverSlidesUIPlugin } from '@univerjs/slides-ui';
+import slidesUIEnUS from '@univerjs/slides-ui/lib/locale/en-US';
 import '@univerjs/design/lib/index.css';
 import '@univerjs/ui/lib/index.css';
 import '@univerjs/docs-ui/lib/index.css';
@@ -89,6 +92,9 @@ onMounted(async () => {
 
   univer = new Univer({
     locale: LocaleType.EN_US,
+    locales: {
+      enUS: mergeLocales(uiEnUS, docsUIEnUS, slidesUIEnUS),
+    },
     theme: defaultTheme,
   });
 

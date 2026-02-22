@@ -12,6 +12,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { createUniver, defaultTheme, LocaleType } from '@univerjs/presets';
 import { UniverSheetsCorePreset } from '@univerjs/presets/preset-sheets-core';
+import sheetsCoreEnUS from '@univerjs/presets/preset-sheets-core/locales/en-US';
 import '@univerjs/presets/lib/styles/preset-sheets-core.css';
 import { saveToOpfs, loadFromOpfs } from '~/composables/useOpfsStorage';
 
@@ -52,6 +53,9 @@ onMounted(async () => {
 
   const result = createUniver({
     locale: LocaleType.EN_US,
+    locales: {
+      enUS: sheetsCoreEnUS,
+    },
     theme: defaultTheme,
     presets: [
       UniverSheetsCorePreset({ container: 'univer-container' }),

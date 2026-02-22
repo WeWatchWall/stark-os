@@ -6,7 +6,7 @@
     <!-- Desktop area -->
     <div class="desktop" :class="{
       'taskbar-visible-top': shell.taskbarPosition === 'top',
-      'taskbar-visible-left': shell.taskbarPosition === 'left',
+      'taskbar-visible-bottom': shell.taskbarPosition === 'bottom',
     }">
       <!-- Render ALL windows; hide those not on active workspace via v-show -->
       <WindowFrame
@@ -19,7 +19,10 @@
       <!-- Start Menu surface (no window chrome) -->
       <div
         class="start-menu-panel"
-        :class="{ visible: shell.startMenuVisible }"
+        :class="{
+          visible: shell.startMenuVisible,
+          'mobile-start': shell.layoutMode === 'mobile',
+        }"
         @mousedown.stop
       >
         <div :id="shell.startMenuContainerId" class="start-menu-surface" />
@@ -101,15 +104,15 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  transition: top 0.3s ease, left 0.3s ease;
+  transition: top 0.3s ease, left 0.3s ease, bottom 0.3s ease;
 }
 
 /* Offset desktop area when taskbar is visible */
 .desktop.taskbar-visible-top {
   top: 48px;
 }
-.desktop.taskbar-visible-left {
-  left: 48px;
+.desktop.taskbar-visible-bottom {
+  bottom: 36px;
 }
 
 /* Desktop watermark (always visible, behind windows) */
@@ -155,5 +158,17 @@ onUnmounted(() => {
   height: 100% !important;
   border: none;
   display: block;
+}
+
+/* Mobile start menu: full-width, anchored to bottom of desktop area */
+.start-menu-panel.mobile-start {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 70%;
+  max-height: 100%;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(59, 130, 246, 0.15);
 }
 </style>

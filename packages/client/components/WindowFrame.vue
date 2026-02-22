@@ -10,32 +10,51 @@
       'mobile-half-second': isMobile && win.mobileSnap === 'half-second',
       'portrait': shell.isPortrait,
       'landscape': !shell.isPortrait,
+      'mobile': isMobile,
     }"
     :style="frameStyle"
     @mousedown="shell.focusWindow(win.id)"
+    @touchstart.passive="onFrameTouchStart"
+    @touchmove.passive="onFrameTouchMove"
+    @touchend.passive="onFrameTouchEnd"
   >
     <!-- Title bar (drag handle) -->
     <div
       class="title-bar"
+      :class="{ 'title-bar-mobile': isMobile }"
       @mousedown.prevent="startDrag"
       @dblclick="toggleMax"
     >
       <span class="title-text">{{ win.title }}</span>
       <div class="title-controls">
-        <!-- Mobile snap controls -->
+        <!-- Mobile controls: compact overflow menu + close -->
         <template v-if="isMobile">
-          <button class="ctrl-btn" title="Minimize" aria-label="Minimize" @mousedown.stop @click="shell.minimizeWindow(win.id)">─</button>
-          <button class="ctrl-btn" title="Full screen" aria-label="Full screen" @mousedown.stop @click="shell.setMobileSnap(win.id, 'full')">⛶</button>
-          <button class="ctrl-btn" :title="firstHalfLabel" :aria-label="firstHalfLabel" @mousedown.stop @click="shell.setMobileSnap(win.id, 'half-first')">{{ firstHalfIcon }}</button>
-          <button class="ctrl-btn" :title="secondHalfLabel" :aria-label="secondHalfLabel" @mousedown.stop @click="shell.setMobileSnap(win.id, 'half-second')">{{ secondHalfIcon }}</button>
+          <button class="ctrl-btn" title="Window menu" aria-label="Window menu" @mousedown.stop @click.stop="toggleMobileMenu">⋮</button>
+          <button class="ctrl-btn close" title="Close" aria-label="Close window" @mousedown.stop @click="shell.closeWindow(win.id)">✕</button>
         </template>
         <!-- Desktop controls -->
         <template v-else>
           <button class="ctrl-btn" title="Minimize" aria-label="Minimize" @mousedown.stop @click="shell.minimizeWindow(win.id)">─</button>
           <button class="ctrl-btn" title="Maximize" aria-label="Maximize" @mousedown.stop @click="toggleMax">☐</button>
+          <button class="ctrl-btn close" title="Close" aria-label="Close window" @mousedown.stop @click="shell.closeWindow(win.id)">✕</button>
         </template>
-        <button class="ctrl-btn close" title="Close" aria-label="Close window" @mousedown.stop @click="shell.closeWindow(win.id)">✕</button>
       </div>
+    </div>
+
+    <!-- Mobile overflow menu dropdown -->
+    <div v-if="isMobile && mobileMenuOpen" class="mobile-menu" @mousedown.stop>
+      <button class="mobile-menu-item" @click="doMobileAction('full')">
+        <span class="menu-icon">⛶</span> Full Screen
+      </button>
+      <button class="mobile-menu-item" @click="doMobileAction('half-first')">
+        <span class="menu-icon">{{ firstHalfIcon }}</span> {{ firstHalfLabel }}
+      </button>
+      <button class="mobile-menu-item" @click="doMobileAction('half-second')">
+        <span class="menu-icon">{{ secondHalfIcon }}</span> {{ secondHalfLabel }}
+      </button>
+      <button class="mobile-menu-item" @click="doMobileAction('minimize')">
+        <span class="menu-icon">─</span> Minimize
+      </button>
     </div>
 
     <!-- Surface mount: iframe container -->
@@ -80,6 +99,58 @@ const firstHalfIcon = computed(() => shell.isPortrait ? '⬆' : '⬅');
 const secondHalfIcon = computed(() => shell.isPortrait ? '⬇' : '➡');
 
 const interacting = ref(false);
+
+/* ── Mobile overflow menu ── */
+const mobileMenuOpen = ref(false);
+
+function toggleMobileMenu() {
+  mobileMenuOpen.value = !mobileMenuOpen.value;
+}
+
+function doMobileAction(action: string) {
+  mobileMenuOpen.value = false;
+  if (action === 'minimize') {
+    shell.minimizeWindow(props.win.id);
+  } else {
+    shell.setMobileSnap(props.win.id, action as 'full' | 'half-first' | 'half-second');
+  }
+}
+
+/* Close mobile menu on any outside click */
+function onOutsideClick() {
+  if (mobileMenuOpen.value) mobileMenuOpen.value = false;
+}
+onMounted(() => document.addEventListener('mousedown', onOutsideClick));
+onBeforeUnmount(() => document.removeEventListener('mousedown', onOutsideClick));
+
+/* ── Touch swipe: swipe down on title bar → minimize ── */
+let touchStartY = 0;
+let touchStartX = 0;
+let touchOnTitleBar = false;
+
+function onFrameTouchStart(e: TouchEvent) {
+  const target = e.target as HTMLElement;
+  touchOnTitleBar = !!target.closest('.title-bar');
+  if (touchOnTitleBar) {
+    touchStartY = e.touches[0].clientY;
+    touchStartX = e.touches[0].clientX;
+  }
+}
+
+function onFrameTouchMove(_e: TouchEvent) {
+  /* passive — no preventDefault needed */
+}
+
+function onFrameTouchEnd(e: TouchEvent) {
+  if (!touchOnTitleBar || !isMobile.value) return;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  const dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
+  // Swipe down (dy > 40px) and mostly vertical → minimize
+  if (dy > 40 && dx < 60) {
+    shell.minimizeWindow(props.win.id);
+  }
+  touchOnTitleBar = false;
+}
 
 /**
  * Force the iframe inside the surface container to re-layout after a size change.
@@ -258,6 +329,13 @@ function startResize(e: MouseEvent, edge: Edge) {
   user-select: none;
 }
 .title-bar:active { cursor: grabbing; }
+
+/* Compact mobile title bar */
+.title-bar-mobile {
+  height: 26px;
+  padding: 0 6px 0 10px;
+}
+
 .title-text {
   color: #cbd5e1;
   font-size: 0.78rem;
@@ -266,6 +344,9 @@ function startResize(e: MouseEvent, edge: Edge) {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+.title-bar-mobile .title-text {
+  font-size: 0.7rem;
 }
 .title-controls {
   display: flex;
@@ -286,8 +367,51 @@ function startResize(e: MouseEvent, edge: Edge) {
   justify-content: center;
   transition: background 0.12s, color 0.12s;
 }
+.title-bar-mobile .ctrl-btn {
+  width: 24px;
+  height: 20px;
+  font-size: 0.65rem;
+}
 .ctrl-btn:hover { background: rgba(255,255,255,0.14); color: #e2e8f0; }
 .ctrl-btn.close:hover { background: rgba(220,38,38,0.35); color: #fca5a5; }
+
+/* ── Mobile overflow menu ── */
+.mobile-menu {
+  position: absolute;
+  top: 26px;
+  right: 4px;
+  z-index: 60;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  padding: 4px 0;
+  min-width: 140px;
+}
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.12s;
+  text-align: left;
+}
+.mobile-menu-item:hover,
+.mobile-menu-item:active {
+  background: rgba(59,130,246,0.2);
+}
+.menu-icon {
+  font-size: 0.8rem;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
 
 /* ── Surface (iframe host) ── */
 .surface {
@@ -330,6 +454,9 @@ function startResize(e: MouseEvent, edge: Edge) {
   right: 0;
   bottom: 0;
   z-index: 5;
+}
+.mobile .focus-overlay {
+  top: 26px; /* below compact mobile title bar */
 }
 
 /* ── Maximized ── */

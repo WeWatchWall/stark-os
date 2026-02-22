@@ -43,6 +43,7 @@ const MOBILE_BREAKPOINT = 768;
 const DEFAULT_WINDOW_W = 800;
 const DEFAULT_WINDOW_H = 500;
 const TASKBAR_HEIGHT = 48;
+const MOBILE_TASKBAR_HEIGHT = 36;
 let idCounter = 1; // starts at 1 because default workspace is 'ws-1'
 
 /* ─── Store ─── */
@@ -101,10 +102,10 @@ export const useShellStore = defineStore('shell', () => {
   /** Taskbar is always visible */
   const taskbarVisible = ref(true);
 
-  /** Taskbar position: 'top' for desktop, 'left' for mobile (any orientation) */
-  const taskbarPosition = computed<'top' | 'left'>(() => {
+  /** Taskbar position: 'top' for desktop, 'bottom' for mobile */
+  const taskbarPosition = computed<'top' | 'bottom'>(() => {
     if (layoutMode.value === 'desktop') return 'top';
-    return 'left';
+    return 'bottom';
   });
 
   function showTaskbar() { taskbarVisible.value = true; }
@@ -334,5 +335,6 @@ export const useShellStore = defineStore('shell', () => {
     setMobileSnap,
     clearFocus,
     TASKBAR_HEIGHT,
+    MOBILE_TASKBAR_HEIGHT,
   };
 });

@@ -1,11 +1,16 @@
 <template>
-  <header class="taskbar" :class="{ vertical: shell.taskbarPosition === 'left' }">
+  <header
+    class="taskbar"
+    :class="{
+      bottom: shell.taskbarPosition === 'bottom',
+    }"
+  >
     <!-- Left: Logo / brand -->
     <div class="taskbar-left">
       <button class="logo-btn" @click="shell.toggleStartMenu()" title="Start Menu" aria-label="Start Menu">
         <img src="~/assets/Logo2Small.png" alt="StarkOS" class="taskbar-logo" />
       </button>
-      <span class="taskbar-title">StarkOS</span>
+      <span v-if="shell.taskbarPosition === 'top'" class="taskbar-title">StarkOS</span>
 
       <!-- Connection indicator -->
       <span class="conn-dot" :class="connectionState" :title="connectionState" />
@@ -26,8 +31,8 @@
 
     <!-- Right: controls -->
     <div class="taskbar-right">
-      <!-- Workspace picker -->
-      <div class="ws-picker">
+      <!-- Workspace picker (hidden on mobile bottom bar to save space) -->
+      <div v-if="shell.taskbarPosition === 'top'" class="ws-picker">
         <button
           v-for="ws in shell.workspaces"
           :key="ws.id"
@@ -47,7 +52,14 @@
       </button>
 
       <!-- Sign out -->
-      <button class="icon-btn sign-out" title="Sign Out" aria-label="Sign Out" @click="$emit('signout')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+      <button class="icon-btn sign-out" title="Sign Out" aria-label="Sign Out" @click="$emit('signout')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1-2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+      </button>
     </div>
   </header>
 </template>
@@ -87,21 +99,26 @@ function toggleLayout() {
   transition: transform 0.3s ease;
 }
 
-/* ── Hidden taskbar (mobile auto-hide) ── */
-.taskbar.taskbar-hidden {
-  transform: translateY(-100%);
-  pointer-events: none;
-}
-.taskbar.vertical.taskbar-hidden {
-  transform: translateX(-100%);
+/* ── Bottom taskbar (mobile) ── */
+.taskbar.bottom {
+  top: auto;
+  bottom: 0;
+  height: 36px;
+  padding: 0 6px;
+  gap: 4px;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.4);
+  border-top: 1px solid rgba(255,255,255,0.06);
 }
 
-/* Left */
+/* ── Left ── */
 .taskbar-left {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+.taskbar.bottom .taskbar-left {
+  gap: 4px;
 }
 .taskbar-logo {
   height: 48px;
@@ -110,6 +127,9 @@ function toggleLayout() {
   image-rendering: auto;
   filter: blur(0.4px) drop-shadow(0 0 6px rgba(99, 179, 237, 0.45));
   transition: filter 0.2s ease;
+}
+.taskbar.bottom .taskbar-logo {
+  height: 28px;
 }
 .logo-btn:hover .taskbar-logo {
   filter: blur(0.2px) drop-shadow(0 0 10px rgba(99, 179, 237, 0.75));
@@ -157,6 +177,10 @@ function toggleLayout() {
   padding: 0 8px;
   min-width: 0;
 }
+.taskbar.bottom .taskbar-center {
+  gap: 3px;
+  padding: 0 4px;
+}
 .tab-btn {
   background: rgba(255,255,255,0.06);
   color: #94a3b8;
@@ -171,6 +195,12 @@ function toggleLayout() {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.taskbar.bottom .tab-btn {
+  padding: 2px 10px;
+  font-size: 0.68rem;
+  max-width: 110px;
+  border-radius: 4px;
+}
 .tab-btn:hover { background: rgba(255,255,255,0.12); color: #e2e8f0; }
 .tab-btn.focused { background: rgba(59,130,246,0.25); color: #fff; border-color: rgba(59,130,246,0.4); }
 .tab-btn.minimized { opacity: 0.5; }
@@ -182,6 +212,9 @@ function toggleLayout() {
   gap: 6px;
   flex-shrink: 0;
   margin-left: auto;
+}
+.taskbar.bottom .taskbar-right {
+  gap: 3px;
 }
 
 /* Workspace picker */
@@ -216,72 +249,16 @@ function toggleLayout() {
   transition: background 0.15s, color 0.15s;
   line-height: 1;
 }
+.taskbar.bottom .icon-btn {
+  padding: 2px 6px;
+  font-size: 0.85rem;
+  border-radius: 4px;
+}
 .icon-btn:hover { background: rgba(255,255,255,0.12); color: #e2e8f0; }
 .icon-btn.sign-out:hover { background: rgba(220,38,38,0.25); color: #fca5a5; border-color: rgba(220,38,38,0.4); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
-}
-
-/* ── Vertical taskbar (portrait mobile) ── */
-.taskbar.vertical {
-  flex-direction: column;
-  width: 48px;
-  height: auto;
-  top: 0;
-  bottom: 0;
-  right: auto;
-  padding: 8px 0;
-  align-items: center;
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4);
-}
-.taskbar.vertical .taskbar-left {
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  align-items: center;
-}
-.taskbar.vertical .taskbar-logo {
-  height: auto;
-  width: 100%;
-  padding: 4px;
-}
-.taskbar.vertical .taskbar-title { display: none; }
-.taskbar.vertical .taskbar-center {
-  flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 4px 0;
-  width: 100%;
-  align-items: center;
-}
-.taskbar.vertical .tab-btn {
-  max-width: 40px;
-  padding: 6px 4px;
-  font-size: 0.6rem;
-  text-align: center;
-}
-.taskbar.vertical .taskbar-right {
-  flex-direction: column;
-  margin-left: 0;
-  margin-top: auto;
-  width: 100%;
-  align-items: center;
-  gap: 4px;
-}
-.taskbar.vertical .ws-picker {
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  align-items: center;
-}
-.taskbar.vertical .ws-btn {
-  max-width: 40px;
-  padding: 3px 4px;
-  font-size: 0.55rem;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 </style>

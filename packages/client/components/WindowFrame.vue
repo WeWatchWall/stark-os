@@ -75,7 +75,12 @@
     </div>
 
     <!-- Focus overlay: captures mousedown over iframes on unfocused windows -->
-    <div v-if="!isFocused" class="focus-overlay" :class="{ 'mobile-overlay': isMobile }" @mousedown="shell.focusWindow(win.id)" />
+    <div
+      v-if="!isFocused"
+      class="focus-overlay"
+      :style="{ top: focusOverlayTop }"
+      @mousedown="shell.focusWindow(win.id)"
+    />
 
     <!-- Resize handles (desktop + not maximized only) -->
     <template v-if="!isMobile && !win.maximized">
@@ -111,6 +116,13 @@ const firstHalfIcon = computed(() => shell.isPortrait ? '⬆' : '⬅');
 const secondHalfIcon = computed(() => shell.isPortrait ? '⬇' : '➡');
 
 const interacting = ref(false);
+
+/** Dynamic top offset for the focus overlay (below title bar / strip) */
+const focusOverlayTop = computed(() => {
+  if (isMobile.value && titleCollapsed.value) return '6px';
+  if (isMobile.value) return '26px';
+  return '34px';
+});
 
 /* ── Collapsible title bar (mobile) ── */
 const titleCollapsed = ref(false);
@@ -183,7 +195,6 @@ function onOutsideClick() {
     scheduleCollapse();
   }
 }
-onMounted(() => document.addEventListener('mousedown', onOutsideClick));
 
 /* ── Touch: swipe down on expanded title bar to minimize ── */
 let titleTouchStartY = 0;
@@ -234,6 +245,7 @@ watch(() => shell.isPortrait, () => setTimeout(nudgeIframe, 0));
 let surfaceObserver: ResizeObserver | null = null;
 
 onMounted(() => {
+  document.addEventListener('mousedown', onOutsideClick);
   const surface = document.getElementById(props.win.containerId);
   if (surface) {
     surfaceObserver = new ResizeObserver(() => {
@@ -531,14 +543,10 @@ function startResize(e: MouseEvent, edge: Edge) {
 }
 .focus-overlay {
   position: absolute;
-  top: 34px;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 5;
-}
-.focus-overlay.mobile-overlay {
-  top: 6px; /* below collapsed strip */
 }
 
 /* ── Maximized ── */

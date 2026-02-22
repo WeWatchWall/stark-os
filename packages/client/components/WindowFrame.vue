@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useShellStore, type ShellWindow } from '~/stores/shell';
 
 const props = defineProps<{ win: ShellWindow }>();
@@ -113,6 +113,28 @@ function toggleMax() {
 watch(() => props.win.mobileSnap, () => setTimeout(nudgeIframe, 0));
 watch(() => props.win.maximized, () => setTimeout(nudgeIframe, 0));
 watch(() => shell.isPortrait, () => setTimeout(nudgeIframe, 0));
+
+/* ResizeObserver: nudge iframe whenever the surface container changes size
+ * (e.g. outer browser window resize, layout shift) */
+let surfaceObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  const surface = document.getElementById(props.win.containerId);
+  if (surface) {
+    surfaceObserver = new ResizeObserver(() => {
+      nudgeIframe();
+    });
+    surfaceObserver.observe(surface);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (nudgeTimer) clearTimeout(nudgeTimer);
+  if (surfaceObserver) {
+    surfaceObserver.disconnect();
+    surfaceObserver = null;
+  }
+});
 
 /* ── Computed style ── */
 const frameStyle = computed(() => {

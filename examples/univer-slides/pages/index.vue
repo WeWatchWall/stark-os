@@ -19,6 +19,7 @@ const univerContainer = ref<HTMLElement | null>(null);
 const saveStatus = ref<'saved' | 'saving' | 'idle'>('idle');
 
 let univer: any = null;
+let slideUnit: any = null;
 let saveTimer: ReturnType<typeof setInterval> | null = null;
 
 const saveStatusText = computed(() => {
@@ -57,15 +58,11 @@ const DEFAULT_SLIDE_DATA = {
 };
 
 async function saveData() {
-  if (!univer) return;
+  if (!slideUnit) return;
   try {
     saveStatus.value = 'saving';
-    // Slides use the low-level Univer API; snapshot is obtained through the universe instance
-    const univerDoc = univer.__getInjector?.()?.get?.('IUniverInstanceService')?.getCurrentUnitForType?.(3);
-    if (univerDoc) {
-      const snapshot = JSON.parse(JSON.stringify(univerDoc.getSnapshot()));
-      await saveToOpfs(OPFS_FILENAME, snapshot);
-    }
+    const snapshot = JSON.parse(JSON.stringify(slideUnit.getSnapshot()));
+    await saveToOpfs(OPFS_FILENAME, snapshot);
     saveStatus.value = 'saved';
   } catch (e) {
     console.warn('Failed to save to OPFS:', e);
@@ -108,7 +105,7 @@ onMounted(async () => {
   univer.registerPlugin(UniverSlidesPlugin);
   univer.registerPlugin(UniverSlidesUIPlugin);
 
-  univer.createUnit(
+  slideUnit = univer.createUnit(
     UniverInstanceType.UNIVER_SLIDE,
     savedData || DEFAULT_SLIDE_DATA,
   );

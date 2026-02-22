@@ -179,6 +179,12 @@ export const useShellStore = defineStore('shell', () => {
   function showStartMenu() { startMenuVisible.value = true; }
   function hideStartMenu() { startMenuVisible.value = false; }
 
+  /* ── App Switcher ── */
+  const appSwitcherVisible = ref(false);
+  function showAppSwitcher() { appSwitcherVisible.value = true; }
+  function hideAppSwitcher() { appSwitcherVisible.value = false; }
+  function toggleAppSwitcher() { appSwitcherVisible.value = !appSwitcherVisible.value; }
+
   /* ── Windows ── */
   const windows = ref<ShellWindow[]>([]);
   let nextZIndex = 100;
@@ -321,6 +327,11 @@ export const useShellStore = defineStore('shell', () => {
     toggleStartMenu,
     showStartMenu,
     hideStartMenu,
+    /* App Switcher */
+    appSwitcherVisible,
+    showAppSwitcher,
+    hideAppSwitcher,
+    toggleAppSwitcher,
     /* Windows */
     windows,
     activeWindows,

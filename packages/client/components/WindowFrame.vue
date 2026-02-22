@@ -14,25 +14,36 @@
     }"
     :style="frameStyle"
     @mousedown="shell.focusWindow(win.id)"
-    @touchstart.passive="onFrameTouchStart"
-    @touchmove.passive="onFrameTouchMove"
-    @touchend.passive="onFrameTouchEnd"
   >
-    <!-- Title bar (drag handle) -->
+    <!-- Collapsed title strip (mobile only, when title bar is collapsed) -->
     <div
+      v-if="isMobile && titleCollapsed"
+      class="title-strip"
+      :class="{ focused: isFocused }"
+      @click="expandTitle"
+    >
+      <div class="strip-indicator" />
+    </div>
+
+    <!-- Title bar -->
+    <div
+      v-if="!isMobile || !titleCollapsed"
       class="title-bar"
       :class="{ 'title-bar-mobile': isMobile }"
       @mousedown.prevent="startDrag"
       @dblclick="toggleMax"
+      @touchstart.passive="onTitleTouchStart"
+      @touchmove.passive="onTitleTouchMove"
+      @touchend.passive="onTitleTouchEnd"
     >
       <span class="title-text">{{ win.title }}</span>
       <div class="title-controls">
-        <!-- Mobile controls: compact overflow menu + close -->
+        <!-- Mobile: overflow menu + close -->
         <template v-if="isMobile">
           <button class="ctrl-btn" title="Window menu" aria-label="Window menu" @mousedown.stop @click.stop="toggleMobileMenu">⋮</button>
           <button class="ctrl-btn close" title="Close" aria-label="Close window" @mousedown.stop @click="shell.closeWindow(win.id)">✕</button>
         </template>
-        <!-- Desktop controls -->
+        <!-- Desktop: minimize, maximize, close -->
         <template v-else>
           <button class="ctrl-btn" title="Minimize" aria-label="Minimize" @mousedown.stop @click="shell.minimizeWindow(win.id)">─</button>
           <button class="ctrl-btn" title="Maximize" aria-label="Maximize" @mousedown.stop @click="toggleMax">☐</button>
@@ -52,6 +63,7 @@
       <button class="mobile-menu-item" @click="doMobileAction('half-second')">
         <span class="menu-icon">{{ secondHalfIcon }}</span> {{ secondHalfLabel }}
       </button>
+      <hr class="menu-divider" />
       <button class="mobile-menu-item" @click="doMobileAction('minimize')">
         <span class="menu-icon">─</span> Minimize
       </button>
@@ -63,7 +75,7 @@
     </div>
 
     <!-- Focus overlay: captures mousedown over iframes on unfocused windows -->
-    <div v-if="!isFocused" class="focus-overlay" @mousedown="shell.focusWindow(win.id)" />
+    <div v-if="!isFocused" class="focus-overlay" :class="{ 'mobile-overlay': isMobile }" @mousedown="shell.focusWindow(win.id)" />
 
     <!-- Resize handles (desktop + not maximized only) -->
     <template v-if="!isMobile && !win.maximized">
@@ -100,11 +112,58 @@ const secondHalfIcon = computed(() => shell.isPortrait ? '⬇' : '➡');
 
 const interacting = ref(false);
 
+/* ── Collapsible title bar (mobile) ── */
+const titleCollapsed = ref(false);
+let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** After focusing a window on mobile, auto-collapse the title bar after 2s */
+function scheduleCollapse() {
+  clearCollapseTimer();
+  if (!isMobile.value) return;
+  collapseTimer = setTimeout(() => {
+    titleCollapsed.value = true;
+    nudgeIframe();
+  }, 2500);
+}
+
+function clearCollapseTimer() {
+  if (collapseTimer) {
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
+}
+
+function expandTitle() {
+  titleCollapsed.value = false;
+  mobileMenuOpen.value = false;
+  nudgeIframe();
+  scheduleCollapse();
+}
+
+// Auto-collapse when focused on mobile
+watch(isFocused, (focused) => {
+  if (focused && isMobile.value) {
+    titleCollapsed.value = false;
+    scheduleCollapse();
+  }
+});
+
+// Reset when switching modes
+watch(isMobile, (mobile) => {
+  if (!mobile) {
+    titleCollapsed.value = false;
+    clearCollapseTimer();
+  }
+});
+
 /* ── Mobile overflow menu ── */
 const mobileMenuOpen = ref(false);
 
 function toggleMobileMenu() {
   mobileMenuOpen.value = !mobileMenuOpen.value;
+  // Keep title expanded while menu is open
+  if (mobileMenuOpen.value) clearCollapseTimer();
+  else scheduleCollapse();
 }
 
 function doMobileAction(action: string) {
@@ -114,53 +173,42 @@ function doMobileAction(action: string) {
   } else {
     shell.setMobileSnap(props.win.id, action as 'full' | 'half-first' | 'half-second');
   }
+  scheduleCollapse();
 }
 
 /* Close mobile menu on any outside click */
 function onOutsideClick() {
-  if (mobileMenuOpen.value) mobileMenuOpen.value = false;
-}
-onMounted(() => document.addEventListener('mousedown', onOutsideClick));
-onBeforeUnmount(() => document.removeEventListener('mousedown', onOutsideClick));
-
-/* ── Touch swipe: swipe down on title bar → minimize ── */
-let touchStartY = 0;
-let touchStartX = 0;
-let touchOnTitleBar = false;
-
-function onFrameTouchStart(e: TouchEvent) {
-  const target = e.target as HTMLElement;
-  touchOnTitleBar = !!target.closest('.title-bar');
-  if (touchOnTitleBar) {
-    touchStartY = e.touches[0].clientY;
-    touchStartX = e.touches[0].clientX;
+  if (mobileMenuOpen.value) {
+    mobileMenuOpen.value = false;
+    scheduleCollapse();
   }
 }
+onMounted(() => document.addEventListener('mousedown', onOutsideClick));
 
-function onFrameTouchMove(_e: TouchEvent) {
-  /* passive — no preventDefault needed */
+/* ── Touch: swipe down on expanded title bar to minimize ── */
+let titleTouchStartY = 0;
+let titleTouchStartX = 0;
+
+function onTitleTouchStart(e: TouchEvent) {
+  titleTouchStartY = e.touches[0].clientY;
+  titleTouchStartX = e.touches[0].clientX;
 }
-
-function onFrameTouchEnd(e: TouchEvent) {
-  if (!touchOnTitleBar || !isMobile.value) return;
-  const dy = e.changedTouches[0].clientY - touchStartY;
-  const dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
-  // Swipe down (dy > 40px) and mostly vertical → minimize
+function onTitleTouchMove(_e: TouchEvent) { /* passive */ }
+function onTitleTouchEnd(e: TouchEvent) {
+  if (!isMobile.value) return;
+  const dy = e.changedTouches[0].clientY - titleTouchStartY;
+  const dx = Math.abs(e.changedTouches[0].clientX - titleTouchStartX);
+  // Swipe down (>40px, mostly vertical) → minimize
   if (dy > 40 && dx < 60) {
     shell.minimizeWindow(props.win.id);
   }
-  touchOnTitleBar = false;
 }
 
 /**
  * Force the iframe inside the surface container to re-layout after a size change.
- * Dispatches a resize event into the iframe so that content (e.g. xterm FitAddon)
- * can recalculate its dimensions without the destructive height-reset trick that
- * caused sizing loops and prompt corruption.
  */
 let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 function nudgeIframe() {
-  // Debounce: collapse rapid calls (e.g. maximize watcher + explicit call) into one
   if (nudgeTimer) clearTimeout(nudgeTimer);
   nudgeTimer = setTimeout(() => {
     nudgeTimer = null;
@@ -168,8 +216,6 @@ function nudgeIframe() {
     if (!surface) return;
     const iframe = surface.querySelector('iframe') as HTMLIFrameElement | null;
     if (!iframe) return;
-    // Reset any pixel height set by the bundle auto-resize shim so the
-    // iframe stretches to fill the surface via CSS height:100%.
     iframe.style.height = '100%';
     try { iframe.contentWindow?.dispatchEvent(new Event('resize')); } catch (_) { /* cross-origin */ }
   }, 50);
@@ -177,7 +223,6 @@ function nudgeIframe() {
 
 function toggleMax() {
   shell.toggleMaximize(props.win.id);
-  // Watcher on props.win.maximized handles the nudge — no explicit call needed
 }
 
 /* Nudge iframe whenever mobile snap, maximized state, or orientation changes */
@@ -185,8 +230,7 @@ watch(() => props.win.mobileSnap, () => setTimeout(nudgeIframe, 0));
 watch(() => props.win.maximized, () => setTimeout(nudgeIframe, 0));
 watch(() => shell.isPortrait, () => setTimeout(nudgeIframe, 0));
 
-/* ResizeObserver: nudge iframe whenever the surface container changes size
- * (e.g. outer browser window resize, layout shift) */
+/* ResizeObserver: nudge iframe whenever the surface container changes size */
 let surfaceObserver: ResizeObserver | null = null;
 
 onMounted(() => {
@@ -197,14 +241,20 @@ onMounted(() => {
     });
     surfaceObserver.observe(surface);
   }
+  // If already mobile and focused, schedule collapse
+  if (isMobile.value && isFocused.value) {
+    scheduleCollapse();
+  }
 });
 
 onBeforeUnmount(() => {
+  clearCollapseTimer();
   if (nudgeTimer) clearTimeout(nudgeTimer);
   if (surfaceObserver) {
     surfaceObserver.disconnect();
     surfaceObserver = null;
   }
+  document.removeEventListener('mousedown', onOutsideClick);
 });
 
 /* ── Computed style ── */
@@ -278,7 +328,6 @@ function startResize(e: MouseEvent, edge: Edge) {
 
     nw = Math.max(300, nw);
     nh = Math.max(200, nh);
-    // Clamp position to avoid out of screen
     if (edge.includes('w') && nw === 300) nx = startX + startW - 300;
     if (edge.includes('n') && nh === 200) ny = startY + startH - 200;
 
@@ -316,6 +365,36 @@ function startResize(e: MouseEvent, edge: Edge) {
   display: none;
 }
 
+/* ── Collapsed title strip (mobile) ── */
+.title-strip {
+  height: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.title-strip:active {
+  background: rgba(59,130,246,0.15);
+}
+.title-strip.focused {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+}
+.strip-indicator {
+  width: 28px;
+  height: 3px;
+  border-radius: 1.5px;
+  background: rgba(255,255,255,0.25);
+  transition: background 0.15s;
+}
+.title-strip:hover .strip-indicator,
+.title-strip:active .strip-indicator {
+  background: rgba(255,255,255,0.5);
+}
+
 /* ── Title bar ── */
 .title-bar {
   display: flex;
@@ -330,10 +409,10 @@ function startResize(e: MouseEvent, edge: Edge) {
 }
 .title-bar:active { cursor: grabbing; }
 
-/* Compact mobile title bar */
 .title-bar-mobile {
   height: 26px;
   padding: 0 6px 0 10px;
+  cursor: default;
 }
 
 .title-text {
@@ -383,21 +462,21 @@ function startResize(e: MouseEvent, edge: Edge) {
   z-index: 60;
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 6px;
+  border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   padding: 4px 0;
-  min-width: 140px;
+  min-width: 150px;
 }
 .mobile-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 14px;
   border: none;
   background: none;
   color: #cbd5e1;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   cursor: pointer;
   transition: background 0.12s;
   text-align: left;
@@ -407,10 +486,15 @@ function startResize(e: MouseEvent, edge: Edge) {
   background: rgba(59,130,246,0.2);
 }
 .menu-icon {
-  font-size: 0.8rem;
-  width: 18px;
+  font-size: 0.85rem;
+  width: 20px;
   text-align: center;
   flex-shrink: 0;
+}
+.menu-divider {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  margin: 2px 0;
 }
 
 /* ── Surface (iframe host) ── */
@@ -439,24 +523,22 @@ function startResize(e: MouseEvent, edge: Edge) {
 .rh-se { bottom: -4px; right: -4px; width: 14px; height: 14px; cursor: se-resize; }
 .rh-sw { bottom: -4px; left: -4px; width: 14px; height: 14px; cursor: sw-resize; }
 
-/* ── Interaction overlay (captures events over iframes during drag/resize) ── */
+/* ── Overlays ── */
 .interaction-overlay {
   position: absolute;
   inset: 0;
   z-index: 50;
 }
-
-/* ── Focus overlay (captures mousedown over iframes on unfocused windows) ── */
 .focus-overlay {
   position: absolute;
-  top: 34px; /* below title bar */
+  top: 34px;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 5;
 }
-.mobile .focus-overlay {
-  top: 26px; /* below compact mobile title bar */
+.focus-overlay.mobile-overlay {
+  top: 6px; /* below collapsed strip */
 }
 
 /* ── Maximized ── */
@@ -465,7 +547,7 @@ function startResize(e: MouseEvent, edge: Edge) {
   border: none;
 }
 
-/* ── Mobile full-screen (fills .desktop container which accounts for taskbar) ── */
+/* ── Mobile full-screen ── */
 .window-frame.mobile-full {
   position: absolute !important;
   top: 0 !important;

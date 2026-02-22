@@ -175,11 +175,11 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
   // Trust proxy (for correct IP detection behind reverse proxy)
   app.set('trust proxy', true);
 
-  // Parse JSON bodies
-  app.use(express.json({ limit: '10mb' }));
+  // Parse JSON bodies (100mb to support large pack bundles)
+  app.use(express.json({ limit: '100mb' }));
 
   // Parse URL-encoded bodies
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
   // CORS middleware
   if (finalConfig.enableCors) {

@@ -10,6 +10,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { createUniver, defaultTheme, LocaleType } from '@univerjs/presets';
+import { UniverSheetsCorePreset } from '@univerjs/presets/preset-sheets-core';
+import '@univerjs/presets/lib/styles/preset-sheets-core.css';
 import { saveToOpfs, loadFromOpfs } from '~/composables/useOpfsStorage';
 
 const OPFS_FILENAME = 'univer-sheets.json';
@@ -45,10 +48,6 @@ async function saveData() {
 }
 
 onMounted(async () => {
-  const { createUniver, defaultTheme, LocaleType } = await import('@univerjs/presets');
-  const { UniverSheetsCorePreset } = await import('@univerjs/presets/preset-sheets-core');
-  await import('@univerjs/presets/lib/styles/preset-sheets-core.css');
-
   const savedData = await loadFromOpfs(OPFS_FILENAME);
 
   const result = createUniver({

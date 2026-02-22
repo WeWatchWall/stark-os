@@ -44,6 +44,9 @@ export default defineNuxtConfig({
       minify: true,
       sourcemap: false,
 
+      // Target modern browsers for smaller output
+      target: 'esnext',
+
       // Inline all assets smaller than 100KB as base64 data URIs
       assetsInlineLimit: 100 * 1024,
 

@@ -10,6 +10,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { Univer, LocaleType, UniverInstanceType } from '@univerjs/core';
+import { defaultTheme } from '@univerjs/design';
+import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
+import { UniverUIPlugin } from '@univerjs/ui';
+import { UniverDocsPlugin } from '@univerjs/docs';
+import { UniverDocsUIPlugin } from '@univerjs/docs-ui';
+import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
+import { UniverDrawingPlugin } from '@univerjs/drawing';
+import { UniverSlidesPlugin } from '@univerjs/slides';
+import { UniverSlidesUIPlugin } from '@univerjs/slides-ui';
+import '@univerjs/design/lib/index.css';
+import '@univerjs/ui/lib/index.css';
+import '@univerjs/docs-ui/lib/index.css';
+import '@univerjs/slides-ui/lib/index.css';
 import { saveToOpfs, loadFromOpfs } from '~/composables/useOpfsStorage';
 
 const OPFS_FILENAME = 'univer-slides.json';
@@ -71,22 +85,6 @@ async function saveData() {
 }
 
 onMounted(async () => {
-  const { Univer, LocaleType, UniverInstanceType } = await import('@univerjs/core');
-  const { defaultTheme } = await import('@univerjs/design');
-  const { UniverRenderEnginePlugin } = await import('@univerjs/engine-render');
-  const { UniverUIPlugin } = await import('@univerjs/ui');
-  const { UniverDocsPlugin } = await import('@univerjs/docs');
-  const { UniverDocsUIPlugin } = await import('@univerjs/docs-ui');
-  const { UniverFormulaEnginePlugin } = await import('@univerjs/engine-formula');
-  const { UniverDrawingPlugin } = await import('@univerjs/drawing');
-  const { UniverSlidesPlugin } = await import('@univerjs/slides');
-  const { UniverSlidesUIPlugin } = await import('@univerjs/slides-ui');
-
-  await import('@univerjs/design/lib/index.css');
-  await import('@univerjs/ui/lib/index.css');
-  await import('@univerjs/docs-ui/lib/index.css');
-  await import('@univerjs/slides-ui/lib/index.css');
-
   const savedData = await loadFromOpfs(OPFS_FILENAME);
 
   univer = new Univer({

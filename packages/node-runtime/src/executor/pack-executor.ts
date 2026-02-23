@@ -22,6 +22,7 @@ import {
   createServiceLogger,
   PodError,
   requiresMainThread,
+  effectiveCapabilities,
   createPodLogSink,
   formatLogArgs,
   createEphemeralDataPlane,
@@ -666,7 +667,11 @@ export class PackExecutor {
 
       // Check if pack has root capability - run on main thread instead of worker pool
       // Root packs need main thread access for UI/DOM or privileged operations
-      const hasRootCapability = requiresMainThread(pack.grantedCapabilities ?? []);
+      // Use effectiveCapabilities (intersection of requested & granted) so packs
+      // that never asked for 'root' are not promoted to main-thread execution.
+      const requested = pack.metadata?.requestedCapabilities as import('@stark-o/shared').Capability[] | undefined;
+      const effective = effectiveCapabilities(requested, pack.grantedCapabilities ?? []);
+      const hasRootCapability = requiresMainThread(effective);
 
       if (hasRootCapability) {
         this.config.logger.info('Executing pack on main thread (root capability)', {

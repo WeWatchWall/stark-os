@@ -1,6 +1,6 @@
 {
   "name": "@stark-o/cli",
-  "version": "0.11.10",
+  "version": "0.11.11",
   "description": "Command-line interface for Stark Orchestrator",
   "type": "module",
   "main": "./dist/index.js",

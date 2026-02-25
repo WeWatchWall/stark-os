@@ -74,6 +74,14 @@
       >
         <i class="codicon codicon-search"></i>
       </button>
+      <button
+        class="activity-btn"
+        :class="{ active: activePanel === 'extensions' && sidebarVisible }"
+        title="Extensions (Ctrl+Shift+X)"
+        @click="togglePanel('extensions')"
+      >
+        <i class="codicon codicon-extensions"></i>
+      </button>
       <div class="activity-spacer"></div>
       <button
         class="activity-btn"
@@ -167,6 +175,124 @@
             <div v-else-if="sidebarSearchQuery && sidebarSearchDone" class="search-empty-hint">
               <i class="codicon codicon-info"></i> No results found
             </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Extensions panel -->
+      <template v-if="activePanel === 'extensions'">
+        <div class="sidebar-header">
+          <span class="sidebar-title">EXTENSIONS</span>
+          <div class="sidebar-actions">
+            <button class="icon-btn" title="Refresh" @click="refreshExtensionState">
+              <i class="codicon codicon-refresh"></i>
+            </button>
+          </div>
+        </div>
+        <div class="ext-search-wrapper">
+          <div class="search-input-wrapper">
+            <i class="codicon codicon-search search-icon"></i>
+            <input
+              v-model="extSearchQuery"
+              class="sidebar-search-field"
+              placeholder="Search Extensions in Marketplace"
+            />
+          </div>
+        </div>
+        <!-- Category filter -->
+        <div class="ext-category-bar">
+          <button
+            class="ext-cat-btn"
+            :class="{ active: extCategoryFilter === '' }"
+            @click="extCategoryFilter = ''"
+          >All</button>
+          <button
+            v-for="cat in extCategories"
+            :key="cat"
+            class="ext-cat-btn"
+            :class="{ active: extCategoryFilter === cat }"
+            @click="extCategoryFilter = cat"
+          >{{ cat }}</button>
+        </div>
+        <!-- Installed extensions -->
+        <div v-if="installedExtensions.length > 0 && !extSearchQuery && !extCategoryFilter" class="ext-section-label">
+          <i class="codicon codicon-check"></i> Installed
+        </div>
+        <div class="ext-list">
+          <template v-if="!extSearchQuery && !extCategoryFilter">
+            <div
+              v-for="ext in installedExtensions"
+              :key="ext.id"
+              class="ext-item"
+              :class="{ selected: selectedExt?.id === ext.id }"
+              @click="selectedExt = ext"
+            >
+              <div class="ext-icon"><i :class="'codicon codicon-' + ext.codicon"></i></div>
+              <div class="ext-info">
+                <div class="ext-name">{{ ext.displayName }}</div>
+                <div class="ext-publisher">{{ ext.publisher }}</div>
+              </div>
+              <div class="ext-badge installed"><i class="codicon codicon-check"></i></div>
+            </div>
+            <div v-if="filteredCatalog.length > 0" class="ext-section-label">
+              <i class="codicon codicon-cloud-download"></i> Marketplace
+            </div>
+          </template>
+          <div
+            v-for="ext in filteredCatalog"
+            :key="ext.id"
+            class="ext-item"
+            :class="{ selected: selectedExt?.id === ext.id }"
+            @click="selectedExt = ext"
+          >
+            <div class="ext-icon"><i :class="'codicon codicon-' + ext.codicon"></i></div>
+            <div class="ext-info">
+              <div class="ext-name">{{ ext.displayName }}</div>
+              <div class="ext-publisher">{{ ext.publisher }}</div>
+            </div>
+            <div v-if="isInstalled(ext.id)" class="ext-badge installed"><i class="codicon codicon-check"></i></div>
+          </div>
+          <div v-if="filteredCatalog.length === 0 && installedExtensions.length === 0" class="ext-empty">
+            No extensions found
+          </div>
+        </div>
+        <!-- Extension detail view -->
+        <div v-if="selectedExt" class="ext-detail">
+          <div class="ext-detail-header">
+            <div class="ext-detail-icon"><i :class="'codicon codicon-' + selectedExt.codicon"></i></div>
+            <div class="ext-detail-meta">
+              <div class="ext-detail-name">{{ selectedExt.displayName }}</div>
+              <div class="ext-detail-pub">{{ selectedExt.publisher }} · v{{ selectedExt.version }}</div>
+            </div>
+          </div>
+          <div class="ext-detail-desc">{{ selectedExt.description }}</div>
+          <div class="ext-detail-stats">
+            <span><i class="codicon codicon-cloud-download"></i> {{ selectedExt.downloads }}</span>
+            <span><i class="codicon codicon-star-full"></i> {{ selectedExt.rating }}</span>
+            <span class="ext-detail-cat">{{ selectedExt.category }}</span>
+          </div>
+          <div class="ext-detail-actions">
+            <button
+              v-if="!isInstalled(selectedExt.id)"
+              class="ext-btn install"
+              @click="installExtension(selectedExt.id)"
+            ><i class="codicon codicon-cloud-download"></i> Install</button>
+            <template v-else>
+              <button
+                v-if="isEnabled(selectedExt.id)"
+                class="ext-btn disable"
+                @click="disableExtension(selectedExt.id)"
+              ><i class="codicon codicon-circle-slash"></i> Disable</button>
+              <button
+                v-else
+                class="ext-btn enable"
+                @click="enableExtension(selectedExt.id)"
+              ><i class="codicon codicon-check"></i> Enable</button>
+              <button
+                class="ext-btn uninstall"
+                @click="uninstallExtension(selectedExt.id)"
+              ><i class="codicon codicon-trash"></i> Uninstall</button>
+            </template>
           </div>
         </div>
       </template>
@@ -322,6 +448,17 @@ import {
   renameFile,
   searchInFiles,
 } from '~/composables/useOpfsStorage';
+import {
+  extensionCatalog,
+  loadExtensionState,
+  saveExtensionState,
+  getCategories,
+  defineCustomThemes,
+  applyExtension,
+  type Extension,
+  type ExtensionState,
+  type ExtensionCategory,
+} from '~/composables/useExtensions';
 
 // ─── Types ──────────────────────────────────────────
 interface Tab {
@@ -359,7 +496,7 @@ const currentFile = ref<string | null>(null);
 const saveStatus = ref<'saved' | 'saving' | 'idle'>('idle');
 const openTabs = ref<Tab[]>([]);
 const sidebarVisible = ref(true);
-const activePanel = ref<'explorer' | 'search'>('explorer');
+const activePanel = ref<'explorer' | 'search' | 'extensions'>('explorer');
 const cursorLine = ref(1);
 const cursorColumn = ref(1);
 const editorTabSize = ref(2);
@@ -399,6 +536,14 @@ let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
 let terminalInputBuffer = '';
 let terminalInitialized = false;
+
+// Extensions state
+const extSearchQuery = ref('');
+const extCategoryFilter = ref('');
+const selectedExt = ref<Extension | null>(null);
+const extState = ref<ExtensionState>({ installed: [], enabled: [] });
+const extCategories = getCategories();
+const activeExtDisposers = new Map<string, () => void>();
 
 // ─── Computed ───────────────────────────────────────
 const saveStatusText = computed(() => {

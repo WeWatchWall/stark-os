@@ -47,8 +47,9 @@ export default defineNuxtConfig({
       // Target modern browsers for smaller output
       target: 'esnext',
 
-      // Inline all assets smaller than 100KB as base64 data URIs
-      assetsInlineLimit: 100 * 1024,
+      // Inline all assets up to 200KB as base64 data URIs
+      // (raised to accommodate @vscode/codicons TTF font ~123KB)
+      assetsInlineLimit: 200 * 1024,
 
       rollupOptions: {
         output: {
@@ -60,5 +61,8 @@ export default defineNuxtConfig({
     },
   },
 
-  css: [],
+  // Import VS Code's codicons icon font globally
+  css: [
+    '@vscode/codicons/dist/codicon.css',
+  ],
 })

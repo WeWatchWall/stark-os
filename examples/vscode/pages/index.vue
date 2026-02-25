@@ -7,22 +7,25 @@
         :key="i"
         class="toast"
         :class="toast.type"
-      >{{ toast.message }}</div>
+      ><i :class="'codicon codicon-' + (toast.type === 'error' ? 'error' : toast.type === 'success' ? 'check' : 'info')"></i> {{ toast.message }}</div>
     </div>
 
     <!-- Command palette overlay -->
     <div v-if="showCommandPalette" class="palette-overlay" @click.self="showCommandPalette = false">
       <div class="palette">
-        <input
-          ref="paletteInput"
-          v-model="paletteQuery"
-          class="palette-input"
-          :placeholder="paletteMode === 'commands' ? 'Type a command...' : 'Search files by name...'"
-          @keydown.escape="showCommandPalette = false"
-          @keydown.enter="executePaletteSelection"
-          @keydown.down.prevent="paletteIndex = Math.min(paletteIndex + 1, filteredPaletteItems.length - 1)"
-          @keydown.up.prevent="paletteIndex = Math.max(paletteIndex - 1, 0)"
-        />
+        <div class="palette-input-row">
+          <i class="codicon codicon-search palette-input-icon"></i>
+          <input
+            ref="paletteInput"
+            v-model="paletteQuery"
+            class="palette-input"
+            :placeholder="paletteMode === 'commands' ? '> Type a command...' : 'Type to search files...'"
+            @keydown.escape="showCommandPalette = false"
+            @keydown.enter="executePaletteSelection"
+            @keydown.down.prevent="paletteIndex = Math.min(paletteIndex + 1, filteredPaletteItems.length - 1)"
+            @keydown.up.prevent="paletteIndex = Math.max(paletteIndex - 1, 0)"
+          />
+        </div>
         <div class="palette-results">
           <div
             v-for="(item, idx) in filteredPaletteItems"
@@ -32,44 +35,11 @@
             @click="executePaletteItem(item)"
             @mouseenter="paletteIndex = idx"
           >
-            <span class="palette-icon">{{ item.icon }}</span>
+            <i :class="'codicon codicon-' + item.codicon" class="palette-item-icon"></i>
             <span class="palette-label">{{ item.label }}</span>
             <span v-if="item.shortcut" class="palette-shortcut">{{ item.shortcut }}</span>
           </div>
           <div v-if="filteredPaletteItems.length === 0" class="palette-empty">No results found</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Search panel overlay -->
-    <div v-if="showSearchPanel" class="search-overlay" @click.self="showSearchPanel = false">
-      <div class="search-panel">
-        <div class="search-panel-header">
-          <span>Search in Files</span>
-          <button class="close-btn" @click="showSearchPanel = false">×</button>
-        </div>
-        <div class="search-input-row">
-          <input
-            ref="searchInput"
-            v-model="searchQuery"
-            class="search-field"
-            placeholder="Search..."
-            @keydown.escape="showSearchPanel = false"
-            @keydown.enter="performSearch"
-          />
-          <button class="search-go-btn" @click="performSearch">Go</button>
-        </div>
-        <div class="search-results">
-          <div v-if="searchResults.length === 0 && searchQuery" class="search-empty">No results</div>
-          <div
-            v-for="(result, idx) in searchResults"
-            :key="idx"
-            class="search-result-item"
-            @click="openSearchResult(result)"
-          >
-            <span class="search-result-file">{{ result.file }}:{{ result.line }}</span>
-            <span class="search-result-text">{{ result.text.trim() }}</span>
-          </div>
         </div>
       </div>
     </div>
@@ -80,13 +50,13 @@
       class="context-menu"
       :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
     >
-      <div class="context-item" @click="renameFileFromContext">Rename</div>
-      <div class="context-item" @click="duplicateFileFromContext">Duplicate</div>
+      <div class="context-item" @click="renameFileFromContext"><i class="codicon codicon-edit"></i> Rename</div>
+      <div class="context-item" @click="duplicateFileFromContext"><i class="codicon codicon-copy"></i> Duplicate</div>
       <div class="context-separator"></div>
-      <div class="context-item danger" @click="deleteFileFromContext">Delete</div>
+      <div class="context-item danger" @click="deleteFileFromContext"><i class="codicon codicon-trash"></i> Delete</div>
     </div>
 
-    <!-- Activity bar -->
+    <!-- Activity bar (from VS Code's workbench) -->
     <div class="activity-bar">
       <button
         class="activity-btn"
@@ -94,7 +64,7 @@
         title="Explorer (Ctrl+Shift+E)"
         @click="togglePanel('explorer')"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 0h-9L7 1.5V6H2.5L1 7.5v13.7l.7.8h12.8l.8-.8V17H21l.5-.5V4.7L17.5 0zm0 2.1l2.4 2.4H17.5V2.1zM13.5 21H2V8h5v8.5l1.5 1.5h5v3zm1-4H9V6h4.5v3.5l1.5 1.5H19v6h-4.5zm.5-6.5V7.1l2.4 2.4H15z"/></svg>
+        <i class="codicon codicon-files"></i>
       </button>
       <button
         class="activity-btn"
@@ -102,15 +72,15 @@
         title="Search (Ctrl+Shift+F)"
         @click="togglePanel('search')"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M15.25 0a8.25 8.25 0 0 0-6.18 13.72L1 21.79l1.42 1.42 8.07-8.07A8.25 8.25 0 1 0 15.25.01V0zm0 14.5a6.25 6.25 0 1 1 0-12.5 6.25 6.25 0 0 1 0 12.5z"/></svg>
+        <i class="codicon codicon-search"></i>
       </button>
       <div class="activity-spacer"></div>
       <button
         class="activity-btn"
-        title="Settings"
+        title="Command Palette"
         @click="openCommandPalette('commands')"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+        <i class="codicon codicon-settings-gear"></i>
       </button>
     </div>
 
@@ -122,10 +92,10 @@
           <span class="sidebar-title">EXPLORER</span>
           <div class="sidebar-actions">
             <button class="icon-btn" title="New File (Ctrl+N)" @click="createNewFile">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M12 3H8.5L7.5 2H4.5l-1 1H1v1h1v9.5l.5.5h11l.5-.5V4h1V3h-2zm0 10H3V4h3.5l1-1h2l1 1H12v9zM7 6v2H5v1h2v2h1V9h2V8H8V6H7z"/></svg>
+              <i class="codicon codicon-new-file"></i>
             </button>
             <button class="icon-btn" title="Collapse Sidebar" @click="sidebarVisible = false">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M14 1H3L2 2v11l1 1h11l1-1V2l-1-1zM6 13V2h8v11H6z"/></svg>
+              <i class="codicon codicon-panel-left"></i>
             </button>
           </div>
         </div>
@@ -139,7 +109,7 @@
             @dblclick="startRenaming(file)"
             @contextmenu.prevent="showFileContextMenu($event, file)"
           >
-            <span class="file-icon">{{ getFileIcon(file) }}</span>
+            <i :class="'codicon codicon-' + getCodiconForFile(file)" class="file-codicon"></i>
             <input
               v-if="renamingFile === file"
               ref="renameInput"
@@ -155,10 +125,11 @@
               class="delete-btn"
               title="Delete"
               @click.stop="removeFile(file)"
-            >×</button>
+            ><i class="codicon codicon-close"></i></button>
           </div>
           <div v-if="files.length === 0" class="empty-hint">
-            No files yet.<br />Press Ctrl+N to create one.
+            <i class="codicon codicon-new-file"></i><br/>
+            No files yet.<br />Press <kbd>Ctrl+N</kbd> to create one.
           </div>
         </div>
       </template>
@@ -169,28 +140,33 @@
           <span class="sidebar-title">SEARCH</span>
         </div>
         <div class="sidebar-search">
-          <input
-            ref="sidebarSearchInput"
-            v-model="sidebarSearchQuery"
-            class="sidebar-search-field"
-            placeholder="Search"
-            @keydown.enter="performSidebarSearch"
-            @keydown.escape="sidebarSearchQuery = ''; sidebarSearchResults = []"
-          />
+          <div class="search-input-wrapper">
+            <i class="codicon codicon-search search-icon"></i>
+            <input
+              ref="sidebarSearchInput"
+              v-model="sidebarSearchQuery"
+              class="sidebar-search-field"
+              placeholder="Search"
+              @keydown.enter="performSidebarSearch"
+              @keydown.escape="sidebarSearchQuery = ''; sidebarSearchResults = []"
+            />
+          </div>
           <div class="search-results-list">
             <template v-if="sidebarSearchResults.length > 0">
-              <div class="search-results-count">{{ sidebarSearchResults.length }} result{{ sidebarSearchResults.length !== 1 ? 's' : '' }}</div>
+              <div class="search-results-count">{{ sidebarSearchResults.length }} result{{ sidebarSearchResults.length !== 1 ? 's' : '' }} in files</div>
               <div
                 v-for="(result, idx) in sidebarSearchResults"
                 :key="idx"
                 class="search-result-entry"
                 @click="openSearchResultFromSidebar(result)"
               >
-                <div class="search-result-header">{{ result.file }}:{{ result.line }}</div>
+                <div class="search-result-header"><i class="codicon codicon-file"></i> {{ result.file }}:{{ result.line }}</div>
                 <div class="search-result-preview">{{ result.text.trim().substring(0, 120) }}</div>
               </div>
             </template>
-            <div v-else-if="sidebarSearchQuery && sidebarSearchDone" class="search-empty-hint">No results found</div>
+            <div v-else-if="sidebarSearchQuery && sidebarSearchDone" class="search-empty-hint">
+              <i class="codicon codicon-info"></i> No results found
+            </div>
           </div>
         </div>
       </template>
@@ -208,50 +184,54 @@
           @click="switchToTab(tab.name)"
           @auxclick.middle.prevent="closeTab(tab.name)"
         >
-          <span class="tab-icon">{{ getFileIcon(tab.name) }}</span>
+          <i :class="'codicon codicon-' + getCodiconForFile(tab.name)" class="tab-codicon"></i>
           <span class="tab-label">{{ tab.name }}</span>
-          <span v-if="tab.modified" class="tab-dot">●</span>
-          <button class="tab-close" @click.stop="closeTab(tab.name)">×</button>
+          <span v-if="tab.modified" class="tab-dot"><i class="codicon codicon-circle-filled"></i></span>
+          <button class="tab-close" @click.stop="closeTab(tab.name)"><i class="codicon codicon-close"></i></button>
         </div>
       </div>
 
       <!-- Breadcrumbs -->
       <div v-if="currentFile" class="breadcrumbs">
-        <span class="breadcrumb-item" @click="togglePanel('explorer')">{{ getFileIcon(currentFile) }} {{ currentFile }}</span>
-        <span class="breadcrumb-sep">›</span>
+        <i class="codicon codicon-home breadcrumb-home" @click="togglePanel('explorer')"></i>
+        <i class="codicon codicon-chevron-right breadcrumb-sep"></i>
+        <i :class="'codicon codicon-' + getCodiconForFile(currentFile)" class="breadcrumb-icon"></i>
+        <span class="breadcrumb-item">{{ currentFile }}</span>
+        <i class="codicon codicon-chevron-right breadcrumb-sep"></i>
         <span class="breadcrumb-lang">{{ getLanguageLabel(currentFile) }}</span>
       </div>
 
       <!-- Editor -->
-      <div v-if="currentFile" id="monaco-container" ref="monacoContainer"></div>
+      <div v-show="currentFile" id="monaco-container" ref="monacoContainer"></div>
 
       <!-- Welcome page -->
-      <div v-else class="welcome">
+      <div v-if="!currentFile" class="welcome">
         <div class="welcome-content">
-          <div class="welcome-logo">💻</div>
-          <h1>VS Code</h1>
+          <div class="welcome-logo"><i class="codicon codicon-code welcome-code-icon"></i></div>
+          <h1>Visual Studio Code</h1>
           <p class="welcome-subtitle">Editing evolved</p>
 
           <div class="welcome-sections">
             <div class="welcome-section">
-              <h3>Start</h3>
-              <div class="welcome-link" @click="createNewFile">New File...</div>
-              <div class="welcome-link" @click="openCommandPalette('files')">Open File...</div>
+              <h3><i class="codicon codicon-rocket"></i> Start</h3>
+              <div class="welcome-link" @click="createNewFile"><i class="codicon codicon-new-file"></i> New File...</div>
+              <div class="welcome-link" @click="openCommandPalette('files')"><i class="codicon codicon-folder-opened"></i> Open File...</div>
+              <div class="welcome-link" @click="openCommandPalette('commands')"><i class="codicon codicon-terminal"></i> Command Palette...</div>
             </div>
             <div class="welcome-section">
-              <h3>Recent</h3>
+              <h3><i class="codicon codicon-history"></i> Recent</h3>
               <template v-if="files.length > 0">
                 <div
                   v-for="file in files.slice(0, 5)"
                   :key="file"
                   class="welcome-link"
                   @click="openFile(file)"
-                >{{ getFileIcon(file) }} {{ file }}</div>
+                ><i :class="'codicon codicon-' + getCodiconForFile(file)"></i> {{ file }}</div>
               </template>
               <div v-else class="welcome-hint">No recent files</div>
             </div>
             <div class="welcome-section">
-              <h3>Keyboard Shortcuts</h3>
+              <h3><i class="codicon codicon-keyboard"></i> Shortcuts</h3>
               <div class="shortcut-row"><kbd>Ctrl+Shift+P</kbd> <span>Command Palette</span></div>
               <div class="shortcut-row"><kbd>Ctrl+P</kbd> <span>Quick Open File</span></div>
               <div class="shortcut-row"><kbd>Ctrl+N</kbd> <span>New File</span></div>
@@ -259,31 +239,66 @@
               <div class="shortcut-row"><kbd>Ctrl+W</kbd> <span>Close Tab</span></div>
               <div class="shortcut-row"><kbd>Ctrl+Shift+F</kbd> <span>Search in Files</span></div>
               <div class="shortcut-row"><kbd>Ctrl+B</kbd> <span>Toggle Sidebar</span></div>
+              <div class="shortcut-row"><kbd>Ctrl+`</kbd> <span>Toggle Terminal</span></div>
               <div class="shortcut-row"><kbd>F2</kbd> <span>Rename File</span></div>
             </div>
           </div>
+
+          <div class="welcome-footer">
+            <span class="welcome-powered">
+              Powered by
+              <a href="https://github.com/microsoft/monaco-editor" target="_blank">Monaco Editor</a>,
+              <a href="https://github.com/microsoft/vscode-codicons" target="_blank">@vscode/codicons</a>,
+              and <a href="https://github.com/xtermjs/xterm.js" target="_blank">xterm.js</a>
+              from the VS Code ecosystem
+            </span>
+          </div>
         </div>
+      </div>
+
+      <!-- Terminal panel (xterm.js — VS Code's integrated terminal) -->
+      <div v-if="terminalVisible" class="terminal-panel">
+        <div class="terminal-header">
+          <div class="terminal-tabs">
+            <div class="terminal-tab active"><i class="codicon codicon-terminal"></i> Terminal</div>
+          </div>
+          <div class="terminal-actions">
+            <button class="terminal-action-btn" title="Clear" @click="clearTerminal">
+              <i class="codicon codicon-clear-all"></i>
+            </button>
+            <button class="terminal-action-btn" title="Close Panel" @click="terminalVisible = false">
+              <i class="codicon codicon-close"></i>
+            </button>
+          </div>
+        </div>
+        <div ref="terminalContainer" class="terminal-body"></div>
       </div>
 
       <!-- Status bar -->
       <div class="status-bar">
         <div class="status-left">
           <span v-if="currentFile" class="status-item">
-            Ln {{ cursorLine }}, Col {{ cursorColumn }}
+            <i class="codicon codicon-text-size"></i> Ln {{ cursorLine }}, Col {{ cursorColumn }}
           </span>
           <span v-if="currentFile" class="status-item">
             Spaces: {{ editorTabSize }}
           </span>
         </div>
         <div class="status-right">
+          <span class="status-item clickable" @click="terminalVisible = !terminalVisible" title="Toggle Terminal">
+            <i class="codicon codicon-terminal"></i>
+          </span>
           <span class="status-item clickable" @click="toggleWordWrap">
-            {{ wordWrapEnabled ? 'Word Wrap: On' : 'Word Wrap: Off' }}
+            {{ wordWrapEnabled ? 'Word Wrap' : 'No Wrap' }}
           </span>
           <span v-if="currentFile" class="status-item">
             {{ getLanguageLabel(currentFile) }}
           </span>
           <span class="status-item">UTF-8</span>
-          <span class="status-item save-indicator" :class="saveStatus">{{ saveStatusText }}</span>
+          <span class="status-item save-indicator" :class="saveStatus">
+            <i v-if="saveStatus !== 'idle'" :class="'codicon codicon-' + (saveStatus === 'saved' ? 'check' : 'sync')"></i>
+            {{ saveStatusText }}
+          </span>
         </div>
       </div>
     </div>
@@ -295,6 +310,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
+// VS Code ecosystem: xterm.js terminal emulator (used by VS Code's integrated terminal)
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import {
   listFiles,
   saveFile,
@@ -315,7 +334,7 @@ interface SearchResult {
   text: string;
 }
 interface PaletteItem {
-  icon: string;
+  codicon: string;
   label: string;
   shortcut?: string;
   action: () => void;
@@ -330,8 +349,8 @@ const SAVE_DELAY = 1000;
 
 // ─── State ──────────────────────────────────────────
 const monacoContainer = ref<HTMLElement | null>(null);
+const terminalContainer = ref<HTMLElement | null>(null);
 const paletteInput = ref<HTMLInputElement | null>(null);
-const searchInput = ref<HTMLInputElement | null>(null);
 const sidebarSearchInput = ref<HTMLInputElement | null>(null);
 const renameInput = ref<HTMLInputElement | null>(null);
 
@@ -345,6 +364,7 @@ const cursorLine = ref(1);
 const cursorColumn = ref(1);
 const editorTabSize = ref(2);
 const wordWrapEnabled = ref(true);
+const terminalVisible = ref(false);
 
 // Command palette
 const showCommandPalette = ref(false);
@@ -353,9 +373,6 @@ const paletteIndex = ref(0);
 const paletteMode = ref<'commands' | 'files'>('commands');
 
 // Search
-const showSearchPanel = ref(false);
-const searchQuery = ref('');
-const searchResults = ref<SearchResult[]>([]);
 const sidebarSearchQuery = ref('');
 const sidebarSearchResults = ref<SearchResult[]>([]);
 const sidebarSearchDone = ref(false);
@@ -377,26 +394,39 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let isLoadingFile = false;
 const fileModels = new Map<string, any>();
 
+// Terminal internals (xterm.js from VS Code)
+let terminal: Terminal | null = null;
+let fitAddon: FitAddon | null = null;
+let terminalInputBuffer = '';
+let terminalInitialized = false;
+
 // ─── Computed ───────────────────────────────────────
 const saveStatusText = computed(() => {
   switch (saveStatus.value) {
-    case 'saved': return '✓ Saved';
-    case 'saving': return '⏳ Saving...';
+    case 'saved': return 'Saved';
+    case 'saving': return 'Saving...';
     default: return '';
   }
 });
 
 const commandList = computed<PaletteItem[]>(() => [
-  { icon: '📄', label: 'New File', shortcut: 'Ctrl+N', action: createNewFile },
-  { icon: '💾', label: 'Save File', shortcut: 'Ctrl+S', action: saveCurrentFile },
-  { icon: '🔍', label: 'Search in Files', shortcut: 'Ctrl+Shift+F', action: () => openSidebarSearch() },
-  { icon: '📂', label: 'Quick Open File', shortcut: 'Ctrl+P', action: () => openCommandPalette('files') },
-  { icon: '✕', label: 'Close Tab', shortcut: 'Ctrl+W', action: () => currentFile.value && closeTab(currentFile.value) },
-  { icon: '📋', label: 'Toggle Sidebar', shortcut: 'Ctrl+B', action: () => { sidebarVisible.value = !sidebarVisible.value } },
-  { icon: '↩', label: 'Toggle Word Wrap', action: toggleWordWrap },
-  { icon: '🗺', label: 'Toggle Minimap', action: toggleMinimap },
-  { icon: '🔤', label: 'Change Tab Size: 2', action: () => setTabSize(2) },
-  { icon: '🔤', label: 'Change Tab Size: 4', action: () => setTabSize(4) },
+  { codicon: 'new-file', label: 'New File', shortcut: 'Ctrl+N', action: createNewFile },
+  { codicon: 'save', label: 'Save File', shortcut: 'Ctrl+S', action: saveCurrentFile },
+  { codicon: 'search', label: 'Search in Files', shortcut: 'Ctrl+Shift+F', action: () => openSidebarSearch() },
+  { codicon: 'go-to-file', label: 'Quick Open File', shortcut: 'Ctrl+P', action: () => openCommandPalette('files') },
+  { codicon: 'close', label: 'Close Tab', shortcut: 'Ctrl+W', action: () => currentFile.value && closeTab(currentFile.value) },
+  { codicon: 'layout-sidebar-left', label: 'Toggle Sidebar', shortcut: 'Ctrl+B', action: () => { sidebarVisible.value = !sidebarVisible.value } },
+  { codicon: 'terminal', label: 'Toggle Terminal', shortcut: "Ctrl+`", action: () => toggleTerminal() },
+  { codicon: 'word-wrap', label: 'Toggle Word Wrap', action: toggleWordWrap },
+  { codicon: 'layout-sidebar-right', label: 'Toggle Minimap', action: toggleMinimap },
+  { codicon: 'indent', label: 'Indent Using Spaces: 2', action: () => setTabSize(2) },
+  { codicon: 'indent', label: 'Indent Using Spaces: 4', action: () => setTabSize(4) },
+  { codicon: 'fold', label: 'Fold All', action: () => editorAction('editor.foldAll') },
+  { codicon: 'unfold', label: 'Unfold All', action: () => editorAction('editor.unfoldAll') },
+  { codicon: 'find', label: 'Find', shortcut: 'Ctrl+F', action: () => editorAction('actions.find') },
+  { codicon: 'replace', label: 'Find and Replace', shortcut: 'Ctrl+H', action: () => editorAction('editor.action.startFindReplaceAction') },
+  { codicon: 'go-to-file', label: 'Go to Line', shortcut: 'Ctrl+G', action: () => editorAction('editor.action.gotoLine') },
+  { codicon: 'symbol-method', label: 'Format Document', shortcut: 'Shift+Alt+F', action: () => editorAction('editor.action.formatDocument') },
 ]);
 
 const filteredPaletteItems = computed<PaletteItem[]>(() => {
@@ -405,7 +435,7 @@ const filteredPaletteItems = computed<PaletteItem[]>(() => {
     return files.value
       .filter(f => f.toLowerCase().includes(q))
       .map(f => ({
-        icon: getFileIcon(f),
+        codicon: getCodiconForFile(f),
         label: f,
         action: () => openFile(f),
       }));
@@ -416,19 +446,28 @@ const filteredPaletteItems = computed<PaletteItem[]>(() => {
 
 watch(paletteQuery, () => { paletteIndex.value = 0; });
 
-// ─── Helpers ────────────────────────────────────────
-function getFileIcon(filename: string): string {
+// ─── Codicon Helpers (from @vscode/codicons) ────────
+function getCodiconForFile(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
-  const icons: Record<string, string> = {
-    js: '📜', ts: '📘', json: '📋', html: '🌐', css: '🎨',
-    md: '📝', py: '🐍', go: '🔵', rs: '🦀', java: '☕',
-    vue: '💚', txt: '📄', sh: '⚡', yaml: '⚙', yml: '⚙',
-    xml: '📰', sql: '🗃', scss: '🎨', less: '🎨', c: '🔧',
-    cpp: '🔧', jsx: '⚛', tsx: '⚛', rb: '💎', php: '🐘',
-    swift: '🦅', kt: '🟣', dart: '🎯', r: '📊', lua: '🌙',
-    toml: '⚙', ini: '⚙', env: '🔒', dockerfile: '🐳',
+  const base = filename.toLowerCase();
+  // Special filenames
+  if (base === 'package.json' || base === 'tsconfig.json') return 'json';
+  if (base === 'dockerfile' || base.startsWith('docker')) return 'file-code';
+  if (base === '.gitignore' || base === '.env') return 'gear';
+  // By extension
+  const map: Record<string, string> = {
+    js: 'file-code', ts: 'file-code', jsx: 'file-code', tsx: 'file-code',
+    json: 'json', html: 'file-code', htm: 'file-code', css: 'file-code',
+    scss: 'file-code', less: 'file-code', md: 'markdown', py: 'file-code',
+    go: 'file-code', rs: 'file-code', java: 'file-code', c: 'file-code',
+    cpp: 'file-code', xml: 'file-code', yaml: 'file-code', yml: 'file-code',
+    sh: 'terminal-bash', sql: 'database', vue: 'file-code', txt: 'file',
+    rb: 'file-code', php: 'file-code', swift: 'file-code', kt: 'file-code',
+    dart: 'file-code', r: 'file-code', lua: 'file-code', toml: 'gear',
+    ini: 'gear', env: 'gear', svg: 'file-media', png: 'file-media',
+    jpg: 'file-media', gif: 'file-media', ico: 'file-media',
   };
-  return icons[ext] || '📄';
+  return map[ext] || 'file';
 }
 
 function getLanguage(filename: string): string {
@@ -452,7 +491,7 @@ function getLanguageLabel(filename: string): string {
     html: 'HTML', css: 'CSS', scss: 'SCSS', less: 'Less',
     markdown: 'Markdown', python: 'Python', go: 'Go', rust: 'Rust',
     java: 'Java', c: 'C', cpp: 'C++', xml: 'XML', yaml: 'YAML',
-    shell: 'Shell', sql: 'SQL', plaintext: 'Plain Text', ruby: 'Ruby',
+    shell: 'Shell Script', sql: 'SQL', plaintext: 'Plain Text', ruby: 'Ruby',
     php: 'PHP', swift: 'Swift', kotlin: 'Kotlin', dart: 'Dart',
     r: 'R', lua: 'Lua', ini: 'INI',
   };
@@ -466,6 +505,13 @@ function notify(message: string, type: ToastMsg['type'] = 'info') {
     const idx = toasts.value.indexOf(toast);
     if (idx !== -1) toasts.value.splice(idx, 1);
   }, 3000);
+}
+
+// ─── Monaco Editor Actions (built-in VS Code commands) ──
+function editorAction(actionId: string) {
+  if (!editor) return;
+  const action = editor.getAction(actionId);
+  if (action) action.run();
 }
 
 // ─── Tab Management ─────────────────────────────────
@@ -487,18 +533,13 @@ async function closeTab(filename: string) {
   const idx = openTabs.value.findIndex(t => t.name === filename);
   if (idx === -1) return;
 
-  // Save before closing if modified
   const tab = openTabs.value[idx];
   if (tab.modified && editor && currentFile.value === filename) {
     await saveCurrentFile();
   }
 
-  // Dispose model
   const model = fileModels.get(filename);
-  if (model) {
-    model.dispose();
-    fileModels.delete(filename);
-  }
+  if (model) { model.dispose(); fileModels.delete(filename); }
 
   openTabs.value.splice(idx, 1);
 
@@ -529,7 +570,6 @@ async function createNewFile() {
 }
 
 async function openFile(filename: string) {
-  // Save current file before switching
   if (currentFile.value && editor) {
     await saveCurrentFile();
   }
@@ -538,7 +578,6 @@ async function openFile(filename: string) {
   currentFile.value = filename;
   showCommandPalette.value = false;
 
-  // Load content from OPFS if not already in model cache
   let model = fileModels.get(filename);
   if (!model) {
     const content = await loadFile(filename) || '';
@@ -568,16 +607,13 @@ async function openFile(filename: string) {
 }
 
 async function initEditor(content: string, filename: string) {
+  // Monaco Editor — the core editor component from microsoft/vscode
   monacoModule = await import('monaco-editor');
 
-  // Configure Monaco environment for worker-less operation
   (self as any).MonacoEnvironment = {
-    getWorker() {
-      return null as any;
-    },
+    getWorker() { return null as any; },
   };
 
-  // Create initial model if not cached
   let model = fileModels.get(filename);
   if (!model) {
     const uri = monacoModule.Uri.parse(`file:///${filename}`);
@@ -589,20 +625,32 @@ async function initEditor(content: string, filename: string) {
     model,
     theme: 'vs-dark',
     automaticLayout: true,
+    // VS Code default editor settings
     minimap: { enabled: true },
     fontSize: 14,
+    fontFamily: "'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
+    fontLigatures: true,
     lineNumbers: 'on',
     scrollBeyondLastLine: false,
     wordWrap: wordWrapEnabled.value ? 'on' : 'off',
     tabSize: editorTabSize.value,
     renderWhitespace: 'selection',
     bracketPairColorization: { enabled: true },
-    guides: { bracketPairs: true },
+    guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
     smoothScrolling: true,
     cursorBlinking: 'smooth',
     cursorSmoothCaretAnimation: 'on',
     padding: { top: 8 },
-    suggest: { showMethods: true, showFunctions: true, showConstructors: true },
+    suggest: {
+      showMethods: true, showFunctions: true, showConstructors: true,
+      showFields: true, showVariables: true, showClasses: true,
+      showStructs: true, showInterfaces: true, showModules: true,
+      showProperties: true, showEvents: true, showOperators: true,
+      showUnits: true, showValues: true, showConstants: true,
+      showEnums: true, showEnumMembers: true, showKeywords: true,
+      showWords: true, showColors: true, showFiles: true,
+      showReferences: true, showSnippets: true,
+    },
     parameterHints: { enabled: true },
     folding: true,
     foldingStrategy: 'indentation',
@@ -612,6 +660,20 @@ async function initEditor(content: string, filename: string) {
     renderLineHighlight: 'all',
     colorDecorators: true,
     linkedEditing: true,
+    stickyScroll: { enabled: true },
+    inlayHints: { enabled: 'on' },
+    quickSuggestions: { other: true, comments: false, strings: true },
+    acceptSuggestionOnCommitCharacter: true,
+    tabCompletion: 'on',
+    snippetSuggestions: 'inline',
+    formatOnPaste: true,
+    formatOnType: true,
+    autoClosingBrackets: 'always',
+    autoClosingQuotes: 'always',
+    autoIndent: 'full',
+    dragAndDrop: true,
+    links: true,
+    mouseWheelZoom: true,
   });
 
   editor.onDidChangeModelContent(() => {
@@ -653,7 +715,6 @@ async function removeFile(filename: string) {
   if (!confirm(`Delete "${filename}"?`)) return;
   await deleteFile(filename);
 
-  // Close tab if open
   const tabIdx = openTabs.value.findIndex(t => t.name === filename);
   if (tabIdx !== -1) {
     const model = fileModels.get(filename);
@@ -680,8 +741,7 @@ function startRenaming(filename: string) {
   nextTick(() => {
     const input = renameInput.value;
     if (Array.isArray(input) && input[0]) {
-      input[0].focus();
-      input[0].select();
+      input[0].focus(); input[0].select();
     } else if (input && !Array.isArray(input)) {
       (input as HTMLInputElement).focus();
       (input as HTMLInputElement).select();
@@ -698,20 +758,14 @@ async function finishRename() {
   const oldName = renamingFile.value;
   const newName = renameValue.value.trim();
   renamingFile.value = null;
-
   if (!oldName || !newName || oldName === newName) return;
 
   const success = await renameFile(oldName, newName);
-  if (!success) {
-    notify('Failed to rename file', 'error');
-    return;
-  }
+  if (!success) { notify('Failed to rename file', 'error'); return; }
 
-  // Update tab
   const tab = openTabs.value.find(t => t.name === oldName);
   if (tab) {
     tab.name = newName;
-    // Update model
     const model = fileModels.get(oldName);
     if (model) {
       fileModels.delete(oldName);
@@ -796,11 +850,6 @@ function openSidebarSearch() {
   nextTick(() => sidebarSearchInput.value?.focus());
 }
 
-async function performSearch() {
-  if (!searchQuery.value) return;
-  searchResults.value = await searchInFiles(searchQuery.value);
-}
-
 async function performSidebarSearch() {
   if (!sidebarSearchQuery.value) {
     sidebarSearchResults.value = [];
@@ -809,16 +858,6 @@ async function performSidebarSearch() {
   }
   sidebarSearchResults.value = await searchInFiles(sidebarSearchQuery.value);
   sidebarSearchDone.value = true;
-}
-
-async function openSearchResult(result: SearchResult) {
-  showSearchPanel.value = false;
-  await openFile(result.file);
-  if (editor) {
-    editor.revealLineInCenter(result.line);
-    editor.setPosition({ lineNumber: result.line, column: 1 });
-    editor.focus();
-  }
 }
 
 async function openSearchResultFromSidebar(result: SearchResult) {
@@ -833,9 +872,7 @@ async function openSearchResultFromSidebar(result: SearchResult) {
 // ─── Editor Controls ────────────────────────────────
 function toggleWordWrap() {
   wordWrapEnabled.value = !wordWrapEnabled.value;
-  if (editor) {
-    editor.updateOptions({ wordWrap: wordWrapEnabled.value ? 'on' : 'off' });
-  }
+  if (editor) editor.updateOptions({ wordWrap: wordWrapEnabled.value ? 'on' : 'off' });
 }
 
 function toggleMinimap() {
@@ -847,9 +884,7 @@ function toggleMinimap() {
 
 function setTabSize(size: number) {
   editorTabSize.value = size;
-  if (editor) {
-    editor.getModel()?.updateOptions({ tabSize: size });
-  }
+  if (editor) editor.getModel()?.updateOptions({ tabSize: size });
 }
 
 function togglePanel(panel: 'explorer' | 'search') {
@@ -858,10 +893,201 @@ function togglePanel(panel: 'explorer' | 'search') {
   } else {
     activePanel.value = panel;
     sidebarVisible.value = true;
-    if (panel === 'search') {
-      nextTick(() => sidebarSearchInput.value?.focus());
+    if (panel === 'search') nextTick(() => sidebarSearchInput.value?.focus());
+  }
+}
+
+// ─── Terminal (xterm.js — VS Code's integrated terminal) ─
+const TERM_PROMPT = '\r\n\x1b[1;34mjs\x1b[0m \x1b[1;32m>\x1b[0m ';
+
+function toggleTerminal() {
+  terminalVisible.value = !terminalVisible.value;
+  if (terminalVisible.value) {
+    nextTick(() => initTerminal());
+  }
+}
+
+function initTerminal() {
+  if (terminalInitialized || !terminalContainer.value) return;
+  terminalInitialized = true;
+
+  terminal = new Terminal({
+    theme: {
+      background: '#1e1e1e',
+      foreground: '#cccccc',
+      cursor: '#aeafad',
+      selectionBackground: '#264f78',
+      black: '#1e1e1e',
+      red: '#f44747',
+      green: '#6a9955',
+      yellow: '#dcdcaa',
+      blue: '#569cd6',
+      magenta: '#c586c0',
+      cyan: '#4ec9b0',
+      white: '#d4d4d4',
+      brightBlack: '#808080',
+      brightRed: '#f44747',
+      brightGreen: '#6a9955',
+      brightYellow: '#dcdcaa',
+      brightBlue: '#569cd6',
+      brightMagenta: '#c586c0',
+      brightCyan: '#4ec9b0',
+      brightWhite: '#ffffff',
+    },
+    fontFamily: "'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
+    fontSize: 13,
+    cursorBlink: true,
+    convertEol: true,
+  });
+
+  fitAddon = new FitAddon();
+  terminal.loadAddon(fitAddon);
+  terminal.open(terminalContainer.value);
+  fitAddon.fit();
+
+  terminal.writeln('\x1b[1;36m  VS Code Terminal\x1b[0m \x1b[2m(powered by xterm.js from VS Code)\x1b[0m');
+  terminal.writeln('  JavaScript REPL + OPFS file commands. Type \x1b[1;33mhelp\x1b[0m for commands.');
+  terminal.write(TERM_PROMPT);
+
+  terminal.onData((data) => handleTerminalInput(data));
+
+  const resizeObserver = new ResizeObserver(() => {
+    if (fitAddon) fitAddon.fit();
+  });
+  resizeObserver.observe(terminalContainer.value);
+}
+
+function handleTerminalInput(data: string) {
+  if (!terminal) return;
+  for (const ch of data) {
+    if (ch === '\r') {
+      terminal.write('\r\n');
+      executeTerminalCommand(terminalInputBuffer.trim());
+      terminalInputBuffer = '';
+    } else if (ch === '\x7f') {
+      if (terminalInputBuffer.length > 0) {
+        terminalInputBuffer = terminalInputBuffer.slice(0, -1);
+        terminal.write('\b \b');
+      }
+    } else if (ch === '\x03') {
+      terminalInputBuffer = '';
+      terminal.write('^C');
+      terminal.write(TERM_PROMPT);
+    } else if (ch >= '\x20') {
+      terminalInputBuffer += ch;
+      terminal.write(ch);
     }
   }
+}
+
+async function executeTerminalCommand(input: string) {
+  if (!terminal) return;
+  if (!input) { terminal.write(TERM_PROMPT); return; }
+
+  const parts = input.split(/\s+/);
+  const cmd = parts[0];
+  const args = parts.slice(1);
+
+  try {
+    switch (cmd) {
+      case 'help':
+        terminal.writeln('\x1b[1;33mAvailable commands:\x1b[0m');
+        terminal.writeln('  \x1b[1;32mls\x1b[0m              List files in OPFS');
+        terminal.writeln('  \x1b[1;32mcat\x1b[0m <file>       Show file contents');
+        terminal.writeln('  \x1b[1;32mtouch\x1b[0m <file>     Create an empty file');
+        terminal.writeln('  \x1b[1;32mrm\x1b[0m <file>        Delete a file');
+        terminal.writeln('  \x1b[1;32mecho\x1b[0m <text>      Print text');
+        terminal.writeln('  \x1b[1;32mwc\x1b[0m <file>        Word/line/char count');
+        terminal.writeln('  \x1b[1;32mhead\x1b[0m <file> [n]  Show first n lines');
+        terminal.writeln('  \x1b[1;32mclear\x1b[0m            Clear the terminal');
+        terminal.writeln('  \x1b[1;32mhelp\x1b[0m             Show this help');
+        terminal.writeln('  \x1b[1;36m<expr>\x1b[0m           Evaluate JavaScript');
+        break;
+
+      case 'ls': {
+        const allFiles = await listFiles();
+        if (allFiles.length === 0) {
+          terminal.writeln('\x1b[2m(no files)\x1b[0m');
+        } else {
+          for (const f of allFiles) terminal.writeln(`  \x1b[1;34m${f}\x1b[0m`);
+          terminal.writeln(`\x1b[2m${allFiles.length} file(s)\x1b[0m`);
+        }
+        break;
+      }
+
+      case 'cat': {
+        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: cat <filename>\x1b[0m'); break; }
+        const content = await loadFile(args[0]);
+        if (content === null) {
+          terminal.writeln(`\x1b[1;31mFile not found: ${args[0]}\x1b[0m`);
+        } else {
+          for (const line of content.split('\n')) terminal.writeln(line);
+        }
+        break;
+      }
+
+      case 'touch': {
+        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: touch <filename>\x1b[0m'); break; }
+        await saveFile(args[0], '');
+        await refreshFiles();
+        terminal.writeln(`\x1b[1;32mCreated ${args[0]}\x1b[0m`);
+        break;
+      }
+
+      case 'rm': {
+        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: rm <filename>\x1b[0m'); break; }
+        const ok = await deleteFile(args[0]);
+        await refreshFiles();
+        terminal.writeln(ok ? `\x1b[1;32mDeleted ${args[0]}\x1b[0m` : `\x1b[1;31mFailed: ${args[0]}\x1b[0m`);
+        break;
+      }
+
+      case 'echo':
+        terminal.writeln(args.join(' '));
+        break;
+
+      case 'wc': {
+        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: wc <filename>\x1b[0m'); break; }
+        const wc = await loadFile(args[0]);
+        if (wc === null) { terminal.writeln(`\x1b[1;31mFile not found: ${args[0]}\x1b[0m`); break; }
+        terminal.writeln(`  ${wc.split('\n').length} lines, ${wc.split(/\s+/).filter(Boolean).length} words, ${wc.length} chars`);
+        break;
+      }
+
+      case 'head': {
+        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: head <file> [n]\x1b[0m'); break; }
+        const hc = await loadFile(args[0]);
+        if (hc === null) { terminal.writeln(`\x1b[1;31mFile not found: ${args[0]}\x1b[0m`); break; }
+        for (const line of hc.split('\n').slice(0, parseInt(args[1]) || 10)) terminal.writeln(line);
+        break;
+      }
+
+      case 'clear':
+        terminal.clear();
+        break;
+
+      default: {
+        try {
+          const result = (0, eval)(input);
+          if (result !== undefined) {
+            const str = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
+            for (const line of str.split('\n')) terminal.writeln(`\x1b[1;33m${line}\x1b[0m`);
+          }
+        } catch (e: any) {
+          terminal.writeln(`\x1b[1;31m${e.message || e}\x1b[0m`);
+        }
+        break;
+      }
+    }
+  } catch (e: any) {
+    terminal.writeln(`\x1b[1;31mError: ${e.message || e}\x1b[0m`);
+  }
+
+  terminal.write(TERM_PROMPT);
+}
+
+function clearTerminal() {
+  if (terminal) terminal.clear();
 }
 
 // ─── Keyboard Shortcuts ─────────────────────────────
@@ -870,29 +1096,24 @@ function handleKeydown(e: KeyboardEvent) {
   const shift = e.shiftKey;
 
   if (ctrl && shift && e.key === 'P') {
-    e.preventDefault();
-    openCommandPalette('commands');
+    e.preventDefault(); openCommandPalette('commands');
   } else if (ctrl && !shift && e.key === 'p') {
-    e.preventDefault();
-    openCommandPalette('files');
+    e.preventDefault(); openCommandPalette('files');
   } else if (ctrl && e.key === 'n') {
-    e.preventDefault();
-    createNewFile();
+    e.preventDefault(); createNewFile();
   } else if (ctrl && e.key === 's') {
-    e.preventDefault();
-    saveCurrentFile();
+    e.preventDefault(); saveCurrentFile();
   } else if (ctrl && e.key === 'w') {
     e.preventDefault();
     if (currentFile.value) closeTab(currentFile.value);
   } else if (ctrl && shift && e.key === 'F') {
-    e.preventDefault();
-    openSidebarSearch();
+    e.preventDefault(); openSidebarSearch();
   } else if (ctrl && e.key === 'b') {
-    e.preventDefault();
-    sidebarVisible.value = !sidebarVisible.value;
+    e.preventDefault(); sidebarVisible.value = !sidebarVisible.value;
+  } else if (ctrl && e.key === '`') {
+    e.preventDefault(); toggleTerminal();
   } else if (e.key === 'F2' && currentFile.value) {
-    e.preventDefault();
-    startRenaming(currentFile.value);
+    e.preventDefault(); startRenaming(currentFile.value);
   }
 }
 
@@ -906,9 +1127,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
   if (saveTimeout) clearTimeout(saveTimeout);
   if (editor) editor.dispose();
-  for (const model of fileModels.values()) {
-    model.dispose();
-  }
+  if (terminal) terminal.dispose();
+  for (const model of fileModels.values()) model.dispose();
   fileModels.clear();
 });
 </script>
@@ -923,7 +1143,11 @@ onBeforeUnmount(() => {
   color: #cccccc;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   position: relative;
+  overflow: hidden;
 }
+
+/* ─── Codicon base tweaks ──────────────────────── */
+.codicon { font-size: 16px; line-height: 1; }
 
 /* ─── Activity Bar ─────────────────────────────── */
 .activity-bar {
@@ -952,18 +1176,10 @@ onBeforeUnmount(() => {
   transition: color 0.15s;
 }
 
-.activity-btn:hover {
-  color: #ffffff;
-}
-
-.activity-btn.active {
-  color: #ffffff;
-  border-left-color: #ffffff;
-}
-
-.activity-spacer {
-  flex: 1;
-}
+.activity-btn .codicon { font-size: 24px; }
+.activity-btn:hover { color: #ffffff; }
+.activity-btn.active { color: #ffffff; border-left-color: #ffffff; }
+.activity-spacer { flex: 1; }
 
 /* ─── Sidebar ──────────────────────────────────── */
 .sidebar {
@@ -983,16 +1199,13 @@ onBeforeUnmount(() => {
   padding: 0 12px;
   height: 35px;
   min-height: 35px;
-  font-size: 0.7rem;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.1em;
   color: #bbbbbb;
 }
 
-.sidebar-actions {
-  display: flex;
-  gap: 4px;
-}
+.sidebar-actions { display: flex; gap: 2px; }
 
 .icon-btn {
   background: none;
@@ -1000,22 +1213,18 @@ onBeforeUnmount(() => {
   color: #cccccc;
   cursor: pointer;
   border-radius: 3px;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
 }
 
-.icon-btn:hover {
-  background: #3c3c3c;
-}
+.icon-btn:hover { background: #3c3c3c; }
+.icon-btn .codicon { font-size: 16px; }
 
-.file-list {
-  flex: 1;
-  overflow-y: auto;
-}
+.file-list { flex: 1; overflow-y: auto; }
 
 .file-item {
   display: flex;
@@ -1028,20 +1237,15 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.file-item:hover {
-  background: #2a2d2e;
-}
+.file-item:hover { background: #2a2d2e; }
+.file-item.active { background: #37373d; color: #ffffff; }
 
-.file-item.active {
-  background: #37373d;
-  color: #ffffff;
-}
-
-.file-icon {
-  font-size: 12px;
+.file-codicon {
+  font-size: 14px;
   flex-shrink: 0;
   width: 16px;
   text-align: center;
+  color: #75beff;
 }
 
 .file-name {
@@ -1067,27 +1271,34 @@ onBeforeUnmount(() => {
   background: none;
   border: none;
   color: #888;
-  font-size: 14px;
   cursor: pointer;
   opacity: 0;
-  padding: 0 2px;
+  padding: 0;
   line-height: 1;
+  display: flex;
+  align-items: center;
 }
 
-.file-item:hover .delete-btn {
-  opacity: 1;
-}
-
-.delete-btn:hover {
-  color: #e06c75;
-}
+.delete-btn .codicon { font-size: 14px; }
+.file-item:hover .delete-btn { opacity: 1; }
+.delete-btn:hover { color: #e06c75; }
 
 .empty-hint {
   padding: 16px 12px;
   text-align: center;
   color: #666;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.8;
+}
+
+.empty-hint .codicon { font-size: 32px; color: #555; display: block; margin-bottom: 8px; }
+.empty-hint kbd {
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: monospace;
 }
 
 /* ─── Sidebar Search ───────────────────────────── */
@@ -1100,31 +1311,32 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.search-input-wrapper { position: relative; }
+
+.search-icon {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: #888;
+}
+
 .sidebar-search-field {
   width: 100%;
   background: #3c3c3c;
   color: #cccccc;
   border: 1px solid #3c3c3c;
   outline: none;
-  padding: 4px 8px;
+  padding: 4px 8px 4px 26px;
   font-size: 13px;
   border-radius: 2px;
 }
 
-.sidebar-search-field:focus {
-  border-color: #007acc;
-}
+.sidebar-search-field:focus { border-color: #007acc; }
 
-.search-results-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.search-results-count {
-  font-size: 11px;
-  color: #888;
-  padding: 4px 0;
-}
+.search-results-list { flex: 1; overflow-y: auto; }
+.search-results-count { font-size: 11px; color: #888; padding: 4px 0; }
 
 .search-result-entry {
   padding: 4px 0;
@@ -1132,15 +1344,18 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #3c3c3c;
 }
 
-.search-result-entry:hover {
-  background: #2a2d2e;
-}
+.search-result-entry:hover { background: #2a2d2e; }
 
 .search-result-header {
   font-size: 12px;
   color: #e8a838;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
+
+.search-result-header .codicon { font-size: 12px; }
 
 .search-result-preview {
   font-size: 12px;
@@ -1156,6 +1371,10 @@ onBeforeUnmount(() => {
   color: #666;
   padding: 8px 0;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
 /* ─── Main Area ────────────────────────────────── */
@@ -1177,18 +1396,13 @@ onBeforeUnmount(() => {
   max-height: 35px;
 }
 
-.tab-bar::-webkit-scrollbar {
-  height: 3px;
-}
-
-.tab-bar::-webkit-scrollbar-thumb {
-  background: #555;
-}
+.tab-bar::-webkit-scrollbar { height: 3px; }
+.tab-bar::-webkit-scrollbar-thumb { background: #555; }
 
 .tab {
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 10px;
   height: 35px;
   cursor: pointer;
   font-size: 13px;
@@ -1197,13 +1411,10 @@ onBeforeUnmount(() => {
   background: #2d2d2d;
   color: #969696;
   white-space: nowrap;
-  min-width: 0;
   flex-shrink: 0;
 }
 
-.tab:hover {
-  background: #2d2d2d;
-}
+.tab:hover { background: #2d2d2d; }
 
 .tab.active {
   background: #1e1e1e;
@@ -1212,31 +1423,19 @@ onBeforeUnmount(() => {
   margin-bottom: -1px;
 }
 
-.tab-icon {
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tab-dot {
-  color: #e8a838;
-  font-size: 14px;
-  flex-shrink: 0;
-}
+.tab-codicon { font-size: 14px; flex-shrink: 0; color: #75beff; }
+.tab-label { overflow: hidden; text-overflow: ellipsis; }
+.tab-dot { color: #e8a838; flex-shrink: 0; }
+.tab-dot .codicon { font-size: 10px; }
 
 .tab-close {
   background: none;
   border: none;
   color: transparent;
-  font-size: 16px;
   cursor: pointer;
   padding: 0;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1244,14 +1443,9 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.tab:hover .tab-close {
-  color: #969696;
-}
-
-.tab-close:hover {
-  background: #3c3c3c;
-  color: #ffffff;
-}
+.tab-close .codicon { font-size: 14px; }
+.tab:hover .tab-close { color: #969696; }
+.tab-close:hover { background: #3c3c3c; color: #ffffff; }
 
 /* ─── Breadcrumbs ──────────────────────────────── */
 .breadcrumbs {
@@ -1267,25 +1461,72 @@ onBeforeUnmount(() => {
   color: #969696;
 }
 
-.breadcrumb-item {
-  cursor: pointer;
-}
-
-.breadcrumb-item:hover {
-  color: #cccccc;
-}
-
-.breadcrumb-sep {
-  color: #555;
-}
-
-.breadcrumb-lang {
-  color: #777;
-}
+.breadcrumb-home { cursor: pointer; font-size: 14px; }
+.breadcrumb-home:hover { color: #cccccc; }
+.breadcrumb-sep { font-size: 12px; color: #555; }
+.breadcrumb-icon { font-size: 12px; color: #75beff; }
+.breadcrumb-item { cursor: default; }
+.breadcrumb-lang { color: #777; }
 
 /* ─── Editor ───────────────────────────────────── */
-#monaco-container {
+#monaco-container { flex: 1; overflow: hidden; }
+
+/* ─── Terminal Panel (xterm.js) ────────────────── */
+.terminal-panel {
+  border-top: 1px solid #3c3c3c;
+  display: flex;
+  flex-direction: column;
+  height: 250px;
+  min-height: 120px;
+  background: #1e1e1e;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 35px;
+  min-height: 35px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  padding: 0 8px;
+}
+
+.terminal-tabs { display: flex; align-items: center; gap: 4px; }
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #cccccc;
+  padding: 0 8px;
+  height: 35px;
+  border-bottom: 1px solid #cccccc;
+  margin-bottom: -1px;
+}
+
+.terminal-tab .codicon { font-size: 14px; }
+.terminal-actions { display: flex; gap: 2px; }
+
+.terminal-action-btn {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.terminal-action-btn:hover { background: #3c3c3c; color: #cccccc; }
+
+.terminal-body {
   flex: 1;
+  padding: 4px 0 4px 8px;
   overflow: hidden;
 }
 
@@ -1302,31 +1543,21 @@ onBeforeUnmount(() => {
   padding: 0 8px;
 }
 
-.status-left, .status-right {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
+.status-left, .status-right { display: flex; align-items: center; gap: 2px; }
 
 .status-item {
   padding: 0 6px;
   height: 22px;
   display: flex;
   align-items: center;
+  gap: 4px;
   white-space: nowrap;
 }
 
-.status-item.clickable {
-  cursor: pointer;
-}
-
-.status-item.clickable:hover {
-  background: rgba(255,255,255,0.12);
-}
-
-.save-indicator {
-  font-weight: 500;
-}
+.status-item .codicon { font-size: 14px; }
+.status-item.clickable { cursor: pointer; }
+.status-item.clickable:hover { background: rgba(255,255,255,0.12); }
+.save-indicator { font-weight: 500; }
 
 /* ─── Welcome Page ─────────────────────────────── */
 .welcome {
@@ -1340,14 +1571,12 @@ onBeforeUnmount(() => {
 
 .welcome-content {
   text-align: center;
-  max-width: 600px;
+  max-width: 650px;
   padding: 2rem;
 }
 
-.welcome-logo {
-  font-size: 4rem;
-  margin-bottom: 0.5rem;
-}
+.welcome-logo { margin-bottom: 0.5rem; }
+.welcome-code-icon { font-size: 72px !important; color: #007acc; }
 
 .welcome-content h1 {
   font-size: 2rem;
@@ -1356,11 +1585,7 @@ onBeforeUnmount(() => {
   color: #cccccc;
 }
 
-.welcome-subtitle {
-  color: #666;
-  margin-bottom: 2rem;
-  font-size: 1rem;
-}
+.welcome-subtitle { color: #666; margin-bottom: 2rem; font-size: 1rem; }
 
 .welcome-sections {
   display: grid;
@@ -1370,68 +1595,76 @@ onBeforeUnmount(() => {
 }
 
 .welcome-section h3 {
-  font-size: 0.8rem;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #888;
-  margin-bottom: 0.5rem;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+
+.welcome-section h3 .codicon { font-size: 14px; }
 
 .welcome-link {
-  font-size: 0.85rem;
+  font-size: 13px;
   color: #3794ff;
   cursor: pointer;
-  padding: 2px 0;
+  padding: 3px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.welcome-link:hover {
-  text-decoration: underline;
-}
-
-.welcome-hint {
-  font-size: 0.8rem;
-  color: #555;
-}
+.welcome-link .codicon { font-size: 14px; }
+.welcome-link:hover { text-decoration: underline; }
+.welcome-hint { font-size: 12px; color: #555; }
 
 .shortcut-row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 2px 0;
-  font-size: 0.8rem;
+  font-size: 12px;
 }
 
-.shortcut-row span {
-  color: #999;
-}
+.shortcut-row span { color: #999; }
 
 kbd {
   background: #333;
   border: 1px solid #555;
   border-radius: 3px;
   padding: 1px 6px;
-  font-size: 0.75rem;
+  font-size: 11px;
   font-family: monospace;
   color: #ccc;
   white-space: nowrap;
 }
 
+.welcome-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #333;
+}
+
+.welcome-powered { font-size: 12px; color: #666; }
+.welcome-powered a { color: #3794ff; text-decoration: none; }
+.welcome-powered a:hover { text-decoration: underline; }
+
 /* ─── Command Palette ──────────────────────────── */
 .palette-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   z-index: 1000;
   display: flex;
   justify-content: center;
-  padding-top: 15vh;
+  padding-top: 12vh;
 }
 
 .palette {
-  width: 500px;
+  width: 520px;
   max-width: 90vw;
   background: #252526;
   border: 1px solid #3c3c3c;
@@ -1443,20 +1676,26 @@ kbd {
   flex-direction: column;
 }
 
+.palette-input-row { display: flex; align-items: center; position: relative; }
+
+.palette-input-icon {
+  position: absolute;
+  left: 12px;
+  font-size: 14px;
+  color: #888;
+}
+
 .palette-input {
   width: 100%;
   background: #3c3c3c;
   color: #cccccc;
   border: none;
   outline: none;
-  padding: 10px 14px;
+  padding: 10px 14px 10px 34px;
   font-size: 14px;
 }
 
-.palette-results {
-  overflow-y: auto;
-  flex: 1;
-}
+.palette-results { overflow-y: auto; flex: 1; }
 
 .palette-item {
   display: flex;
@@ -1467,20 +1706,17 @@ kbd {
   font-size: 13px;
 }
 
-.palette-item:hover, .palette-item.active {
-  background: #062f4a;
-}
+.palette-item:hover, .palette-item.active { background: #062f4a; }
 
-.palette-icon {
+.palette-item-icon {
+  flex-shrink: 0;
+  font-size: 16px;
   width: 20px;
   text-align: center;
-  flex-shrink: 0;
-  font-size: 12px;
+  color: #75beff;
 }
 
-.palette-label {
-  flex: 1;
-}
+.palette-label { flex: 1; }
 
 .palette-shortcut {
   font-size: 11px;
@@ -1492,131 +1728,7 @@ kbd {
   font-family: monospace;
 }
 
-.palette-empty {
-  padding: 12px 14px;
-  color: #666;
-  font-size: 13px;
-}
-
-/* ─── Search Panel ─────────────────────────────── */
-.search-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 900;
-  display: flex;
-  justify-content: center;
-  padding-top: 15vh;
-}
-
-.search-panel {
-  width: 500px;
-  max-width: 90vw;
-  background: #252526;
-  border: 1px solid #3c3c3c;
-  border-radius: 6px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-  overflow: hidden;
-  max-height: 400px;
-  display: flex;
-  flex-direction: column;
-}
-
-.search-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  border-bottom: 1px solid #3c3c3c;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #888;
-  font-size: 18px;
-  cursor: pointer;
-}
-
-.close-btn:hover {
-  color: #ccc;
-}
-
-.search-input-row {
-  display: flex;
-  padding: 8px 14px;
-  gap: 8px;
-}
-
-.search-field {
-  flex: 1;
-  background: #3c3c3c;
-  color: #cccccc;
-  border: 1px solid #3c3c3c;
-  outline: none;
-  padding: 6px 10px;
-  font-size: 13px;
-  border-radius: 2px;
-}
-
-.search-field:focus {
-  border-color: #007acc;
-}
-
-.search-go-btn {
-  background: #007acc;
-  color: white;
-  border: none;
-  padding: 6px 14px;
-  border-radius: 2px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.search-go-btn:hover {
-  background: #005a9e;
-}
-
-.search-results {
-  overflow-y: auto;
-  flex: 1;
-  padding: 0 14px 8px;
-}
-
-.search-empty {
-  color: #666;
-  font-size: 13px;
-  padding: 8px 0;
-}
-
-.search-result-item {
-  padding: 6px 0;
-  cursor: pointer;
-  border-bottom: 1px solid #333;
-}
-
-.search-result-item:hover {
-  background: #2a2d2e;
-}
-
-.search-result-file {
-  font-size: 12px;
-  color: #e8a838;
-  font-weight: 500;
-}
-
-.search-result-text {
-  display: block;
-  font-size: 12px;
-  color: #aaa;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.palette-empty { padding: 12px 14px; color: #666; font-size: 13px; }
 
 /* ─── Context Menu ─────────────────────────────── */
 .context-menu {
@@ -1626,7 +1738,7 @@ kbd {
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   z-index: 2000;
-  min-width: 160px;
+  min-width: 180px;
   padding: 4px 0;
 }
 
@@ -1635,29 +1747,20 @@ kbd {
   font-size: 13px;
   cursor: pointer;
   color: #cccccc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.context-item:hover {
-  background: #094771;
-}
+.context-item .codicon { font-size: 14px; }
+.context-item:hover { background: #094771; }
+.context-item.danger:hover { background: #5a1d1d; color: #e06c75; }
 
-.context-item.danger:hover {
-  background: #5a1d1d;
-  color: #e06c75;
-}
-
-.context-separator {
-  height: 1px;
-  background: #3c3c3c;
-  margin: 4px 0;
-}
+.context-separator { height: 1px; background: #3c3c3c; margin: 4px 0; }
 
 .click-blocker {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   z-index: 1999;
 }
 
@@ -1673,18 +1776,25 @@ kbd {
 }
 
 .toast {
-  background: #333;
+  background: #252526;
   color: #ccc;
-  padding: 8px 16px;
+  padding: 10px 16px;
   border-radius: 4px;
   font-size: 13px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  animation: slideIn 0.2s ease-out;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  animation: slideIn 0.25s ease-out;
   border-left: 3px solid #007acc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
+.toast .codicon { font-size: 16px; }
 .toast.success { border-left-color: #22c55e; }
+.toast.success .codicon { color: #22c55e; }
 .toast.error { border-left-color: #e06c75; }
+.toast.error .codicon { color: #e06c75; }
+.toast.info .codicon { color: #007acc; }
 
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }

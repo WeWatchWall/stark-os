@@ -56,7 +56,7 @@
       <div class="context-item danger" @click="deleteFileFromContext"><i class="codicon codicon-trash"></i> Delete</div>
     </div>
 
-    <!-- Activity bar (from VS Code's workbench) -->
+    <!-- Activity bar -->
     <div class="activity-bar">
       <button
         class="activity-btn"
@@ -334,7 +334,7 @@
       <div v-if="!currentFile" class="welcome">
         <div class="welcome-content">
           <div class="welcome-logo"><i class="codicon codicon-code welcome-code-icon"></i></div>
-          <h1>Visual Studio Code</h1>
+          <h1>Stark Code</h1>
           <p class="welcome-subtitle">Editing evolved</p>
 
           <div class="welcome-sections">
@@ -374,15 +374,14 @@
             <span class="welcome-powered">
               Powered by
               <a href="https://github.com/microsoft/monaco-editor" target="_blank">Monaco Editor</a>,
-              <a href="https://github.com/microsoft/vscode-codicons" target="_blank">@vscode/codicons</a>,
+              <a href="https://github.com/microsoft/vscode-codicons" target="_blank">Codicons</a>,
               and <a href="https://github.com/xtermjs/xterm.js" target="_blank">xterm.js</a>
-              from the VS Code ecosystem
             </span>
           </div>
         </div>
       </div>
 
-      <!-- Terminal panel (xterm.js — VS Code's integrated terminal) -->
+      <!-- Terminal panel (xterm.js integrated terminal) -->
       <div v-if="terminalVisible" class="terminal-panel">
         <div class="terminal-header">
           <div class="terminal-tabs">
@@ -436,7 +435,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
-// VS Code ecosystem: xterm.js terminal emulator (used by VS Code's integrated terminal)
+// xterm.js terminal emulator
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -531,7 +530,7 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let isLoadingFile = false;
 const fileModels = new Map<string, any>();
 
-// Terminal internals (xterm.js from VS Code)
+// Terminal internals (xterm.js)
 let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
 let terminalInputBuffer = '';
@@ -544,6 +543,104 @@ const selectedExt = ref<Extension | null>(null);
 const extState = ref<ExtensionState>({ installed: [], enabled: [] });
 const extCategories = getCategories();
 const activeExtDisposers = new Map<string, () => void>();
+
+// ─── Extension Computed & Functions ─────────────────
+const installedExtensions = computed(() =>
+  extensionCatalog.filter(e => extState.value.installed.includes(e.id))
+);
+
+const filteredCatalog = computed(() => {
+  let list = extensionCatalog;
+  if (extSearchQuery.value) {
+    const q = extSearchQuery.value.toLowerCase();
+    list = list.filter(e =>
+      e.displayName.toLowerCase().includes(q) ||
+      e.description.toLowerCase().includes(q) ||
+      e.publisher.toLowerCase().includes(q)
+    );
+  }
+  if (extCategoryFilter.value) {
+    list = list.filter(e => e.category === extCategoryFilter.value);
+  }
+  // When showing "Marketplace" subsection, hide already-installed ones
+  if (!extSearchQuery.value && !extCategoryFilter.value) {
+    list = list.filter(e => !extState.value.installed.includes(e.id));
+  }
+  return list;
+});
+
+function isInstalled(id: string): boolean {
+  return extState.value.installed.includes(id);
+}
+
+function isEnabled(id: string): boolean {
+  return extState.value.enabled.includes(id);
+}
+
+async function refreshExtensionState() {
+  extState.value = await loadExtensionState();
+}
+
+async function installExtension(id: string) {
+  if (extState.value.installed.includes(id)) return;
+  extState.value.installed.push(id);
+  extState.value.enabled.push(id);
+  await saveExtensionState(extState.value);
+  applyExt(id);
+  const ext = extensionCatalog.find(e => e.id === id);
+  notify(`Installed: ${ext?.displayName || id}`, 'success');
+}
+
+async function uninstallExtension(id: string) {
+  unapplyExt(id);
+  extState.value.installed = extState.value.installed.filter(e => e !== id);
+  extState.value.enabled = extState.value.enabled.filter(e => e !== id);
+  await saveExtensionState(extState.value);
+  selectedExt.value = null;
+  const ext = extensionCatalog.find(e => e.id === id);
+  notify(`Uninstalled: ${ext?.displayName || id}`, 'info');
+}
+
+async function enableExtension(id: string) {
+  if (!extState.value.enabled.includes(id)) {
+    extState.value.enabled.push(id);
+  }
+  await saveExtensionState(extState.value);
+  applyExt(id);
+  const ext = extensionCatalog.find(e => e.id === id);
+  notify(`Enabled: ${ext?.displayName || id}`, 'success');
+}
+
+async function disableExtension(id: string) {
+  unapplyExt(id);
+  extState.value.enabled = extState.value.enabled.filter(e => e !== id);
+  await saveExtensionState(extState.value);
+  const ext = extensionCatalog.find(e => e.id === id);
+  notify(`Disabled: ${ext?.displayName || id}`, 'info');
+}
+
+function applyExt(id: string) {
+  if (activeExtDisposers.has(id)) return; // already applied
+  if (!monacoModule || !editor) return;
+  const disposer = applyExtension(id, editor, monacoModule);
+  if (disposer) activeExtDisposers.set(id, disposer);
+}
+
+function unapplyExt(id: string) {
+  const disposer = activeExtDisposers.get(id);
+  if (disposer) {
+    disposer();
+    activeExtDisposers.delete(id);
+  }
+}
+
+function applyAllEnabledExtensions() {
+  if (!monacoModule) return;
+  defineCustomThemes(monacoModule);
+  for (const id of extState.value.enabled) {
+    applyExt(id);
+  }
+}
 
 // ─── Computed ───────────────────────────────────────
 const saveStatusText = computed(() => {
@@ -572,6 +669,8 @@ const commandList = computed<PaletteItem[]>(() => [
   { codicon: 'replace', label: 'Find and Replace', shortcut: 'Ctrl+H', action: () => editorAction('editor.action.startFindReplaceAction') },
   { codicon: 'go-to-file', label: 'Go to Line', shortcut: 'Ctrl+G', action: () => editorAction('editor.action.gotoLine') },
   { codicon: 'symbol-method', label: 'Format Document', shortcut: 'Shift+Alt+F', action: () => editorAction('editor.action.formatDocument') },
+  { codicon: 'extensions', label: 'Show Extensions', shortcut: 'Ctrl+Shift+X', action: () => togglePanel('extensions') },
+  { codicon: 'extensions', label: 'Install Extension...', action: () => { togglePanel('extensions'); extSearchQuery.value = ''; } },
 ]);
 
 const filteredPaletteItems = computed<PaletteItem[]>(() => {
@@ -652,7 +751,7 @@ function notify(message: string, type: ToastMsg['type'] = 'info') {
   }, 3000);
 }
 
-// ─── Monaco Editor Actions (built-in VS Code commands) ──
+// ─── Monaco Editor Actions (built-in editor commands) ──
 function editorAction(actionId: string) {
   if (!editor) return;
   const action = editor.getAction(actionId);
@@ -752,7 +851,7 @@ async function openFile(filename: string) {
 }
 
 async function initEditor(content: string, filename: string) {
-  // Monaco Editor — the core editor component from microsoft/vscode
+  // Monaco Editor — the core editor component
   monacoModule = await import('monaco-editor');
 
   (self as any).MonacoEnvironment = {
@@ -770,7 +869,7 @@ async function initEditor(content: string, filename: string) {
     model,
     theme: 'vs-dark',
     automaticLayout: true,
-    // VS Code default editor settings
+    // Editor settings
     minimap: { enabled: true },
     fontSize: 14,
     fontFamily: "'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
@@ -832,6 +931,9 @@ async function initEditor(content: string, filename: string) {
     cursorLine.value = e.position.lineNumber;
     cursorColumn.value = e.position.column;
   });
+
+  // Apply enabled extensions after editor is ready
+  applyAllEnabledExtensions();
 }
 
 function scheduleSave() {
@@ -1032,7 +1134,7 @@ function setTabSize(size: number) {
   if (editor) editor.getModel()?.updateOptions({ tabSize: size });
 }
 
-function togglePanel(panel: 'explorer' | 'search') {
+function togglePanel(panel: 'explorer' | 'search' | 'extensions') {
   if (activePanel.value === panel && sidebarVisible.value) {
     sidebarVisible.value = false;
   } else {
@@ -1042,7 +1144,7 @@ function togglePanel(panel: 'explorer' | 'search') {
   }
 }
 
-// ─── Terminal (xterm.js — VS Code's integrated terminal) ─
+// ─── Terminal (xterm.js integrated terminal) ─
 const TERM_PROMPT = '\r\n\x1b[1;34mjs\x1b[0m \x1b[1;32m>\x1b[0m ';
 
 function toggleTerminal() {
@@ -1090,7 +1192,7 @@ function initTerminal() {
   terminal.open(terminalContainer.value);
   fitAddon.fit();
 
-  terminal.writeln('\x1b[1;36m  VS Code Terminal\x1b[0m \x1b[2m(powered by xterm.js from VS Code)\x1b[0m');
+  terminal.writeln('\x1b[1;36m  Stark Code Terminal\x1b[0m \x1b[2m(powered by xterm.js)\x1b[0m');
   terminal.writeln('  JavaScript REPL + OPFS file commands. Type \x1b[1;33mhelp\x1b[0m for commands.');
   terminal.write(TERM_PROMPT);
 
@@ -1253,6 +1355,8 @@ function handleKeydown(e: KeyboardEvent) {
     if (currentFile.value) closeTab(currentFile.value);
   } else if (ctrl && shift && e.key === 'F') {
     e.preventDefault(); openSidebarSearch();
+  } else if (ctrl && shift && e.key === 'X') {
+    e.preventDefault(); togglePanel('extensions');
   } else if (ctrl && e.key === 'b') {
     e.preventDefault(); sidebarVisible.value = !sidebarVisible.value;
   } else if (ctrl && e.key === '`') {
@@ -1265,6 +1369,7 @@ function handleKeydown(e: KeyboardEvent) {
 // ─── Lifecycle ──────────────────────────────────────
 onMounted(async () => {
   await refreshFiles();
+  await refreshExtensionState();
   window.addEventListener('keydown', handleKeydown);
 });
 
@@ -1273,6 +1378,8 @@ onBeforeUnmount(() => {
   if (saveTimeout) clearTimeout(saveTimeout);
   if (editor) editor.dispose();
   if (terminal) terminal.dispose();
+  for (const disposer of activeExtDisposers.values()) disposer();
+  activeExtDisposers.clear();
   for (const model of fileModels.values()) model.dispose();
   fileModels.clear();
 });
@@ -1945,4 +2052,199 @@ kbd {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* ─── Extensions Panel ─────────────────────────── */
+.ext-search-wrapper { padding: 8px 12px 4px; }
+
+.ext-category-bar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 12px 6px;
+  flex-wrap: wrap;
+}
+
+.ext-cat-btn {
+  background: none;
+  border: 1px solid #3c3c3c;
+  color: #888;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ext-cat-btn:hover { color: #ccc; border-color: #555; }
+.ext-cat-btn.active { color: #fff; border-color: #007acc; background: #007acc; }
+
+.ext-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #888;
+  padding: 8px 12px 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ext-section-label .codicon { font-size: 12px; }
+
+.ext-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ext-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  gap: 8px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.ext-item:hover { background: #2a2d2e; }
+.ext-item.selected { background: #37373d; border-left-color: #007acc; }
+
+.ext-icon {
+  width: 32px;
+  height: 32px;
+  background: #3c3c3c;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ext-icon .codicon { font-size: 18px; color: #75beff; }
+
+.ext-info { flex: 1; min-width: 0; }
+
+.ext-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #cccccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ext-publisher {
+  font-size: 11px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ext-badge {
+  flex-shrink: 0;
+}
+
+.ext-badge.installed .codicon {
+  font-size: 14px;
+  color: #22c55e;
+}
+
+.ext-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: #666;
+  font-size: 12px;
+}
+
+/* Extension detail panel */
+.ext-detail {
+  border-top: 1px solid #3c3c3c;
+  padding: 10px 12px;
+  flex-shrink: 0;
+}
+
+.ext-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ext-detail-icon {
+  width: 40px;
+  height: 40px;
+  background: #3c3c3c;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ext-detail-icon .codicon { font-size: 22px; color: #75beff; }
+
+.ext-detail-meta { flex: 1; min-width: 0; }
+
+.ext-detail-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #cccccc;
+}
+
+.ext-detail-pub {
+  font-size: 11px;
+  color: #888;
+}
+
+.ext-detail-desc {
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.ext-detail-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.ext-detail-stats .codicon { font-size: 12px; }
+
+.ext-detail-cat {
+  background: #333;
+  border: 1px solid #555;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.ext-detail-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ext-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ext-btn .codicon { font-size: 12px; }
+.ext-btn.install { background: #007acc; color: #fff; }
+.ext-btn.install:hover { background: #006bb3; }
+.ext-btn.enable { background: #007acc; color: #fff; }
+.ext-btn.enable:hover { background: #006bb3; }
+.ext-btn.disable { background: #3c3c3c; color: #ccc; }
+.ext-btn.disable:hover { background: #555; }
+.ext-btn.uninstall { background: #3c3c3c; color: #e06c75; }
+.ext-btn.uninstall:hover { background: #5a1d1d; }
 </style>

@@ -16,11 +16,11 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'VS Code',
+      title: 'Stark Code',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: 'VS Code editor with OPFS persistence' }
+        { name: 'description', content: 'Stark Code editor with OPFS persistence' }
       ]
     },
     baseURL: '/'
@@ -61,7 +61,7 @@ export default defineNuxtConfig({
     },
   },
 
-  // Import VS Code's codicons icon font globally
+  // Import codicons icon font globally
   css: [
     '@vscode/codicons/dist/codicon.css',
   ],

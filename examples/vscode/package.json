@@ -1,7 +1,7 @@
 {
-  "name": "vscode-example",
+  "name": "stark-code-example",
   "version": "0.0.1",
-  "description": "VS Code editor example that builds to a self-contained bundle with OPFS persistence",
+  "description": "Stark Code editor example that builds to a self-contained bundle with OPFS persistence",
   "private": true,
   "type": "module",
   "scripts": {

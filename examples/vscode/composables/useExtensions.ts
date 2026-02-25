@@ -1,12 +1,12 @@
 /**
- * Extension system for the VS Code example.
+ * Extension system for Stark Code.
  * Provides a catalog of built-in extensions that enhance Monaco Editor functionality.
  * Extension state (installed/enabled) is persisted to OPFS.
  */
 
 import { saveFile, loadFile } from './useOpfsStorage';
 
-const EXTENSIONS_STATE_FILE = '.vscode-extensions.json';
+const EXTENSIONS_STATE_FILE = '.stark-extensions.json';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -45,7 +45,7 @@ export const extensionCatalog: Extension[] = [
     name: 'monokai',
     displayName: 'Monokai Theme',
     description: 'A classic dark theme with vibrant syntax highlighting colors inspired by Monokai.',
-    publisher: 'VS Code Themes',
+    publisher: 'Stark Themes',
     version: '1.0.0',
     category: 'Themes',
     codicon: 'symbol-color',
@@ -57,7 +57,7 @@ export const extensionCatalog: Extension[] = [
     name: 'solarized-dark',
     displayName: 'Solarized Dark',
     description: 'Precision-designed color scheme for machines and people. Dark variant.',
-    publisher: 'VS Code Themes',
+    publisher: 'Stark Themes',
     version: '1.0.0',
     category: 'Themes',
     codicon: 'symbol-color',
@@ -68,7 +68,7 @@ export const extensionCatalog: Extension[] = [
     id: 'theme-github-dark',
     name: 'github-dark',
     displayName: 'GitHub Dark Theme',
-    description: 'GitHub\'s dark theme for VS Code. Clean and minimal dark mode.',
+    description: 'GitHub\'s dark theme for Stark Code. Clean and minimal dark mode.',
     publisher: 'GitHub',
     version: '1.0.0',
     category: 'Themes',
@@ -81,7 +81,7 @@ export const extensionCatalog: Extension[] = [
     name: 'high-contrast',
     displayName: 'High Contrast',
     description: 'A high contrast theme optimized for accessibility and readability.',
-    publisher: 'VS Code Themes',
+    publisher: 'Stark Themes',
     version: '1.0.0',
     category: 'Themes',
     codicon: 'symbol-color',
@@ -92,8 +92,8 @@ export const extensionCatalog: Extension[] = [
     id: 'theme-light-plus',
     name: 'light-plus',
     displayName: 'Light+ (Default Light)',
-    description: 'VS Code default light theme with enhanced token colors.',
-    publisher: 'VS Code Themes',
+    description: 'Default light theme with enhanced token colors.',
+    publisher: 'Stark Themes',
     version: '1.0.0',
     category: 'Themes',
     codicon: 'symbol-color',
@@ -232,7 +232,7 @@ export const extensionCatalog: Extension[] = [
     id: 'keymap-vim',
     name: 'vim',
     displayName: 'Vim',
-    description: 'Vim emulation for VS Code. Supports most Vim commands including normal, insert and visual modes.',
+    description: 'Vim emulation for Stark Code. Supports most Vim commands including normal, insert and visual modes.',
     publisher: 'vscodevim',
     version: '1.27.0',
     category: 'Keymaps',
@@ -244,7 +244,7 @@ export const extensionCatalog: Extension[] = [
     id: 'keymap-sublime',
     name: 'sublime-keybindings',
     displayName: 'Sublime Text Keymap',
-    description: 'Popular Sublime Text keybindings for VS Code. Ctrl+D, Ctrl+Shift+K, etc.',
+    description: 'Popular Sublime Text keybindings for Stark Code. Ctrl+D, Ctrl+Shift+K, etc.',
     publisher: 'Microsoft',
     version: '4.0.0',
     category: 'Keymaps',
@@ -271,7 +271,7 @@ export const extensionCatalog: Extension[] = [
     name: 'minimap-highlight',
     displayName: 'Minimap Highlight',
     description: 'Highlight matching search results and selections in the minimap for better navigation.',
-    publisher: 'VS Code',
+    publisher: 'Stark Code',
     version: '1.0.0',
     category: 'Other',
     codicon: 'layout-sidebar-right',
@@ -342,7 +342,7 @@ export function getCategories(): ExtensionCategory[] {
 
 // ─── Extension Application ──────────────────────────
 
-/** Define custom Monaco themes matching popular VS Code themes */
+/** Define custom Monaco themes matching popular editor themes */
 export function defineCustomThemes(monaco: any): void {
   // Monokai theme
   monaco.editor.defineTheme('monokai', {

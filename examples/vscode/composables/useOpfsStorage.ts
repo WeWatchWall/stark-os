@@ -1,7 +1,7 @@
 /**
  * Composable for saving and loading files using the Origin Private File System (OPFS).
  * OPFS provides a sandboxed file system that persists data in the browser.
- * Enhanced for multi-file operations to support a VS Code-like file explorer.
+ * Enhanced for multi-file operations to support the Stark Code file explorer.
  */
 
 const OPFS_DIR = 'stark-os-vscode';

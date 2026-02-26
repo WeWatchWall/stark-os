@@ -504,6 +504,25 @@ export class BrowserAgent {
   }
 
   /**
+   * Persist a log entry to a pod-specific LogManager.
+   */
+  private async logToPodManager(podId: string, level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string, meta?: Record<string, unknown>): Promise<void> {
+    if (!this.logStorage) return;
+    try {
+      const lm = await this.getOrCreatePodLogManager(podId);
+      const entry: LogEntry = {
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+        meta,
+      };
+      lm.log(entry);
+    } catch {
+      // best-effort – don't break the caller
+    }
+  }
+
+  /**
    * Connect to the orchestrator
    */
   private async connect(): Promise<void> {
@@ -675,6 +694,7 @@ export class BrowserAgent {
           packName: deployPayload.pack?.name,
         });
         this.logToNodeManager('info', 'Pod deploy requested', { podId: deployPayload.podId, packName: deployPayload.pack?.name });
+        await this.logToPodManager(deployPayload.podId, 'info', 'Pod deploy requested', { packName: deployPayload.pack?.name });
         
         try {
           // Ensure executor is initialized before handling pod deploy
@@ -687,6 +707,7 @@ export class BrowserAgent {
           if (result.success) {
             this.emit('pod:deployed', { podId: deployPayload.podId });
             this.logToNodeManager('info', 'Pod deployed successfully', { podId: deployPayload.podId });
+            await this.logToPodManager(deployPayload.podId, 'info', 'Pod deployed successfully');
             // Send success response if there's a correlationId
             if (message.correlationId) {
               this.send({
@@ -697,6 +718,7 @@ export class BrowserAgent {
             }
           } else {
             this.emit('pod:failed', { podId: deployPayload.podId, error: result.error });
+            await this.logToPodManager(deployPayload.podId, 'error', 'Pod deploy failed', { error: result.error });
             if (message.correlationId) {
               this.send({
                 type: 'pod:deploy:error',
@@ -709,6 +731,7 @@ export class BrowserAgent {
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.logger.error('Pod deploy failed', { podId: deployPayload.podId, error: errorMessage });
           this.logToNodeManager('error', 'Pod deploy failed', { podId: deployPayload.podId, error: errorMessage });
+          await this.logToPodManager(deployPayload.podId, 'error', 'Pod deploy failed', { error: errorMessage });
           this.emit('pod:failed', { podId: deployPayload.podId, error: errorMessage });
           if (message.correlationId) {
             this.send({
@@ -729,11 +752,13 @@ export class BrowserAgent {
           reason: stopPayload.reason,
         });
         this.logToNodeManager('info', 'Pod stop requested', { podId: stopPayload.podId, reason: stopPayload.reason });
+        await this.logToPodManager(stopPayload.podId, 'info', 'Pod stop requested', { reason: stopPayload.reason });
         
         try {
           const result = await this.podHandler.handleStop(stopPayload);
           if (result.success) {
             this.emit('pod:stopped', { podId: stopPayload.podId });
+            await this.logToPodManager(stopPayload.podId, 'info', 'Pod stopped successfully');
             if (message.correlationId) {
               this.send({
                 type: 'pod:stop:success',
@@ -742,6 +767,7 @@ export class BrowserAgent {
               });
             }
           } else {
+            await this.logToPodManager(stopPayload.podId, 'error', 'Pod stop failed', { error: result.error });
             if (message.correlationId) {
               this.send({
                 type: 'pod:stop:error',
@@ -753,6 +779,7 @@ export class BrowserAgent {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.logger.error('Pod stop failed', { podId: stopPayload.podId, error: errorMessage });
+          await this.logToPodManager(stopPayload.podId, 'error', 'Pod stop failed', { error: errorMessage });
           if (message.correlationId) {
             this.send({
               type: 'pod:stop:error',

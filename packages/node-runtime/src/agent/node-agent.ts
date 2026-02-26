@@ -13,6 +13,7 @@ import * as path from 'path';
 import {
   createServiceLogger,
   LogManager,
+  cleanupStalePodLogs,
   type Logger,
   type LogEntry,
   type RegisterNodeInput,
@@ -187,6 +188,8 @@ export class NodeAgent {
   private podLogManagers = new Map<string, LogManager>();
   /** Shared file-system storage adapter for log I/O. */
   private logStorage: FsAdapter | null = null;
+  /** Periodic timer for cleaning stale pod log directories. */
+  private logCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: NodeAgentConfig) {
     this.config = {
@@ -326,6 +329,14 @@ export class NodeAgent {
     this.logStorage = new FsAdapter({ rootPath: LOG_BASE_PATH });
     await this.logStorage.initialize();
 
+    // Clean up stale pod log directories from previous runs
+    this.runLogCleanup();
+    // Schedule periodic cleanup every 5 minutes
+    this.logCleanupTimer = setInterval(() => this.runLogCleanup(), 5 * 60 * 1000);
+    if (typeof this.logCleanupTimer === 'object' && 'unref' in this.logCleanupTimer) {
+      (this.logCleanupTimer as NodeJS.Timeout).unref();
+    }
+
     // Initialize the pack executor before connecting
     await this.executor.initialize();
 
@@ -354,6 +365,12 @@ export class NodeAgent {
     this.state = 'disconnected';
     this.nodeId = null;
     this.connectionId = null;
+
+    // Stop log cleanup timer
+    if (this.logCleanupTimer) {
+      clearInterval(this.logCleanupTimer);
+      this.logCleanupTimer = null;
+    }
 
     // Tear down log managers
     if (this.nodeLogManager) {
@@ -443,6 +460,17 @@ export class NodeAgent {
     } catch {
       // best-effort – don't break the caller
     }
+  }
+
+  /**
+   * Run stale pod log cleanup. Fire-and-forget.
+   */
+  private runLogCleanup(): void {
+    if (!this.logStorage) return;
+    const activePodIds = new Set(this.podLogManagers.keys());
+    cleanupStalePodLogs(this.logStorage, '', activePodIds).catch(() => {
+      // best-effort
+    });
   }
 
   /**

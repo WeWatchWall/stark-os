@@ -9,6 +9,7 @@
 import {
   mapLocalStatusToPodStatus,
   LogManager,
+  cleanupStalePodLogs,
   type LogEntry,
   type RegisterNodeInput,
   type NodeHeartbeat,
@@ -260,6 +261,8 @@ export class BrowserAgent {
   private podLogManagers = new Map<string, LogManager>();
   /** Shared OPFS storage adapter for log I/O. */
   private logStorage: StorageAdapter | null = null;
+  /** Periodic timer for cleaning stale pod log directories. */
+  private logCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: BrowserAgentConfig) {
     const debug = config.debug ?? false;
@@ -398,6 +401,11 @@ export class BrowserAgent {
     this.logStorage = new StorageAdapter({ storeName: 'stark-orchestrator' });
     await this.logStorage.initialize();
 
+    // Clean up stale pod log directories from previous runs
+    this.runLogCleanup();
+    // Schedule periodic cleanup every 5 minutes
+    this.logCleanupTimer = setInterval(() => this.runLogCleanup(), 5 * 60 * 1000);
+
     // Initialize the pack executor before connecting
     await this.executor.initialize();
 
@@ -434,6 +442,12 @@ export class BrowserAgent {
     this.state = 'disconnected';
     this.nodeId = null;
     this.connectionId = null;
+
+    // Stop log cleanup timer
+    if (this.logCleanupTimer) {
+      clearInterval(this.logCleanupTimer);
+      this.logCleanupTimer = null;
+    }
 
     // Tear down log managers
     if (this.nodeLogManager) {
@@ -523,6 +537,17 @@ export class BrowserAgent {
     } catch {
       // best-effort – don't break the caller
     }
+  }
+
+  /**
+   * Run stale pod log cleanup. Fire-and-forget.
+   */
+  private runLogCleanup(): void {
+    if (!this.logStorage) return;
+    const activePodIds = new Set(this.podLogManagers.keys());
+    cleanupStalePodLogs(this.logStorage, '/home/.stark/nodes/logs', activePodIds).catch(() => {
+      // best-effort
+    });
   }
 
   /**

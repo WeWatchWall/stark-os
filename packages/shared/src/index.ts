@@ -149,6 +149,8 @@ export {
 export {
   LogManager,
   createLogManager,
+  cleanupStalePodLogs,
+  STALE_POD_LOG_AGE_MS,
   type LogEntityType,
   type LogManagerConfig,
 } from './logging/log-manager.js';

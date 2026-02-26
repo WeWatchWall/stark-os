@@ -137,6 +137,77 @@ export class LogManager {
   }
 }
 
+/** Default stale-pod threshold: 5 minutes. */
+export const STALE_POD_LOG_AGE_MS = 5 * 60 * 1000;
+
+/**
+ * Remove pod log directories whose newest segment is older than `maxAgeMs`.
+ *
+ * Scans `<basePath>/pods/` for subdirectories, checks the mtime of the
+ * newest `log-*.jsonl` segment inside each, and deletes the entire directory
+ * when all segments are older than the threshold.
+ *
+ * Directories that belong to pods with an active LogManager (i.e. still
+ * running) should be excluded via `activePodIds`.
+ *
+ * @param storage      Platform storage adapter
+ * @param basePath     Base log path (e.g. '' for Node, '/home/.stark/nodes/logs' for browser)
+ * @param activePodIds Set of pod IDs that are still running and should not be cleaned
+ * @param maxAgeMs     Maximum age in ms for the newest segment before cleanup (default 5 min)
+ */
+export async function cleanupStalePodLogs(
+  storage: IStorageAdapter,
+  basePath: string,
+  activePodIds: Set<string>,
+  maxAgeMs: number = STALE_POD_LOG_AGE_MS,
+): Promise<void> {
+  const podsDir = `${basePath}/pods`;
+  let podDirs: string[];
+  try {
+    podDirs = await storage.readdir(podsDir);
+  } catch {
+    return; // pods/ directory doesn't exist yet – nothing to clean
+  }
+
+  const now = Date.now();
+  for (const podId of podDirs) {
+    if (activePodIds.has(podId)) continue;
+
+    const podDir = `${podsDir}/${podId}`;
+    try {
+      // Check if this is actually a directory
+      if (!(await storage.isDirectory(podDir))) continue;
+
+      // Find the newest log segment mtime
+      const files = await storage.readdir(podDir);
+      const segments = files.filter((f) => f.startsWith('log-') && f.endsWith('.jsonl'));
+
+      if (segments.length === 0) {
+        // Empty directory – remove it
+        await storage.rmdir(podDir, true);
+        continue;
+      }
+
+      let newestMtime = 0;
+      for (const seg of segments) {
+        try {
+          const st = await storage.stat(`${podDir}/${seg}`);
+          const mt = st.mtime.getTime();
+          if (mt > newestMtime) newestMtime = mt;
+        } catch {
+          // skip unreadable files
+        }
+      }
+
+      if (newestMtime > 0 && now - newestMtime > maxAgeMs) {
+        await storage.rmdir(podDir, true);
+      }
+    } catch {
+      // best-effort – skip problematic directories
+    }
+  }
+}
+
 /**
  * Convenience factory.
  */

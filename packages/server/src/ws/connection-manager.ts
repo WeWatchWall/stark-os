@@ -949,6 +949,16 @@ export class ConnectionManager {
   }
 
   /**
+   * Get the connection for a node by its nodeId.
+   * Uses the nodeToConnection reverse index.
+   */
+  getConnectionForNode(nodeId: string): ConnectionInfo | undefined {
+    const connectionId = this.nodeToConnection.get(nodeId);
+    if (!connectionId) return undefined;
+    return this.connections.get(connectionId);
+  }
+
+  /**
    * Broadcast a message to all authenticated connections
    */
   broadcast(message: WsMessage, filter?: (conn: ConnectionInfo) => boolean): void {

@@ -604,7 +604,7 @@ async function getNodeLogs(req: Request, res: Response): Promise<void> {
 
     const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : undefined;
     const connectionManager = connService.getConnectionManager();
-    const connInfo = connectionManager?.getConnection(nodeId);
+    const connInfo = connectionManager?.getConnectionForNode(nodeId);
 
     if (!connInfo) {
       requestLogger.warn('Node offline, cannot retrieve logs', { nodeId });

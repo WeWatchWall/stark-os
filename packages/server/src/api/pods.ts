@@ -943,7 +943,7 @@ async function getPodLogs(req: Request, res: Response): Promise<void> {
     const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : undefined;
 
     const connectionManager = getConnectionManager();
-    const connInfo = connectionManager?.getConnection(nodeId);
+    const connInfo = connectionManager?.getConnectionForNode(nodeId);
     if (!connInfo) {
       // Node is offline – return empty
       requestLogger.warn('Node offline, cannot retrieve pod logs', { podId, nodeId });

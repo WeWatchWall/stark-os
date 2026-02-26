@@ -390,8 +390,9 @@ export class BrowserAgent {
     this.isShuttingDown = false;
     this.reconnectAttempts = 0;
 
-    // Initialize log storage (OPFS) so we can persist logs immediately
-    this.logStorage = new StorageAdapter({ storeName: 'stark-logs' });
+    // Initialize log storage under the same OPFS directory the terminal uses
+    // (stark-orchestrator) so logs are accessible at /home/.stark/nodes/logs/
+    this.logStorage = new StorageAdapter({ storeName: 'stark-orchestrator' });
     await this.logStorage.initialize();
 
     // Initialize the pack executor before connecting
@@ -463,7 +464,7 @@ export class BrowserAgent {
     this.nodeLogManager = new LogManager({
       entityType: 'node',
       entityId: this.nodeId,
-      basePath: '',
+      basePath: '/home/.stark/nodes/logs',
       storage: this.logStorage,
     });
     await this.nodeLogManager.initialize();
@@ -480,7 +481,7 @@ export class BrowserAgent {
     lm = new LogManager({
       entityType: 'pod',
       entityId: podId,
-      basePath: '',
+      basePath: '/home/.stark/nodes/logs',
       storage: this.logStorage,
     });
     await lm.initialize();

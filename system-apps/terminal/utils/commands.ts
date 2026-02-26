@@ -1560,8 +1560,8 @@ commands['stark'] = async (ctx) => {
       'Commands:\n' +
       '  stark auth        Authentication (login, logout, whoami, status, setup, add-user)\n' +
       '  stark pack        Pack management (list, versions, info, delete)\n' +
-      '  stark node        Node management (list, status, agent start)\n' +
-      '  stark pod         Pod management (create, list, status, stop, rollback, history)\n' +
+      '  stark node        Node management (list, status, agent start, logs)\n' +
+      '  stark pod         Pod management (create, list, status, stop, rollback, history, logs)\n' +
       '  stark service     Service management (create, list, status)\n' +
       '  stark namespace   Namespace management (create, list, get, delete, use, current)\n' +
       '  stark secret      Secret management (list, get)\n' +
@@ -1851,7 +1851,21 @@ commands['stark'] = async (ctx) => {
             await agent.start();
             return '✓ Browser node agent started.\n';
           }
-          default: return `Unknown node subcommand: ${action}\nAvailable: list, status, agent\n`;
+          case 'logs': {
+            const n = positionals[0]; if (!n) return 'Usage: stark node logs <nodeId> [--tail <n>]\n';
+            const tail = options['tail'] || options['t'];
+            const data = await api.node.logs(n, { tail: tail ? Number(tail) : undefined }) as { entries?: Array<Record<string, unknown>> };
+            const entries = data.entries ?? [];
+            if (entries.length === 0) return 'ℹ No log entries found for this node\n';
+            let out = '';
+            for (const e of entries) {
+              const ts = String(e.timestamp ?? '').replace('T', ' ').replace('Z', '');
+              const lvl = String(e.level ?? 'info').toUpperCase().padEnd(5);
+              out += `${ts} ${lvl} ${e.message}\n`;
+            }
+            return out;
+          }
+          default: return `Unknown node subcommand: ${action}\nAvailable: list, status, agent, logs\n`;
         }
       }
       case 'pod': {
@@ -1982,7 +1996,23 @@ commands['stark'] = async (ctx) => {
               ],
             );
           }
-          default: return `Unknown pod subcommand: ${action}\nAvailable: create, list, status, stop, rollback, history\n`;
+          case 'logs': {
+            const id = positionals[0]; if (!id) return 'Usage: stark pod logs <podId> [--tail <n>]\n';
+            const tail = options['tail'] || options['t'];
+            const data = await api.pod.logs(id, { tail: tail ? Number(tail) : undefined }) as { entries?: Array<Record<string, unknown>> };
+            const entries = data.entries ?? [];
+            if (entries.length === 0) return 'ℹ No log entries found for this pod\n';
+            let out = '';
+            for (const e of entries) {
+              const stream = String(e.meta && (e.meta as Record<string, unknown>).stream || 'out');
+              const ts = String(e.timestamp ?? '').replace('T', ' ').replace('Z', '');
+              const lvl = String(e.level ?? 'info').toUpperCase().padEnd(5);
+              const tag = stream === 'err' ? '[err]' : '[out]';
+              out += `${ts} ${lvl} ${tag} ${e.message}\n`;
+            }
+            return out;
+          }
+          default: return `Unknown pod subcommand: ${action}\nAvailable: create, list, status, stop, rollback, history, logs\n`;
         }
       }
       case 'service': {

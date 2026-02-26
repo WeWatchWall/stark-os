@@ -530,7 +530,7 @@ async function stopHandler(podId: string, options: { force?: boolean }): Promise
 }
 
 /**
- * Logs command handler - shows pod logs (placeholder)
+ * Logs command handler - shows pod logs
  */
 async function logsHandler(
   podId: string,
@@ -540,16 +540,53 @@ async function logsHandler(
 
   info(`Fetching logs for pod: ${podId}`);
 
-  // This is a placeholder - actual implementation would connect to the node
-  // and stream logs via WebSocket
+  try {
+    const api = createApiClient();
+    const params = new URLSearchParams();
+    if (options.tail) {
+      params.set('tail', options.tail);
+    }
+    const url = `/api/pods/${podId}/logs${params.toString() ? '?' + params.toString() : ''}`;
+    const response = await api.get(url);
+    const result = (await response.json()) as ApiResponse<{ entries: Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }> }>;
 
-  if (options.follow) {
-    info('Following logs... (Press Ctrl+C to stop)');
-    // Would set up WebSocket connection here
+    if (!result.success || !result.data) {
+      error('Failed to fetch pod logs', result.error);
+      process.exit(1);
+    }
+
+    const { entries } = result.data;
+
+    if (getOutputFormat() === 'json') {
+      console.log(JSON.stringify(result.data, null, 2));
+      return;
+    }
+
+    if (entries.length === 0) {
+      info('No log entries found for this pod');
+      return;
+    }
+
+    for (const entry of entries) {
+      const stream = (entry.meta?.stream as string) ?? 'out';
+      const levelColor = entry.level === 'error' || entry.level === 'fatal'
+        ? chalk.red
+        : entry.level === 'warn'
+          ? chalk.yellow
+          : chalk.gray;
+      const ts = entry.timestamp.replace('T', ' ').replace('Z', '');
+      const prefix = `${chalk.dim(ts)} ${levelColor(entry.level.toUpperCase().padEnd(5))}`;
+      const streamTag = stream === 'err' ? chalk.red('[err]') : chalk.cyan('[out]');
+      console.log(`${prefix} ${streamTag} ${entry.message}`);
+    }
+
+    if (options.follow) {
+      info('Live following is not yet available – showing historical entries only');
+    }
+  } catch (err) {
+    error('Failed to fetch pod logs', err instanceof Error ? { message: err.message } : undefined);
+    process.exit(1);
   }
-
-  warn('Log streaming is not yet implemented');
-  info('Pod logs would appear here when available');
 }
 
 /**

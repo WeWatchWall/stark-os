@@ -908,6 +908,80 @@ async function rollbackPod(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * GET /api/pods/:id/logs - Get pod logs
+ *
+ * Retrieves stored log entries for a pod via its node's log directory.
+ * Query params:
+ *   - tail: number of most-recent entries to return
+ */
+async function getPodLogs(req: Request, res: Response): Promise<void> {
+  const podId = req.params.id;
+  const correlationId = generateCorrelationId();
+  const requestLogger = logger.withCorrelationId(correlationId);
+
+  try {
+    if (!UUID_PATTERN.test(podId)) {
+      sendError(res, 'INVALID_INPUT', 'Invalid pod ID format', 400);
+      return;
+    }
+
+    const podQueries = getPodQueriesAdmin();
+    const pod = await podQueries.getById(podId);
+
+    if (!pod) {
+      sendError(res, 'NOT_FOUND', `Pod '${podId}' not found`, 404);
+      return;
+    }
+
+    // Ask the node for its pod logs via the WebSocket connection
+    const nodeId = pod.nodeId;
+    if (!nodeId) {
+      sendSuccess(res, { entries: [] });
+      return;
+    }
+
+    const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : undefined;
+
+    const connectionManager = getConnectionManager();
+    const connection = connectionManager.getConnection(nodeId);
+    if (!connection) {
+      // Node is offline – return empty
+      requestLogger.warn('Node offline, cannot retrieve pod logs', { podId, nodeId });
+      sendSuccess(res, { entries: [] });
+      return;
+    }
+
+    // Send a request to the node and wait for a response
+    try {
+      const responsePromise = new Promise<{ entries: unknown[] }>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Log retrieval timeout')), 10_000);
+        const handler = (msg: { type: string; entries?: unknown[] }) => {
+          if (msg.type === 'pod-logs-response') {
+            clearTimeout(timeout);
+            resolve({ entries: msg.entries ?? [] });
+          }
+        };
+        connection.on('message', handler);
+        connection.send(JSON.stringify({ type: 'get-pod-logs', podId, tail }));
+        // Clean up after timeout or response
+        setTimeout(() => connection.off('message', handler), 11_000);
+      });
+
+      const data = await responsePromise;
+      sendSuccess(res, data);
+    } catch {
+      // Fallback: return empty rather than error when node can't respond
+      sendSuccess(res, { entries: [] });
+    }
+  } catch (error) {
+    requestLogger.error('Error fetching pod logs', error instanceof Error ? error : undefined, {
+      podId,
+    });
+    sendError(res, 'INTERNAL_ERROR', 'An unexpected error occurred', 500);
+  }
+}
+
+/**
  * Creates the pods router
  */
 export function createPodsRouter(): Router {
@@ -927,6 +1001,9 @@ export function createPodsRouter(): Router {
 
   // GET /api/pods/:id/history - Get pod history (requires read permission)
   router.get('/:id([0-9a-f-]{36})/history', authMiddleware, abilityMiddleware, canReadPod, getPodHistory);
+
+  // GET /api/pods/:id/logs - Get pod logs (requires read permission)
+  router.get('/:id([0-9a-f-]{36})/logs', authMiddleware, abilityMiddleware, canReadPod, getPodLogs);
 
   // POST /api/pods/:id/rollback - Rollback pod to a different version (requires create permission)
   router.post('/:id([0-9a-f-]{36})/rollback', authMiddleware, abilityMiddleware, canCreatePod, rollbackPod);

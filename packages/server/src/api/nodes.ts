@@ -567,6 +567,80 @@ export async function deleteNode(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * GET /api/nodes/:id/logs - Get node logs
+ *
+ * Retrieves stored log entries for a node via its WebSocket connection.
+ * Query params:
+ *   - tail: number of most-recent entries to return
+ */
+async function getNodeLogs(req: Request, res: Response): Promise<void> {
+  const nodeId = req.params.id;
+  const correlationId = generateCorrelationId();
+  const requestLogger = logger.withCorrelationId(correlationId);
+
+  try {
+    if (!isValidUUID(nodeId)) {
+      sendError(res, 'INVALID_INPUT', 'Invalid node ID format', 400);
+      return;
+    }
+
+    const nodeQueries = getNodeQueries();
+    const nodeResult = await nodeQueries.getById(nodeId);
+
+    if (!nodeResult.data) {
+      sendError(res, 'NOT_FOUND', `Node '${nodeId}' not found`, 404);
+      return;
+    }
+
+    // Node logs are retrieved via WebSocket if the node is online.
+    // Import connection service dynamically to avoid circular deps.
+    let getConnectionManager: () => { getConnection: (id: string) => { on: (e: string, h: (m: unknown) => void) => void; off: (e: string, h: (m: unknown) => void) => void; send: (d: string) => void } | undefined };
+    try {
+      const connService = await import('../services/connection-service.js');
+      getConnectionManager = connService.getConnectionManager;
+    } catch {
+      sendSuccess(res, { entries: [] });
+      return;
+    }
+
+    const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : undefined;
+    const connectionManager = getConnectionManager();
+    const connection = connectionManager.getConnection(nodeId);
+
+    if (!connection) {
+      requestLogger.warn('Node offline, cannot retrieve logs', { nodeId });
+      sendSuccess(res, { entries: [] });
+      return;
+    }
+
+    try {
+      const responsePromise = new Promise<{ entries: unknown[] }>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Log retrieval timeout')), 10_000);
+        const handler = (msg: { type: string; entries?: unknown[] }) => {
+          if (msg.type === 'node-logs-response') {
+            clearTimeout(timeout);
+            resolve({ entries: msg.entries ?? [] });
+          }
+        };
+        connection.on('message', handler);
+        connection.send(JSON.stringify({ type: 'get-node-logs', nodeId, tail }));
+        setTimeout(() => connection.off('message', handler), 11_000);
+      });
+
+      const data = await responsePromise;
+      sendSuccess(res, data);
+    } catch {
+      sendSuccess(res, { entries: [] });
+    }
+  } catch (error) {
+    requestLogger.error('Error fetching node logs', error instanceof Error ? error : undefined, {
+      nodeId,
+    });
+    sendError(res, 'INTERNAL_ERROR', 'An unexpected error occurred', 500);
+  }
+}
+
+/**
  * Create and configure the nodes router
  */
 export function createNodesRouter(): Router {
@@ -577,6 +651,10 @@ export function createNodesRouter(): Router {
 
   // GET /api/nodes - List nodes (requires read permission)
   router.get('/', authMiddleware, abilityMiddleware, canReadNode, listNodes);
+
+  // GET /api/nodes/:id/logs - Get node logs (requires read permission)
+  // NOTE: Must be registered before /:id to avoid conflict with UUID pattern
+  router.get('/:id([0-9a-f-]{36})/logs', authMiddleware, abilityMiddleware, canReadNode, getNodeLogs);
 
   // GET /api/nodes/:id - Get node by ID (requires read permission)
   router.get('/:id', authMiddleware, abilityMiddleware, canReadNode, getNodeById);

@@ -583,6 +583,60 @@ async function watchHandler(options: { interval?: string }): Promise<void> {
 }
 
 /**
+ * Node logs handler - shows node logs
+ */
+async function nodeLogsHandler(
+  nodeId: string,
+  options: { tail?: string }
+): Promise<void> {
+  requireAuth();
+
+  info(`Fetching logs for node: ${nodeId}`);
+
+  try {
+    const api = createApiClient();
+    const params = new URLSearchParams();
+    if (options.tail) {
+      params.set('tail', options.tail);
+    }
+    const url = `/api/nodes/${nodeId}/logs${params.toString() ? '?' + params.toString() : ''}`;
+    const response = await api.get(url);
+    const result = (await response.json()) as ApiResponse<{ entries: Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }> }>;
+
+    if (!result.success || !result.data) {
+      error('Failed to fetch node logs', result.error);
+      process.exit(1);
+    }
+
+    const { entries } = result.data;
+
+    if (getOutputFormat() === 'json') {
+      console.log(JSON.stringify(result.data, null, 2));
+      return;
+    }
+
+    if (entries.length === 0) {
+      info('No log entries found for this node');
+      return;
+    }
+
+    for (const entry of entries) {
+      const levelColor = entry.level === 'error' || entry.level === 'fatal'
+        ? chalk.red
+        : entry.level === 'warn'
+          ? chalk.yellow
+          : chalk.gray;
+      const ts = entry.timestamp.replace('T', ' ').replace('Z', '');
+      const prefix = `${chalk.dim(ts)} ${levelColor(entry.level.toUpperCase().padEnd(5))}`;
+      console.log(`${prefix} ${entry.message}`);
+    }
+  } catch (err) {
+    error('Failed to fetch node logs', err instanceof Error ? { message: err.message } : undefined);
+    process.exit(1);
+  }
+}
+
+/**
  * Creates the node command group
  */
 export function createNodeCommand(): Command {
@@ -650,6 +704,13 @@ export function createNodeCommand(): Command {
     .option('--pods <count>', 'Maximum concurrent pods', '10')
     .option('--heartbeat <seconds>', 'Heartbeat interval in seconds', '15')
     .action(agentStartHandler);
+
+  // Node logs
+  node
+    .command('logs <nodeId>')
+    .description('Show node logs')
+    .option('-t, --tail <lines>', 'Number of lines to show from end')
+    .action(nodeLogsHandler);
 
   return node;
 }

@@ -48,6 +48,7 @@ export interface StarkAPI {
   node: {
     list(): Promise<unknown>;
     status(nameOrId: string): Promise<unknown>;
+    logs(nodeId: string, options?: { tail?: number }): Promise<unknown>;
   };
   pod: {
     list(options?: { namespace?: string; status?: string }): Promise<unknown>;
@@ -56,6 +57,7 @@ export interface StarkAPI {
     stop(podId: string): Promise<unknown>;
     rollback(podId: string): Promise<unknown>;
     history(podId: string): Promise<unknown>;
+    logs(podId: string, options?: { tail?: number }): Promise<unknown>;
   };
   service: {
     list(options?: { namespace?: string }): Promise<unknown>;
@@ -271,6 +273,12 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
     node: {
       async list() { return handleResponse<unknown>(await apiGet('/api/nodes')); },
       async status(nameOrId: string) { return handleResponse<unknown>(await apiGet(`/api/nodes/name/${encodeURIComponent(nameOrId)}`)); },
+      async logs(nodeId: string, options?: { tail?: number }) {
+        const params = new URLSearchParams();
+        if (options?.tail) params.set('tail', String(options.tail));
+        const qs = params.toString();
+        return handleResponse<unknown>(await apiGet(`/api/nodes/${nodeId}/logs${qs ? '?' + qs : ''}`));
+      },
     },
     pod: {
       async list(options?: { namespace?: string; status?: string }) {
@@ -290,6 +298,12 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       async stop(podId: string) { return handleResponse<unknown>(await apiPost(`/api/pods/${podId}/stop`, {})); },
       async rollback(podId: string) { return handleResponse<unknown>(await apiPost(`/api/pods/${podId}/rollback`, {})); },
       async history(podId: string) { return handleResponse<unknown>(await apiGet(`/api/pods/${podId}/history`)); },
+      async logs(podId: string, options?: { tail?: number }) {
+        const params = new URLSearchParams();
+        if (options?.tail) params.set('tail', String(options.tail));
+        const qs = params.toString();
+        return handleResponse<unknown>(await apiGet(`/api/pods/${podId}/logs${qs ? '?' + qs : ''}`));
+      },
     },
     service: {
       async list(options?: { namespace?: string }) {

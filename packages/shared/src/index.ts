@@ -131,6 +131,28 @@ export {
   type PodConsole,
 } from './logging/pod-log-sink.js';
 
+export {
+  LogBuffer,
+  FLUSH_INTERVAL_MS,
+  type FlushCallback,
+  type LogBufferConfig,
+} from './logging/log-buffer.js';
+
+export {
+  LogRotator,
+  MAX_SEGMENT_BYTES,
+  MAX_SEGMENT_AGE_MS,
+  MAX_SEGMENTS,
+  type LogRotatorConfig,
+} from './logging/log-rotator.js';
+
+export {
+  LogManager,
+  createLogManager,
+  type LogEntityType,
+  type LogManagerConfig,
+} from './logging/log-manager.js';
+
 // Network (policy engine, service registry, pod cache)
 export * from './network/index.js';
 

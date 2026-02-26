@@ -59,6 +59,9 @@ export class LogRotator {
   /** Timestamp when the current segment was started. */
   private segmentStartTime = 0;
 
+  /** Monotonic counter for unique segment names. */
+  private segmentCounter = 0;
+
   private initialized = false;
 
   constructor(config: LogRotatorConfig) {
@@ -179,7 +182,8 @@ export class LogRotator {
 
   private openNewSegment(): void {
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    this.currentSegment = `log-${ts}.jsonl`;
+    const seq = String(this.segmentCounter++).padStart(4, '0');
+    this.currentSegment = `log-${ts}-${seq}.jsonl`;
     this.currentSize = 0;
     this.segmentStartTime = Date.now();
   }

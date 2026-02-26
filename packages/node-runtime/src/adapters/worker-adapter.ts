@@ -108,6 +108,9 @@ export class WorkerAdapter implements IWorkerAdapter {
   /** Path to the built-in worker script (resolved at runtime) */
   private workerScriptPath: string;
 
+  /** Optional callback for pod log batches from worker subprocesses */
+  onPodLogBatch: ((podId: string, entries: Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }>) => void) | null = null;
+
   constructor(config: NodeWorkerAdapterConfig = {}) {
     this.config = {
       minWorkers: config.minWorkers ?? 0,
@@ -206,7 +209,13 @@ export class WorkerAdapter implements IWorkerAdapter {
         }, taskTimeout);
       }
 
-      child.on('message', (msg: WorkerResponse) => {
+      child.on('message', (raw: unknown) => {
+        const msg = raw as Record<string, unknown>;
+        // Handle pod-log-batch messages from worker console patches
+        if (msg.type === 'pod-log-batch' && msg.podId && Array.isArray(msg.entries)) {
+          this.onPodLogBatch?.(msg.podId as string, msg.entries as Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }>);
+          return;
+        }
         if (msg.taskId !== taskId) return;
 
         if (task.timeoutHandle) clearTimeout(task.timeoutHandle);
@@ -223,8 +232,8 @@ export class WorkerAdapter implements IWorkerAdapter {
             duration: Date.now() - startTime,
           });
         } else {
-          const error = new Error(msg.error ?? 'Unknown worker error');
-          if (msg.errorStack) error.stack = msg.errorStack;
+          const error = new Error((msg.error as string) ?? 'Unknown worker error');
+          if (msg.errorStack) error.stack = msg.errorStack as string;
           reject(error);
         }
       });
@@ -320,7 +329,13 @@ export class WorkerAdapter implements IWorkerAdapter {
         }, taskTimeout);
       }
 
-      child.on('message', (msg: WorkerResponse) => {
+      child.on('message', (raw: unknown) => {
+        const msg = raw as Record<string, unknown>;
+        // Handle pod-log-batch messages from worker console patches
+        if (msg.type === 'pod-log-batch' && msg.podId && Array.isArray(msg.entries)) {
+          this.onPodLogBatch?.(msg.podId as string, msg.entries as Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }>);
+          return;
+        }
         if (msg.taskId !== taskId) return;
 
         if (task.timeoutHandle) clearTimeout(task.timeoutHandle);
@@ -337,8 +352,8 @@ export class WorkerAdapter implements IWorkerAdapter {
             duration: Date.now() - startTime,
           });
         } else {
-          const error = new Error(msg.error ?? 'Unknown worker error');
-          if (msg.errorStack) error.stack = msg.errorStack;
+          const error = new Error((msg.error as string) ?? 'Unknown worker error');
+          if (msg.errorStack) error.stack = msg.errorStack as string;
           reject(error);
         }
       });

@@ -149,6 +149,9 @@ export class WorkerAdapter implements IWorkerAdapter {
   /** Handler for forwarded WebRTC signals from workers */
   private signalForwardHandler?: (signal: SignallingMessage) => void;
 
+  /** Optional callback for pod log batches from Web Workers */
+  onPodLogBatch: ((podId: string, entries: Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }>) => void) | null = null;
+
   constructor(config: BrowserWorkerAdapterConfig = {}) {
     this.config = {
       minWorkers: config.minWorkers ?? 0,
@@ -296,6 +299,15 @@ export class WorkerAdapter implements IWorkerAdapter {
       worker.onmessage = (event: MessageEvent<BrowserWorkerResponse | NetworkProxyToMain>) => {
         const msg = event.data;
         
+        // Handle pod-log-batch messages from worker console patches
+        if (msg && typeof msg === 'object' && 'type' in msg && msg.type === 'pod-log-batch') {
+          const logMsg = msg as { podId?: string; entries?: unknown[] };
+          if (logMsg.podId && Array.isArray(logMsg.entries)) {
+            this.onPodLogBatch?.(logMsg.podId, logMsg.entries as Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }>);
+          }
+          return;
+        }
+        
         // Handle network proxy messages from worker
         if (msg && typeof msg === 'object' && 'type' in msg && 
             typeof msg.type === 'string' && msg.type.startsWith('network:proxy:')) {
@@ -421,6 +433,15 @@ export class WorkerAdapter implements IWorkerAdapter {
 
       worker.onmessage = (event: MessageEvent<BrowserWorkerResponse | NetworkProxyToMain>) => {
         const msg = event.data;
+        
+        // Handle pod-log-batch messages from worker console patches
+        if (msg && typeof msg === 'object' && 'type' in msg && msg.type === 'pod-log-batch') {
+          const logMsg = msg as { podId?: string; entries?: unknown[] };
+          if (logMsg.podId && Array.isArray(logMsg.entries)) {
+            this.onPodLogBatch?.(logMsg.podId, logMsg.entries as Array<{ timestamp: string; level: string; message: string; meta?: Record<string, unknown> }>);
+          }
+          return;
+        }
         
         // Handle network proxy messages from worker
         if (msg && typeof msg === 'object' && 'type' in msg && 
@@ -753,11 +774,26 @@ self.onmessage = async function(event) {
     debug: console.debug.bind(console),
   };
 
-  console.log = function() { originalConsole.log('[' + new Date().toISOString() + '][' + podId + ':out]', formatLogArgs(Array.from(arguments))); };
-  console.info = function() { originalConsole.log('[' + new Date().toISOString() + '][' + podId + ':out]', formatLogArgs(Array.from(arguments))); };
-  console.debug = function() { originalConsole.log('[' + new Date().toISOString() + '][' + podId + ':out]', formatLogArgs(Array.from(arguments))); };
-  console.warn = function() { originalConsole.error('[' + new Date().toISOString() + '][' + podId + ':err]', formatLogArgs(Array.from(arguments))); };
-  console.error = function() { originalConsole.error('[' + new Date().toISOString() + '][' + podId + ':err]', formatLogArgs(Array.from(arguments))); };
+  // Buffer log entries and flush them periodically via postMessage to the main thread
+  var logBuffer = [];
+  var LOG_FLUSH_INTERVAL = 5000;
+  var flushLogBuffer = function() {
+    if (logBuffer.length === 0) return;
+    var batch = logBuffer;
+    logBuffer = [];
+    try { self.postMessage({ type: 'pod-log-batch', podId: podId, entries: batch }); } catch(e) { /* best-effort */ }
+  };
+  var logFlushTimer = setInterval(flushLogBuffer, LOG_FLUSH_INTERVAL);
+
+  var persistLog = function(level, stream, message) {
+    logBuffer.push({ timestamp: new Date().toISOString(), level: level, message: message, meta: { podId: podId, stream: stream } });
+  };
+
+  console.log = function() { var msg = formatLogArgs(Array.from(arguments)); originalConsole.log('[' + new Date().toISOString() + '][' + podId + ':out]', msg); persistLog('info', 'out', msg); };
+  console.info = function() { var msg = formatLogArgs(Array.from(arguments)); originalConsole.log('[' + new Date().toISOString() + '][' + podId + ':out]', msg); persistLog('info', 'out', msg); };
+  console.debug = function() { var msg = formatLogArgs(Array.from(arguments)); originalConsole.log('[' + new Date().toISOString() + '][' + podId + ':out]', msg); persistLog('debug', 'out', msg); };
+  console.warn = function() { var msg = formatLogArgs(Array.from(arguments)); originalConsole.error('[' + new Date().toISOString() + '][' + podId + ':err]', msg); persistLog('warn', 'err', msg); };
+  console.error = function() { var msg = formatLogArgs(Array.from(arguments)); originalConsole.error('[' + new Date().toISOString() + '][' + podId + ':err]', msg); persistLog('error', 'err', msg); };
 
   // Make env available globally
   self.__STARK_ENV__ = context.env || {};
@@ -799,6 +835,8 @@ self.onmessage = async function(event) {
       errorStack: error instanceof Error ? error.stack : undefined,
     });
   } finally {
+    flushLogBuffer();
+    clearInterval(logFlushTimer);
     console.log = originalConsole.log;
     console.info = originalConsole.info;
     console.debug = originalConsole.debug;

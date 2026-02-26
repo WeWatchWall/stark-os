@@ -117,16 +117,47 @@ async function executePack(request: WorkerRequest): Promise<void> {
     debug: console.debug.bind(console),
   };
 
-  console.log = (...logArgs: unknown[]) =>
-    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-  console.info = (...logArgs: unknown[]) =>
-    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-  console.debug = (...logArgs: unknown[]) =>
-    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-  console.warn = (...logArgs: unknown[]) =>
-    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
-  console.error = (...logArgs: unknown[]) =>
-    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
+  // Buffer log entries and flush them periodically via IPC to the parent
+  let logBuffer: Array<{ timestamp: string; level: string; message: string; meta: { podId: string; stream: string } }> = [];
+  const LOG_FLUSH_INTERVAL = 5000;
+  const flushLogBuffer = (): void => {
+    if (logBuffer.length === 0) return;
+    const batch = logBuffer;
+    logBuffer = [];
+    try { process.send!({ type: 'pod-log-batch', podId, entries: batch }); } catch { /* best-effort */ }
+  };
+  const logFlushTimer = setInterval(flushLogBuffer, LOG_FLUSH_INTERVAL);
+  logFlushTimer.unref();
+
+  const persistLog = (level: string, stream: 'out' | 'err', message: string): void => {
+    logBuffer.push({ timestamp: new Date().toISOString(), level, message, meta: { podId, stream } });
+  };
+
+  console.log = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+    persistLog('info', 'out', msg);
+  };
+  console.info = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+    persistLog('info', 'out', msg);
+  };
+  console.debug = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+    persistLog('debug', 'out', msg);
+  };
+  console.warn = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, msg);
+    persistLog('warn', 'err', msg);
+  };
+  console.error = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, msg);
+    persistLog('error', 'err', msg);
+  };
 
   // 2b. Recreate starkAPI for worker context — the original was stripped before IPC
   // because it contains closures that cannot survive structured clone.
@@ -377,6 +408,10 @@ async function executePack(request: WorkerRequest): Promise<void> {
     };
     process.send!(response);
   } finally {
+    // Flush remaining log entries before exiting
+    flushLogBuffer();
+    clearInterval(logFlushTimer);
+
     // Restore console
     console.log = originalConsole.log;
     console.info = originalConsole.info;

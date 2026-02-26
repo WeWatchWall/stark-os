@@ -39,6 +39,7 @@ import {
   type ShutdownHandler,
   type PodLogSink,
   type VolumeFileEntry,
+  type LogEntry,
 } from '@stark-o/shared';
 import { createPortableStarkAPI } from '@stark-o/shared';
 
@@ -78,6 +79,8 @@ export interface PackExecutorConfig {
   gracefulShutdownTimeout?: number;
   /** Logger instance */
   logger?: Logger;
+  /** Callback invoked for each pod console log entry (for persistent logging) */
+  onPodLog?: (podId: string, entry: LogEntry) => void;
 }
 
 /**
@@ -117,7 +120,7 @@ interface ExecutionState {
  */
 export class PackExecutor {
   private readonly config: Required<
-    Omit<PackExecutorConfig, 'workerConfig' | 'fsConfig' | 'httpConfig' | 'orchestratorUrl' | 'authToken' | 'orchestratorWsUrl' | 'insecure' | 'maxMemoryMB' | 'logger'>
+    Omit<PackExecutorConfig, 'workerConfig' | 'fsConfig' | 'httpConfig' | 'orchestratorUrl' | 'authToken' | 'orchestratorWsUrl' | 'insecure' | 'maxMemoryMB' | 'logger' | 'onPodLog'>
   > & {
     workerConfig?: WorkerAdapterConfig;
     fsConfig?: FsAdapterConfig;
@@ -128,6 +131,7 @@ export class PackExecutor {
     insecure?: boolean;
     maxMemoryMB?: number;
     logger: Logger;
+    onPodLog?: (podId: string, entry: LogEntry) => void;
   };
   private workerAdapter: WorkerAdapter;
   private fsAdapter: FsAdapter;
@@ -151,6 +155,7 @@ export class PackExecutor {
       defaultTimeout: config.defaultTimeout ?? 0,
       maxConcurrent: config.maxConcurrent ?? 10,
       gracefulShutdownTimeout: config.gracefulShutdownTimeout ?? 5000,
+      onPodLog: config.onPodLog,
       logger: config.logger ?? createServiceLogger({
         component: 'pack-executor',
         service: 'stark-node-runtime',
@@ -169,6 +174,16 @@ export class PackExecutor {
         this.config.workerConfig?.onError?.(error);
       },
     });
+
+    // Route pod-log-batch messages from worker subprocesses to onPodLog callback
+    if (this.config.onPodLog) {
+      const onPodLog = this.config.onPodLog;
+      this.workerAdapter.onPodLogBatch = (podId, entries) => {
+        for (const e of entries) {
+          onPodLog(podId, e as LogEntry);
+        }
+      };
+    }
 
     // Initialize file system adapter
     this.fsAdapter = new FsAdapter({
@@ -958,16 +973,38 @@ export class PackExecutor {
       debug: console.debug.bind(console),
     };
 
-    console.log = (...logArgs: unknown[]) =>
-      originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-    console.info = (...logArgs: unknown[]) =>
-      originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-    console.debug = (...logArgs: unknown[]) =>
-      originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-    console.warn = (...logArgs: unknown[]) =>
-      originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
-    console.error = (...logArgs: unknown[]) =>
-      originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
+    const onPodLog = this.config.onPodLog;
+    const persistLog = (level: 'debug' | 'info' | 'warn' | 'error', stream: 'out' | 'err', message: string): void => {
+      if (onPodLog) {
+        onPodLog(context.podId, { timestamp: new Date().toISOString(), level, message, meta: { podId: context.podId, packId: context.packId, stream } });
+      }
+    };
+
+    console.log = (...logArgs: unknown[]) => {
+      const msg = formatLogArgs(logArgs);
+      originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+      persistLog('info', 'out', msg);
+    };
+    console.info = (...logArgs: unknown[]) => {
+      const msg = formatLogArgs(logArgs);
+      originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+      persistLog('info', 'out', msg);
+    };
+    console.debug = (...logArgs: unknown[]) => {
+      const msg = formatLogArgs(logArgs);
+      originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+      persistLog('debug', 'out', msg);
+    };
+    console.warn = (...logArgs: unknown[]) => {
+      const msg = formatLogArgs(logArgs);
+      originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, msg);
+      persistLog('warn', 'err', msg);
+    };
+    console.error = (...logArgs: unknown[]) => {
+      const msg = formatLogArgs(logArgs);
+      originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, msg);
+      persistLog('error', 'err', msg);
+    };
 
     // Build a cleanup function that the caller invokes when the pod actually
     // stops. For root packs the entry function returns immediately after setup,

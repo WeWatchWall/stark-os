@@ -240,6 +240,9 @@ export class NodeAgent {
       authToken: this.authToken,
       maxMemoryMB: this.config.allocatable.memory,
       logger: this.config.logger,
+      onPodLog: (podId, entry) => {
+        this.logToPodManager(podId, entry.level as 'debug' | 'info' | 'warn' | 'error' | 'fatal', entry.message, entry.meta as Record<string, unknown> | undefined);
+      },
     });
 
     // Initialize pod handler

@@ -181,16 +181,46 @@ self.onmessage = async (event: MessageEvent<WorkerRequest | { type: 'data-update
     debug: console.debug.bind(console),
   };
 
-  console.log = (...logArgs: unknown[]) =>
-    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-  console.info = (...logArgs: unknown[]) =>
-    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-  console.debug = (...logArgs: unknown[]) =>
-    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, formatLogArgs(logArgs));
-  console.warn = (...logArgs: unknown[]) =>
-    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
-  console.error = (...logArgs: unknown[]) =>
-    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, formatLogArgs(logArgs));
+  // Buffer log entries and flush them periodically via postMessage to the main thread
+  let logBuffer: Array<{ timestamp: string; level: string; message: string; meta: { podId: string; stream: string } }> = [];
+  const LOG_FLUSH_INTERVAL = 5000;
+  const flushLogBuffer = (): void => {
+    if (logBuffer.length === 0) return;
+    const batch = logBuffer;
+    logBuffer = [];
+    try { self.postMessage({ type: 'pod-log-batch', podId, entries: batch }); } catch { /* best-effort */ }
+  };
+  const logFlushTimer = setInterval(flushLogBuffer, LOG_FLUSH_INTERVAL);
+
+  const persistLog = (level: string, stream: 'out' | 'err', message: string): void => {
+    logBuffer.push({ timestamp: new Date().toISOString(), level, message, meta: { podId, stream } });
+  };
+
+  console.log = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+    persistLog('info', 'out', msg);
+  };
+  console.info = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+    persistLog('info', 'out', msg);
+  };
+  console.debug = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.log(`[${new Date().toISOString()}][${podId}:out]`, msg);
+    persistLog('debug', 'out', msg);
+  };
+  console.warn = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, msg);
+    persistLog('warn', 'err', msg);
+  };
+  console.error = (...logArgs: unknown[]) => {
+    const msg = formatLogArgs(logArgs);
+    originalConsole.error(`[${new Date().toISOString()}][${podId}:err]`, msg);
+    persistLog('error', 'err', msg);
+  };
 
   // Make env + context available globally for pack code that expects it
   self.__STARK_ENV__ = context.env ?? {};
@@ -507,6 +537,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest | { type: 'data-update
       pending.reject(new Error('Worker shutting down'));
     }
     pendingEphemeralResponses.clear();
+
+    // Flush remaining log entries before cleanup
+    flushLogBuffer();
+    clearInterval(logFlushTimer);
 
     // Restore console
     console.log = originalConsole.log;

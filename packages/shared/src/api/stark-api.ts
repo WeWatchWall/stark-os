@@ -48,7 +48,7 @@ export interface StarkAPI {
   node: {
     list(): Promise<unknown>;
     status(nameOrId: string): Promise<unknown>;
-    logs(nodeId: string, options?: { tail?: number }): Promise<unknown>;
+    logs(nameOrId: string, options?: { tail?: number }): Promise<unknown>;
   };
   pod: {
     list(options?: { namespace?: string; status?: string }): Promise<unknown>;
@@ -273,7 +273,8 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
     node: {
       async list() { return handleResponse<unknown>(await apiGet('/api/nodes')); },
       async status(nameOrId: string) { return handleResponse<unknown>(await apiGet(`/api/nodes/name/${encodeURIComponent(nameOrId)}`)); },
-      async logs(nodeId: string, options?: { tail?: number }) {
+      async logs(nameOrId: string, options?: { tail?: number }) {
+        const nodeId = await resolveNodeId(nameOrId, apiGet);
         const params = new URLSearchParams();
         if (options?.tail) params.set('tail', String(options.tail));
         const qs = params.toString();

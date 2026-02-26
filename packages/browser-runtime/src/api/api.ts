@@ -61,6 +61,7 @@ export interface StarkAPI {
   node: {
     list(): Promise<unknown>;
     status(nameOrId: string): Promise<unknown>;
+    logs(nameOrId: string, options?: { tail?: number }): Promise<unknown>;
   };
   pod: {
     list(options?: { namespace?: string; status?: string }): Promise<unknown>;
@@ -69,6 +70,7 @@ export interface StarkAPI {
     stop(podId: string): Promise<void>;
     rollback(podId: string): Promise<unknown>;
     history(podId: string): Promise<unknown>;
+    logs(podId: string, options?: { tail?: number }): Promise<unknown>;
   };
   service: {
     list(options?: { namespace?: string }): Promise<unknown>;
@@ -244,6 +246,14 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
     node: {
       async list() { return handleResponse<unknown>(await getApi().get('/api/nodes?pageSize=100')); },
       async status(nameOrId: string) { return handleResponse<unknown>(await getApi().get(`/api/nodes/name/${encodeURIComponent(nameOrId)}`)); },
+      async logs(nameOrId: string, options?: { tail?: number }) {
+        const api = getApi();
+        const nodeId = await resolveNodeId(nameOrId, api);
+        const params = new URLSearchParams();
+        if (options?.tail) params.set('tail', String(options.tail));
+        const qs = params.toString();
+        return handleResponse<unknown>(await api.get(`/api/nodes/${nodeId}/logs${qs ? '?' + qs : ''}`));
+      },
     },
     pod: {
       async list(options?: { namespace?: string; status?: string }) {
@@ -264,6 +274,12 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
       async stop(podId: string) { return handleDeleteResponse(await getApi().delete(`/api/pods/${podId}`)); },
       async rollback(podId: string) { return handleResponse<unknown>(await getApi().post(`/api/pods/${podId}/rollback`, {})); },
       async history(podId: string) { return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}/history`)); },
+      async logs(podId: string, options?: { tail?: number }) {
+        const params = new URLSearchParams();
+        if (options?.tail) params.set('tail', String(options.tail));
+        const qs = params.toString();
+        return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}/logs${qs ? '?' + qs : ''}`));
+      },
     },
     service: {
       async list(options?: { namespace?: string }) {

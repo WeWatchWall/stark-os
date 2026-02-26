@@ -1852,7 +1852,7 @@ commands['stark'] = async (ctx) => {
             return '✓ Browser node agent started.\n';
           }
           case 'logs': {
-            const n = positionals[0]; if (!n) return 'Usage: stark node logs <nodeId> [--tail <n>]\n';
+            const n = positionals[0]; if (!n) return 'Usage: stark node logs <name> [--tail <n>]\n';
             const tail = options['tail'] || options['t'];
             const data = await api.node.logs(n, { tail: tail ? Number(tail) : undefined }) as { entries?: Array<Record<string, unknown>> };
             const entries = data.entries ?? [];

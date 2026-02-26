@@ -584,17 +584,32 @@ async function watchHandler(options: { interval?: string }): Promise<void> {
 
 /**
  * Node logs handler - shows node logs
+ * Accepts either node name or UUID
  */
 async function nodeLogsHandler(
-  nodeId: string,
+  nodeNameOrId: string,
   options: { tail?: string }
 ): Promise<void> {
   requireAuth();
 
-  info(`Fetching logs for node: ${nodeId}`);
+  info(`Fetching logs for node: ${nodeNameOrId}`);
 
   try {
     const api = createApiClient();
+
+    // Resolve node name to ID if needed
+    let nodeId = nodeNameOrId;
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidPattern.test(nodeNameOrId)) {
+      const nameResponse = await api.get(`/api/nodes/name/${encodeURIComponent(nodeNameOrId)}`);
+      const nameResult = (await nameResponse.json()) as ApiResponse<{ node: { id: string } }>;
+      if (!nameResult.success || !nameResult.data) {
+        error(`Node not found: ${nodeNameOrId}`, nameResult.error);
+        process.exit(1);
+      }
+      nodeId = nameResult.data.node.id;
+    }
+
     const params = new URLSearchParams();
     if (options.tail) {
       params.set('tail', options.tail);
@@ -707,7 +722,7 @@ export function createNodeCommand(): Command {
 
   // Node logs
   node
-    .command('logs <nodeId>')
+    .command('logs <name>')
     .description('Show node logs')
     .option('-t, --tail <lines>', 'Number of lines to show from end')
     .action(nodeLogsHandler);

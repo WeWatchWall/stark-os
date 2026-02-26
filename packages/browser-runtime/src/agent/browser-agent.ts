@@ -581,6 +581,7 @@ export class BrowserAgent {
           // This ensures banned nodes (silently terminated) keep incrementing attempts
           this.emit('connected');
           this.logger.info('Connected to orchestrator');
+          this.logToNodeManager('info', 'Connected to orchestrator');
           resolve();
         };
 
@@ -610,6 +611,7 @@ export class BrowserAgent {
             type: event.type,
             readyState: this.ws?.readyState
           });
+          this.logToNodeManager('error', 'WebSocket error');
           this.emit('error', new Error('WebSocket error'));
         };
 
@@ -687,6 +689,7 @@ export class BrowserAgent {
 
       case 'disconnect':
         this.logger.info('Server requested disconnect', { payload: message.payload });
+        this.logToNodeManager('warn', 'Server requested disconnect', { payload: message.payload });
         break;
 
       case 'pod:deploy': {
@@ -761,6 +764,7 @@ export class BrowserAgent {
           const result = await this.podHandler.handleStop(stopPayload);
           if (result.success) {
             this.emit('pod:stopped', { podId: stopPayload.podId });
+            this.logToNodeManager('info', 'Pod stopped successfully', { podId: stopPayload.podId });
             await this.logToPodManager(stopPayload.podId, 'info', 'Pod stopped successfully');
             if (message.correlationId) {
               this.send({
@@ -770,6 +774,7 @@ export class BrowserAgent {
               });
             }
           } else {
+            this.logToNodeManager('error', 'Pod stop failed', { podId: stopPayload.podId, error: result.error });
             await this.logToPodManager(stopPayload.podId, 'error', 'Pod stop failed', { error: result.error });
             if (message.correlationId) {
               this.send({
@@ -782,6 +787,7 @@ export class BrowserAgent {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.logger.error('Pod stop failed', { podId: stopPayload.podId, error: errorMessage });
+          this.logToNodeManager('error', 'Pod stop failed', { podId: stopPayload.podId, error: errorMessage });
           await this.logToPodManager(stopPayload.podId, 'error', 'Pod stop failed', { error: errorMessage });
           if (message.correlationId) {
             this.send({
@@ -920,6 +926,7 @@ export class BrowserAgent {
    */
   private handleClose(code: number, reason: string): void {
     this.logger.info('WebSocket closed (transient)', { code, reason });
+    this.logToNodeManager('warn', 'WebSocket connection closed', { code, reason });
     this.stopHeartbeat();
     this.stopMetricsCollection();
     this.clearPendingRequests('Connection closed');
@@ -957,6 +964,7 @@ export class BrowserAgent {
       this.reconnectAttempts >= this.config.maxReconnectAttempts
     ) {
       this.logger.error('Max reconnect attempts reached, giving up');
+      this.logToNodeManager('error', 'Max reconnect attempts reached');
       this.emit('error', new Error('Max reconnect attempts reached'));
       return;
     }
@@ -969,6 +977,7 @@ export class BrowserAgent {
       maxAttempts: this.config.maxReconnectAttempts,
       delay,
     });
+    this.logToNodeManager('info', 'Scheduling reconnect', { attempt: this.reconnectAttempts, delay });
 
     this.emit('reconnecting', { attempt: this.reconnectAttempts, delay });
 
@@ -1956,6 +1965,7 @@ export class BrowserAgent {
         this.logger.error('Token refresh failed', { 
           error: result.error?.message ?? 'Unknown error' 
         });
+        this.logToNodeManager('error', 'Token refresh failed', { error: result.error?.message ?? 'Unknown error' });
         return false;
       }
 
@@ -1991,12 +2001,14 @@ export class BrowserAgent {
         userId: newCredentials.userId,
         expiresAt: newCredentials.expiresAt,
       });
+      this.logToNodeManager('info', 'Access token refreshed');
 
       return true;
     } catch (error) {
       this.logger.error('Token refresh failed', {
         error: error instanceof Error ? error.message : String(error),
       });
+      this.logToNodeManager('error', 'Token refresh failed', { error: error instanceof Error ? error.message : String(error) });
       return false;
     } finally {
       this.isRefreshingToken = false;
@@ -2027,6 +2039,7 @@ export class BrowserAgent {
       this.logger.debug('Heartbeat sent', { nodeId: this.nodeId });
     } catch (error) {
       this.logger.error('Heartbeat failed', { error: String(error), nodeId: this.nodeId });
+      this.logToNodeManager('error', 'Heartbeat failed', { error: error instanceof Error ? error.message : String(error) });
       // Don't emit error for heartbeat failures, the connection close will handle reconnect
     }
   }

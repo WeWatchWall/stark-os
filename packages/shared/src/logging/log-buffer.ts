@@ -10,7 +10,7 @@
  * browser main threads, and Web Workers – no non-cloneable references.
  */
 
-import type { LogEntry, LogLevel } from './logger.js';
+import type { LogEntry } from './logger.js';
 
 /** Default flush interval in milliseconds (5 s). */
 export const FLUSH_INTERVAL_MS = 5_000;

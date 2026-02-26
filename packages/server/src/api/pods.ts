@@ -920,21 +920,21 @@ async function getPodLogs(req: Request, res: Response): Promise<void> {
   const requestLogger = logger.withCorrelationId(correlationId);
 
   try {
-    if (!UUID_PATTERN.test(podId)) {
+    if (!podId || !UUID_PATTERN.test(podId)) {
       sendError(res, 'INVALID_INPUT', 'Invalid pod ID format', 400);
       return;
     }
 
     const podQueries = getPodQueriesAdmin();
-    const pod = await podQueries.getById(podId);
+    const podResult = await podQueries.getPodById(podId);
 
-    if (!pod) {
+    if (!podResult.data) {
       sendError(res, 'NOT_FOUND', `Pod '${podId}' not found`, 404);
       return;
     }
 
     // Ask the node for its pod logs via the WebSocket connection
-    const nodeId = pod.nodeId;
+    const nodeId = podResult.data.nodeId;
     if (!nodeId) {
       sendSuccess(res, { entries: [] });
       return;
@@ -943,8 +943,8 @@ async function getPodLogs(req: Request, res: Response): Promise<void> {
     const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : undefined;
 
     const connectionManager = getConnectionManager();
-    const connection = connectionManager.getConnection(nodeId);
-    if (!connection) {
+    const connInfo = connectionManager?.getConnection(nodeId);
+    if (!connInfo) {
       // Node is offline – return empty
       requestLogger.warn('Node offline, cannot retrieve pod logs', { podId, nodeId });
       sendSuccess(res, { entries: [] });
@@ -955,16 +955,17 @@ async function getPodLogs(req: Request, res: Response): Promise<void> {
     try {
       const responsePromise = new Promise<{ entries: unknown[] }>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Log retrieval timeout')), 10_000);
-        const handler = (msg: { type: string; entries?: unknown[] }) => {
+        const handler = (m: unknown) => {
+          const msg = m as { type: string; entries?: unknown[] };
           if (msg.type === 'pod-logs-response') {
             clearTimeout(timeout);
             resolve({ entries: msg.entries ?? [] });
           }
         };
-        connection.on('message', handler);
-        connection.send(JSON.stringify({ type: 'get-pod-logs', podId, tail }));
+        connInfo.ws.on('message', handler);
+        connInfo.ws.send(JSON.stringify({ type: 'get-pod-logs', podId, tail }));
         // Clean up after timeout or response
-        setTimeout(() => connection.off('message', handler), 11_000);
+        setTimeout(() => connInfo.ws.off('message', handler), 11_000);
       });
 
       const data = await responsePromise;

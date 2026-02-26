@@ -585,7 +585,7 @@ async function getNodeLogs(req: Request, res: Response): Promise<void> {
     }
 
     const nodeQueries = getNodeQueries();
-    const nodeResult = await nodeQueries.getById(nodeId);
+    const nodeResult = await nodeQueries.getNodeById(nodeId);
 
     if (!nodeResult.data) {
       sendError(res, 'NOT_FOUND', `Node '${nodeId}' not found`, 404);
@@ -594,20 +594,19 @@ async function getNodeLogs(req: Request, res: Response): Promise<void> {
 
     // Node logs are retrieved via WebSocket if the node is online.
     // Import connection service dynamically to avoid circular deps.
-    let getConnectionManager: () => { getConnection: (id: string) => unknown };
+    let connService: typeof import('../services/connection-service.js');
     try {
-      const connService = await import('../services/connection-service.js');
-      getConnectionManager = connService.getConnectionManager as typeof getConnectionManager;
+      connService = await import('../services/connection-service.js');
     } catch {
       sendSuccess(res, { entries: [] });
       return;
     }
 
     const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : undefined;
-    const connectionManager = getConnectionManager();
-    const connection = connectionManager.getConnection(nodeId) as { on: (e: string, h: (m: unknown) => void) => void; off: (e: string, h: (m: unknown) => void) => void; send: (d: string) => void } | undefined;
+    const connectionManager = connService.getConnectionManager();
+    const connInfo = connectionManager?.getConnection(nodeId);
 
-    if (!connection) {
+    if (!connInfo) {
       requestLogger.warn('Node offline, cannot retrieve logs', { nodeId });
       sendSuccess(res, { entries: [] });
       return;
@@ -616,15 +615,16 @@ async function getNodeLogs(req: Request, res: Response): Promise<void> {
     try {
       const responsePromise = new Promise<{ entries: unknown[] }>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Log retrieval timeout')), 10_000);
-        const handler = (msg: { type: string; entries?: unknown[] }) => {
+        const handler = (m: unknown) => {
+          const msg = m as { type: string; entries?: unknown[] };
           if (msg.type === 'node-logs-response') {
             clearTimeout(timeout);
             resolve({ entries: msg.entries ?? [] });
           }
         };
-        connection.on('message', handler);
-        connection.send(JSON.stringify({ type: 'get-node-logs', nodeId, tail }));
-        setTimeout(() => connection.off('message', handler), 11_000);
+        connInfo.ws.on('message', handler);
+        connInfo.ws.send(JSON.stringify({ type: 'get-node-logs', nodeId, tail }));
+        setTimeout(() => connInfo.ws.off('message', handler), 11_000);
       });
 
       const data = await responsePromise;

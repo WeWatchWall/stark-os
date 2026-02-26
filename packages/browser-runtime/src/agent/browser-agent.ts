@@ -8,6 +8,8 @@
 
 import {
   mapLocalStatusToPodStatus,
+  LogManager,
+  type LogEntry,
   type RegisterNodeInput,
   type NodeHeartbeat,
   type Node,
@@ -26,6 +28,7 @@ import {
 } from '@stark-o/shared';
 import { PodHandler, createPodHandler } from './pod-handler.js';
 import { PackExecutor } from '../executor/pack-executor.js';
+import { StorageAdapter } from '../adapters/storage-adapter.js';
 import {
   BrowserStateStore,
   createBrowserStateStore,
@@ -251,6 +254,12 @@ export class BrowserAgent {
   private networkManager: MainThreadNetworkManager | null = null;
   /** Bound handler for window beforeunload/pagehide events */
   private boundWindowUnloadHandler: (() => void) | null = null;
+  /** Persistent log manager for the node itself. */
+  private nodeLogManager: LogManager | null = null;
+  /** Per-pod persistent log managers, keyed by podId. */
+  private podLogManagers = new Map<string, LogManager>();
+  /** Shared OPFS storage adapter for log I/O. */
+  private logStorage: StorageAdapter | null = null;
 
   constructor(config: BrowserAgentConfig) {
     const debug = config.debug ?? false;
@@ -381,6 +390,10 @@ export class BrowserAgent {
     this.isShuttingDown = false;
     this.reconnectAttempts = 0;
 
+    // Initialize log storage (OPFS) so we can persist logs immediately
+    this.logStorage = new StorageAdapter({ storeName: 'stark-logs' });
+    await this.logStorage.initialize();
+
     // Initialize the pack executor before connecting
     await this.executor.initialize();
 
@@ -418,6 +431,11 @@ export class BrowserAgent {
     this.nodeId = null;
     this.connectionId = null;
 
+    // Tear down log managers
+    if (this.nodeLogManager) { this.nodeLogManager.destroy(); this.nodeLogManager = null; }
+    for (const lm of this.podLogManagers.values()) lm.destroy();
+    this.podLogManagers.clear();
+
     this.emit('stopped');
     this.logger.info('Browser agent stopped');
   }
@@ -430,6 +448,53 @@ export class BrowserAgent {
       ...this.allocatedResources,
       ...resources,
     };
+  }
+
+  /**
+   * Ensure the node-level LogManager is initialised once we know our nodeId.
+   */
+  private async ensureNodeLogManager(): Promise<void> {
+    if (this.nodeLogManager || !this.nodeId || !this.logStorage) return;
+    this.nodeLogManager = new LogManager({
+      entityType: 'node',
+      entityId: this.nodeId,
+      basePath: '',
+      storage: this.logStorage,
+    });
+    await this.nodeLogManager.initialize();
+    this.logger.info('Node log manager initialised', { nodeId: this.nodeId });
+  }
+
+  /**
+   * Get (or lazily create) a pod-level LogManager.
+   */
+  private async getOrCreatePodLogManager(podId: string): Promise<LogManager> {
+    let lm = this.podLogManagers.get(podId);
+    if (lm) return lm;
+    if (!this.logStorage) throw new Error('Log storage not initialised');
+    lm = new LogManager({
+      entityType: 'pod',
+      entityId: podId,
+      basePath: '',
+      storage: this.logStorage,
+    });
+    await lm.initialize();
+    this.podLogManagers.set(podId, lm);
+    return lm;
+  }
+
+  /**
+   * Persist a log entry to the node's LogManager.
+   */
+  private logToNodeManager(level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string, meta?: Record<string, unknown>): void {
+    if (!this.nodeLogManager) return;
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      meta,
+    };
+    this.nodeLogManager.log(entry);
   }
 
   /**
@@ -603,6 +668,7 @@ export class BrowserAgent {
           podId: deployPayload.podId,
           packName: deployPayload.pack?.name,
         });
+        this.logToNodeManager('info', 'Pod deploy requested', { podId: deployPayload.podId, packName: deployPayload.pack?.name });
         
         try {
           // Ensure executor is initialized before handling pod deploy
@@ -614,6 +680,7 @@ export class BrowserAgent {
           const result = await this.podHandler.handleDeploy(deployPayload);
           if (result.success) {
             this.emit('pod:deployed', { podId: deployPayload.podId });
+            this.logToNodeManager('info', 'Pod deployed successfully', { podId: deployPayload.podId });
             // Send success response if there's a correlationId
             if (message.correlationId) {
               this.send({
@@ -635,6 +702,7 @@ export class BrowserAgent {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.logger.error('Pod deploy failed', { podId: deployPayload.podId, error: errorMessage });
+          this.logToNodeManager('error', 'Pod deploy failed', { podId: deployPayload.podId, error: errorMessage });
           this.emit('pod:failed', { podId: deployPayload.podId, error: errorMessage });
           if (message.correlationId) {
             this.send({
@@ -654,6 +722,7 @@ export class BrowserAgent {
           podId: stopPayload.podId,
           reason: stopPayload.reason,
         });
+        this.logToNodeManager('info', 'Pod stop requested', { podId: stopPayload.podId, reason: stopPayload.reason });
         
         try {
           const result = await this.podHandler.handleStop(stopPayload);
@@ -763,6 +832,40 @@ export class BrowserAgent {
               correlationId: message.correlationId,
             });
           }
+        }
+        break;
+      }
+
+      case 'get-node-logs': {
+        // Server sends { type, nodeId, tail } at top level (not in payload)
+        const logMsg = message as unknown as { tail?: number };
+        const tail = logMsg.tail;
+        try {
+          const entries = this.nodeLogManager ? await this.nodeLogManager.readLogs(tail) : [];
+          this.send({ type: 'node-logs-response', payload: { entries } });
+        } catch (err) {
+          this.logger.error('Failed to read node logs', { error: String(err) });
+          this.send({ type: 'node-logs-response', payload: { entries: [] } });
+        }
+        break;
+      }
+
+      case 'get-pod-logs': {
+        // Server sends { type, podId, tail } at top level (not in payload)
+        const podLogMsg = message as unknown as { podId?: string; tail?: number };
+        const podId = podLogMsg.podId;
+        const podTail = podLogMsg.tail;
+        try {
+          if (podId && this.logStorage) {
+            const lm = await this.getOrCreatePodLogManager(podId);
+            const entries = await lm.readLogs(podTail);
+            this.send({ type: 'pod-logs-response', payload: { entries } });
+          } else {
+            this.send({ type: 'pod-logs-response', payload: { entries: [] } });
+          }
+        } catch (err) {
+          this.logger.error('Failed to read pod logs', { error: String(err) });
+          this.send({ type: 'pod-logs-response', payload: { entries: [] } });
         }
         break;
       }
@@ -1316,6 +1419,10 @@ export class BrowserAgent {
         nodeName: this.config.nodeName,
       });
 
+      // Initialise persistent log manager now that we have a nodeId
+      await this.ensureNodeLogManager();
+      this.logToNodeManager('info', 'Node registered', { nodeId: this.nodeId, nodeName: this.config.nodeName });
+
       // Start heartbeat and metrics collection
       this.startHeartbeat();
       this.startMetricsCollection();
@@ -1417,6 +1524,10 @@ export class BrowserAgent {
         nodeId: this.nodeId,
         nodeName: this.config.nodeName,
       });
+
+      // Initialise persistent log manager now that we have a nodeId
+      await this.ensureNodeLogManager();
+      this.logToNodeManager('info', 'Node reconnected', { nodeId: this.nodeId, nodeName: this.config.nodeName });
 
       // Start heartbeat and metrics collection
       this.startHeartbeat();

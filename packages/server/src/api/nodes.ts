@@ -616,11 +616,15 @@ async function getNodeLogs(req: Request, res: Response): Promise<void> {
       const responsePromise = new Promise<{ entries: unknown[] }>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Log retrieval timeout')), 10_000);
         const handler = (m: unknown) => {
-          const msg = m as { type: string; entries?: unknown[] };
-          if (msg.type === 'node-logs-response') {
-            clearTimeout(timeout);
-            resolve({ entries: msg.entries ?? [] });
-          }
+          try {
+            const raw = Buffer.isBuffer(m) ? m.toString() : String(m);
+            const msg = JSON.parse(raw) as { type: string; payload?: { entries?: unknown[] }; entries?: unknown[] };
+            if (msg.type === 'node-logs-response') {
+              clearTimeout(timeout);
+              const entries = msg.payload?.entries ?? msg.entries ?? [];
+              resolve({ entries });
+            }
+          } catch { /* ignore non-JSON messages */ }
         };
         connInfo.ws.on('message', handler);
         connInfo.ws.send(JSON.stringify({ type: 'get-node-logs', nodeId, tail }));

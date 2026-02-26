@@ -432,8 +432,13 @@ export class BrowserAgent {
     this.connectionId = null;
 
     // Tear down log managers
-    if (this.nodeLogManager) { this.nodeLogManager.destroy(); this.nodeLogManager = null; }
-    for (const lm of this.podLogManagers.values()) lm.destroy();
+    if (this.nodeLogManager) {
+      this.nodeLogManager.destroy();
+      this.nodeLogManager = null;
+    }
+    for (const lm of this.podLogManagers.values()) {
+      lm.destroy();
+    }
     this.podLogManagers.clear();
 
     this.emit('stopped');

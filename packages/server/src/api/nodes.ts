@@ -594,10 +594,10 @@ async function getNodeLogs(req: Request, res: Response): Promise<void> {
 
     // Node logs are retrieved via WebSocket if the node is online.
     // Import connection service dynamically to avoid circular deps.
-    let getConnectionManager: () => { getConnection: (id: string) => { on: (e: string, h: (m: unknown) => void) => void; off: (e: string, h: (m: unknown) => void) => void; send: (d: string) => void } | undefined };
+    let getConnectionManager: () => { getConnection: (id: string) => unknown };
     try {
       const connService = await import('../services/connection-service.js');
-      getConnectionManager = connService.getConnectionManager;
+      getConnectionManager = connService.getConnectionManager as typeof getConnectionManager;
     } catch {
       sendSuccess(res, { entries: [] });
       return;
@@ -605,7 +605,7 @@ async function getNodeLogs(req: Request, res: Response): Promise<void> {
 
     const tail = req.query.tail ? parseInt(req.query.tail as string, 10) : undefined;
     const connectionManager = getConnectionManager();
-    const connection = connectionManager.getConnection(nodeId);
+    const connection = connectionManager.getConnection(nodeId) as { on: (e: string, h: (m: unknown) => void) => void; off: (e: string, h: (m: unknown) => void) => void; send: (d: string) => void } | undefined;
 
     if (!connection) {
       requestLogger.warn('Node offline, cannot retrieve logs', { nodeId });

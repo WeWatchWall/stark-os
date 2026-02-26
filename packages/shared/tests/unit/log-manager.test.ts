@@ -56,7 +56,7 @@ class MemoryStorage implements IStorageAdapter {
       isSymbolicLink: () => false,
     }));
   }
-  async rmdir(): Promise<void> {}
+  async rmdir(_path: string, _recursive?: boolean): Promise<void> {}
   async exists(path: string): Promise<boolean> {
     return this.files.has(path) || this.dirs.has(path);
   }

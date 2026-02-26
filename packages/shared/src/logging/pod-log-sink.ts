@@ -227,7 +227,7 @@ export function getPodConsolePatchCode(podId: string): string {
     logBuffer = [];
     // Emit batch via structured-clone-safe message
     try {
-      if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typeof WorkerGlobalScope !== 'undefined') {
+      if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typeof importScripts === 'function') {
         self.postMessage({ type: 'pod-log-batch', podId: podId, entries: batch });
       } else if (typeof process !== 'undefined' && typeof process.send === 'function') {
         process.send({ type: 'pod-log-batch', podId: podId, entries: batch });

@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "cd ../.. && pnpm -r run build",
     "dev": "nuxt dev",
     "build": "nuxt generate",
     "preview": "nuxt preview",
@@ -15,8 +16,8 @@
     "@xterm/xterm": "^5.5.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
-    "@stark-o/browser-runtime": "workspace:*",
-    "@stark-o/shared": "workspace:*",
+    "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
+    "@stark-o/shared": "link:../../packages/shared",
     "jszip": "^3.10.1"
   },
   "devDependencies": {

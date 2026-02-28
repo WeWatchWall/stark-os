@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "cd ../.. && pnpm -r run build",
     "dev": "nuxt dev",
     "build": "nuxt generate",
     "preview": "nuxt preview",
@@ -12,8 +13,8 @@
   },
   "dependencies": {
     "vue": "^3.5.0",
-    "@stark-o/browser-runtime": "workspace:*",
-    "@stark-o/shared": "workspace:*"
+    "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
+    "@stark-o/shared": "link:../../packages/shared"
   },
   "devDependencies": {
     "nuxt": "^3.15.0",

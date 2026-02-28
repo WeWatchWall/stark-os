@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "cd ../.. && pnpm -r run build",
     "dev": "nuxt dev",
     "build": "nuxt generate",
     "preview": "nuxt preview",

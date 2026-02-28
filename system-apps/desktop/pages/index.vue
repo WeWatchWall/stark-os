@@ -44,6 +44,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 
+/* ── Tunable constants ── */
+const LONG_PRESS_MS = 300;
+const GHOST_OFFSET_PX = 30;
+const REFRESH_INTERVAL_MS = 5000;
+
 /*
  * We inline the shared helpers rather than importing from the Nuxt layer
  * so the desktop app can run standalone without a layer dependency at
@@ -321,20 +326,20 @@ function onTouchStart(index: number, event: TouchEvent): void {
   touchDragSourceIndex = index;
   isTouchDragging = false;
 
-  // Long-press to start drag (300ms)
+  // Long-press to start drag
   touchStartTimer = setTimeout(() => {
     isTouchDragging = true;
     const touch = event.touches[0];
     const item = orderedItems.value[index];
     const cat = categoryOf(item.name, item.isDirectory);
     touchDragGhost.value = {
-      x: touch.clientX - 30,
-      y: touch.clientY - 30,
+      x: touch.clientX - GHOST_OFFSET_PX,
+      y: touch.clientY - GHOST_OFFSET_PX,
       svg: CATEGORY_ICON[cat],
       color: CATEGORY_COLORS[cat],
       name: item.name,
     };
-  }, 300);
+  }, LONG_PRESS_MS);
 }
 
 function onTouchMove(event: TouchEvent): void {
@@ -348,8 +353,8 @@ function onTouchMove(event: TouchEvent): void {
   }
 
   const touch = event.touches[0];
-  touchDragGhost.value.x = touch.clientX - 30;
-  touchDragGhost.value.y = touch.clientY - 30;
+  touchDragGhost.value.x = touch.clientX - GHOST_OFFSET_PX;
+  touchDragGhost.value.y = touch.clientY - GHOST_OFFSET_PX;
 
   // Find which grid cell the touch is over
   const el = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -401,7 +406,7 @@ onMounted(async () => {
   await readDesktopDir();
 
   // Refresh every 5 seconds to pick up terminal changes
-  refreshInterval = setInterval(() => readDesktopDir(), 5000);
+  refreshInterval = setInterval(() => readDesktopDir(), REFRESH_INTERVAL_MS);
 });
 
 onBeforeUnmount(() => {

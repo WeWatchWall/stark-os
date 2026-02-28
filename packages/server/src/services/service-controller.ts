@@ -858,6 +858,7 @@ export class ServiceController {
       resourceRequests: service.resourceRequests,
       resourceLimits: service.resourceLimits,
       scheduling: service.scheduling,
+      args: service.args,
     }, service.createdBy, service.id, incarnation, targetNodeId);
 
     if (result.error) {
@@ -969,6 +970,7 @@ export class ServiceController {
         resourceRequests: pod.resourceRequests,
         resourceLimits: pod.resourceLimits,
         volumeMounts: pod.volumeMounts,
+        args: pod.args,
         labels: pod.labels,
         annotations: pod.annotations,
         namespace: pod.namespace,

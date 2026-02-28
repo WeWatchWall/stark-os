@@ -53,7 +53,7 @@ export interface StarkAPI {
   pod: {
     list(options?: { namespace?: string; status?: string }): Promise<unknown>;
     status(podId: string): Promise<unknown>;
-    create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string }): Promise<unknown>;
+    create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; args?: string[] }): Promise<unknown>;
     stop(podId: string): Promise<unknown>;
     rollback(podId: string): Promise<unknown>;
     history(podId: string): Promise<unknown>;
@@ -62,7 +62,7 @@ export interface StarkAPI {
   service: {
     list(options?: { namespace?: string }): Promise<unknown>;
     status(name: string): Promise<unknown>;
-    create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string }): Promise<unknown>;
+    create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string; args?: string[] }): Promise<unknown>;
   };
   namespace: {
     list(): Promise<unknown>;
@@ -290,10 +290,11 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         return handleResponse<unknown>(await apiGet(`/api/pods${qs ? '?' + qs : ''}`));
       },
       async status(podId: string) { return handleResponse<unknown>(await apiGet(`/api/pods/${podId}`)); },
-      async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string }) {
+      async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; args?: string[] }) {
         const body: Record<string, unknown> = { packName, namespace: options?.namespace ?? 'default' };
         if (options?.packVersion) body.packVersion = options.packVersion;
         if (options?.nodeId) body.nodeId = options.nodeId;
+        if (options?.args) body.args = options.args;
         return handleResponse<unknown>(await apiPost('/api/pods', body));
       },
       async stop(podId: string) { return handleResponse<unknown>(await apiPost(`/api/pods/${podId}/stop`, {})); },
@@ -314,8 +315,9 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         return handleResponse<unknown>(await apiGet(`/api/services${qs ? '?' + qs : ''}`));
       },
       async status(name: string) { return handleResponse<unknown>(await apiGet(`/api/services/name/${encodeURIComponent(name)}`)); },
-      async create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string }) {
-        const body = { packName, namespace: options?.namespace ?? 'default', replicas: options?.replicas ?? 1, visibility: options?.visibility ?? 'private' };
+      async create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string; args?: string[] }) {
+        const body: Record<string, unknown> = { packName, namespace: options?.namespace ?? 'default', replicas: options?.replicas ?? 1, visibility: options?.visibility ?? 'private' };
+        if (options?.args) body.args = options.args;
         return handleResponse<unknown>(await apiPost('/api/services', body));
       },
     },

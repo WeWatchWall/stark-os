@@ -455,6 +455,7 @@ export class PackExecutor {
         ...pack.metadata,
         ...pod.metadata,
       },
+      args: (options.args as string[] | undefined) ?? pod.args ?? [],
       serviceId,
       // Pod authentication tokens for secure orchestrator registration
       authToken: options.podToken,
@@ -809,7 +810,7 @@ export class PackExecutor {
         executionId: context.executionId,
       });
 
-      const { lifecycle: _lc, onShutdown: _os, onMessage: _om, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, ...serializableContext } = context;
+      const { lifecycle: _lc, onShutdown: _os, onMessage: _om, ephemeral: _eph, readFile: _rf, writeFile: _wf, appendFile: _af, starkAPI: _api, listen: _listen, ...serializableContext } = context;
       
       // Add networking config for pack-worker
       const workerContext = {

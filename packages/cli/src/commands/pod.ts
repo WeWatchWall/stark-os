@@ -89,6 +89,7 @@ async function createHandler(
     cpu?: string;
     memory?: string;
     volume?: string[];
+    arg?: string[];
   }
 ): Promise<void> {
   // Support both positional argument and --pack option
@@ -195,6 +196,11 @@ async function createHandler(
         volumeMounts.push({ name: volName, mountPath });
       }
       podRequest.volumeMounts = volumeMounts;
+    }
+
+    // Parse args
+    if (options.arg && options.arg.length > 0) {
+      podRequest.args = options.arg;
     }
 
     const replicas = parseInt(options.replicas ?? '1', 10);
@@ -613,6 +619,7 @@ export function createPodCommand(): Command {
     .option('--cpu <millicores>', 'CPU request in millicores')
     .option('--memory <mb>', 'Memory request in MB')
     .option('--volume <name:path>', 'Volume mount (name:/mount/path, can be repeated)', (v: string, prev: string[]) => [...prev, v], [] as string[])
+    .option('-a, --arg <value>', 'Argument to pass to the pack (can be repeated)', (v: string, prev: string[]) => [...prev, v], [] as string[])
     .action(createHandler);
 
   // List pods

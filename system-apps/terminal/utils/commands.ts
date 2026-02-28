@@ -1937,9 +1937,18 @@ commands['stark'] = async (ctx) => {
           case 'create': case 'run': {
             const pack = positionals[0] || options['pack'];
             if (!pack) return 'Usage: stark pod create <pack> [options]\n';
-            const result = await api.pod.create(String(pack), {
+            // Collect repeatable --arg / -a values from raw args
+            const podArgs: string[] = [];
+            for (let i = 0; i < rest.length; i++) {
+              if ((rest[i] === '--arg' || rest[i] === '-a') && i + 1 < rest.length && !rest[i + 1]!.startsWith('-')) {
+                podArgs.push(rest[++i]!);
+              }
+            }
+            const createOpts: Record<string, unknown> = {
               namespace: String(options['namespace'] || options['n'] || 'default'),
-            }) as { pod?: Record<string, unknown> } | Record<string, unknown>;
+            };
+            if (podArgs.length > 0) createOpts.args = podArgs;
+            const result = await api.pod.create(String(pack), createOpts) as { pod?: Record<string, unknown> } | Record<string, unknown>;
             const pod = (result as { pod?: Record<string, unknown> }).pod ?? result as Record<string, unknown>;
             let out = `✓ Deployed 1 pod(s)\n\n`;
             out += fmtTable(
@@ -2062,10 +2071,19 @@ commands['stark'] = async (ctx) => {
           case 'create': {
             const pack = positionals[0] || options['pack'];
             if (!pack) return 'Usage: stark service create <pack> [options]\n';
-            const svc = await api.service.create(String(pack), {
+            // Collect repeatable --arg / -a values from raw args
+            const svcArgs: string[] = [];
+            for (let i = 0; i < rest.length; i++) {
+              if ((rest[i] === '--arg' || rest[i] === '-a') && i + 1 < rest.length && !rest[i + 1]!.startsWith('-')) {
+                svcArgs.push(rest[++i]!);
+              }
+            }
+            const svcOpts: Record<string, unknown> = {
               namespace: String(options['namespace'] || 'default'),
               replicas: parseInt(String(options['replicas'] || '1'), 10),
-            }) as { service?: Record<string, unknown> } | Record<string, unknown>;
+            };
+            if (svcArgs.length > 0) svcOpts.args = svcArgs;
+            const svc = await api.service.create(String(pack), svcOpts) as { service?: Record<string, unknown> } | Record<string, unknown>;
             const service = (svc as { service?: Record<string, unknown> }).service ?? svc as Record<string, unknown>;
             let out = `✓ Service '${service.name ?? pack}' created\n\n`;
             out += fmtKeyValue({

@@ -89,6 +89,7 @@ async function createHandler(
     enableEphemeral?: boolean;
     node?: string;
     volume?: string[];
+    arg?: string[];
   }
 ): Promise<void> {
   const name = nameArg || options.name;
@@ -251,6 +252,11 @@ async function createHandler(
       }
       serviceRequest.volumeMounts = volumeMounts;
       info(`Volumes: ${options.volume.join(', ')}`);
+    }
+
+    // Parse args
+    if (options.arg && options.arg.length > 0) {
+      serviceRequest.args = options.arg;
     }
 
     const response = await api.post('/api/services', serviceRequest);
@@ -752,6 +758,7 @@ export function createServiceCommand(): Command {
     .option('--enable-ephemeral', 'Enable EphemeralDataPlane for pods in this service')
     .option('-n, --node <nodeId>', 'Target node ID (required for volume mounts)')
     .option('--volume <name:path>', 'Volume mount (name:/mount/path, can be repeated)', (v: string, prev: string[]) => [...prev, v], [] as string[])
+    .option('-a, --arg <value>', 'Argument to pass to the pack (can be repeated)', (v: string, prev: string[]) => [...prev, v], [] as string[])
     .action(createHandler);
 
   // List services

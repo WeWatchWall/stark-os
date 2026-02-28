@@ -177,6 +177,8 @@ export interface Service {
    * @default false
    */
   enableEphemeral: boolean;
+  /** Arguments passed to pods created by this service */
+  args: string[];
   /** Additional metadata */
   metadata: Record<string, unknown>;
   /** User who created the service */
@@ -274,6 +276,8 @@ export interface CreateServiceInput {
    * @default false
    */
   enableEphemeral?: boolean;
+  /** Arguments passed to pods created by this service */
+  args?: string[];
   /** Additional metadata */
   metadata?: Record<string, unknown>;
 }
@@ -338,6 +342,8 @@ export interface UpdateServiceInput {
   secrets?: string[];
   /** Enable/disable ephemeral data plane */
   enableEphemeral?: boolean;
+  /** Arguments update */
+  args?: string[];
 }
 
 /**

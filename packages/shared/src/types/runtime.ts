@@ -95,6 +95,7 @@ export interface PodDeployPayload {
   resourceRequests?: ResourceRequirements;
   resourceLimits?: ResourceRequirements;
   volumeMounts?: VolumeMount[];
+  args?: string[];
   labels?: Labels;
   annotations?: Annotations;
   namespace?: string;
@@ -203,6 +204,8 @@ export interface PackExecutionContext {
   timeout: number;
   /** Additional metadata */
   metadata: Record<string, unknown>;
+  /** Arguments passed to the pack entrypoint */
+  args: string[];
   
   /**
    * Pod lifecycle facts - queryable state about the pod's lifecycle.

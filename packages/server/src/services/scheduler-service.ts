@@ -441,6 +441,7 @@ export class SchedulerService {
         resourceRequests: pod.resourceRequests,
         resourceLimits: pod.resourceLimits,
         volumeMounts: pod.volumeMounts,
+        args: pod.args,
         labels: pod.labels,
         annotations: pod.annotations,
         namespace: pod.namespace,

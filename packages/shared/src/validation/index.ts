@@ -45,6 +45,7 @@ export {
   validateTolerations,
   validateResourceRequirements,
   validatePodMetadata,
+  validateArgs,
   validateCreatePodInput,
   validatePodStatus,
   validateUpdatePodInput,

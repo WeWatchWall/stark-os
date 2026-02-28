@@ -195,6 +195,7 @@ export class PodHandler {
         podToken: payload.podToken,
         podRefreshToken: payload.podRefreshToken,
         podTokenExpiresAt: payload.podTokenExpiresAt,
+        args: payload.args,
       });
       state.executionHandle = executionHandle;
       state.startedAt = new Date();

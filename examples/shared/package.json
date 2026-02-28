@@ -1,0 +1,8 @@
+{
+  "name": "@stark-o/examples-shared",
+  "version": "0.0.1",
+  "description": "Shared utilities for Stark OS apps — file icons, OPFS helpers, and more",
+  "private": true,
+  "type": "module",
+  "main": "./utils/index.ts"
+}

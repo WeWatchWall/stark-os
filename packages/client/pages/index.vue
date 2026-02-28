@@ -307,6 +307,8 @@ async function handleRegister(): Promise<void> {
 
 /** Name used when the start-menu pack is registered */
 const START_MENU_PACK_NAME = 'start-menu';
+/** Name used when the desktop pack is registered */
+const DESKTOP_PACK_NAME = 'desktop';
 
 /**
  * Start the browser agent with the given auth token.
@@ -337,6 +339,12 @@ async function startAgent(authToken: string): Promise<void> {
         // Hide immediately — logo click will toggle visibility
         shell.hideStartMenu();
         return shell.startMenuContainerId;
+      }
+      // Desktop pack: attach to the dedicated desktop-grid surface
+      if (packName === DESKTOP_PACK_NAME) {
+        shell.desktopAttached = true;
+        shell.desktopPodId = podId;
+        return shell.desktopContainerId;
       }
       // Normal packs: open a window with chrome
       const win = shell.openWindow({ podId, title: packName });

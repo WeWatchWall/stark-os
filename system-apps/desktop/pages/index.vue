@@ -158,7 +158,8 @@ const ARRANGEMENT_PATH = '/home/.stark/desktop';
 
 const gridContainer = ref<HTMLDivElement | null>(null);
 const items = ref<DesktopItem[]>([]);
-const arrangementOrder = ref<string[]>([]);
+const sparseArrangement = ref<(string | null)[]>([]);
+const compactArrangement = ref<string[]>([]);
 const dragSourceIndex = ref<number | null>(null);
 const dropTargetIndex = ref<number | null>(null);
 
@@ -173,39 +174,13 @@ let touchDragSourceIndex: number | null = null;
 let touchStartTimer: ReturnType<typeof setTimeout> | null = null;
 let isTouchDragging = false;
 
-// ── Computed: merge items with saved order ──
-
-const orderedItems = computed(() => {
-  const order = arrangementOrder.value;
-  if (!order.length) return items.value;
-
-  const byName = new Map(items.value.map(item => [item.name, item]));
-  const result: DesktopItem[] = [];
-
-  // Add items in saved order first
-  for (const name of order) {
-    const item = byName.get(name);
-    if (item) {
-      result.push(item);
-      byName.delete(name);
-    }
-  }
-
-  // Append any new items not in the saved order
-  for (const item of byName.values()) {
-    result.push(item);
-  }
-
-  return result;
-});
-
 // ── Grid slot computation ──
 
-/** Number of grid slots needed to fill the visible container area. */
+/** Number of grid slots that fit in the visible container (floored to avoid scrollbar). */
 const totalSlots = computed(() => {
   const w = containerWidth.value;
   const h = containerHeight.value;
-  if (w === 0 || h === 0) return orderedItems.value.length || 1;
+  if (w === 0 || h === 0) return items.value.length || 1;
 
   // Breakpoints & sizes mirror the CSS media-query values above
   let minCellW = 80, rowH = 90;
@@ -222,15 +197,69 @@ const totalSlots = computed(() => {
   const availW = w - 2 * pad;
   const cols = Math.max(1, Math.floor((availW + gap) / (minCellW + gap)));
   const availH = h - 2 * pad;
-  const rows = Math.max(1, Math.ceil(availH / (rowH + gap)));
+  const rows = Math.max(1, Math.floor(availH / (rowH + gap)));
 
-  return Math.max(orderedItems.value.length, cols * rows);
+  return Math.max(items.value.length, cols * rows);
 });
 
-/** Items + null placeholders to fill the grid. */
+/** Whether the grid is too small for the sparse layout (e.g. on mobile). */
+const isCompact = computed(() => {
+  // Before ResizeObserver fires, don't compact to avoid a flash
+  if (containerWidth.value === 0 || containerHeight.value === 0) return false;
+  return sparseArrangement.value.length > totalSlots.value;
+});
+
+/** Grid slots: sparse positions when space allows, compacted when tight. */
 const displaySlots = computed<Array<DesktopItem | null>>(() => {
-  const out: Array<DesktopItem | null> = orderedItems.value.map(i => i);
-  while (out.length < totalSlots.value) out.push(null);
+  const byName = new Map(items.value.map(item => [item.name, item]));
+  const slots = totalSlots.value;
+  const out: Array<DesktopItem | null> = new Array(slots).fill(null);
+
+  if (isCompact.value) {
+    // Compact mode: use compact arrangement, place items sequentially
+    const order = compactArrangement.value;
+    const placed = new Set<string>();
+    let pos = 0;
+    for (const name of order) {
+      if (pos >= slots) break;
+      if (byName.has(name)) {
+        out[pos++] = byName.get(name)!;
+        placed.add(name);
+      }
+    }
+    for (const item of items.value) {
+      if (pos >= slots) break;
+      if (!placed.has(item.name)) { out[pos++] = item; }
+    }
+  } else {
+    // Sparse mode: use sparse arrangement, preserve positions
+    const order = sparseArrangement.value;
+    const arrangedNames: string[] = [];
+    for (const name of order) {
+      if (name && byName.has(name)) arrangedNames.push(name);
+    }
+    const inArrangement = new Set(arrangedNames);
+    for (const item of items.value) {
+      if (!inArrangement.has(item.name)) arrangedNames.push(item.name);
+    }
+
+    const placed = new Set<string>();
+    for (let i = 0; i < order.length; i++) {
+      const name = order[i];
+      if (name && byName.has(name)) {
+        out[i] = byName.get(name)!;
+        placed.add(name);
+      }
+    }
+    let nextNull = 0;
+    for (const name of arrangedNames) {
+      if (!placed.has(name)) {
+        while (nextNull < slots && out[nextNull] !== null) nextNull++;
+        if (nextNull < slots) { out[nextNull] = byName.get(name)!; nextNull++; }
+      }
+    }
+  }
+
   return out;
 });
 
@@ -288,12 +317,24 @@ async function loadArrangement(): Promise<void> {
     const file = await fh.getFile();
     const text = await file.text();
     const data = JSON.parse(text);
-    if (Array.isArray(data.order)) {
-      arrangementOrder.value = data.order;
+
+    if (Array.isArray(data.sparse)) {
+      sparseArrangement.value = data.sparse;
+    } else if (Array.isArray(data.order)) {
+      // Backward compat with old single-array format
+      sparseArrangement.value = data.order;
+    }
+
+    if (Array.isArray(data.compact)) {
+      compactArrangement.value = data.compact;
+    } else {
+      // Derive compact from sparse (item names in order, no gaps)
+      compactArrangement.value = sparseArrangement.value.filter((n): n is string => n !== null);
     }
   } catch {
     // No arrangement file yet — that's fine
-    arrangementOrder.value = [];
+    sparseArrangement.value = [];
+    compactArrangement.value = [];
   }
 }
 
@@ -305,7 +346,10 @@ async function saveArrangement(): Promise<void> {
 
     const fh = await getFileHandleHelper(opfsRoot, ARRANGEMENT_PATH, true);
     const writable = await fh.createWritable();
-    const data = JSON.stringify({ order: orderedItems.value.map(i => i.name) }, null, 2);
+    const data = JSON.stringify({
+      sparse: sparseArrangement.value,
+      compact: compactArrangement.value,
+    }, null, 2);
     await writable.write(new TextEncoder().encode(data));
     await writable.close();
   } catch (err) {
@@ -316,19 +360,27 @@ async function saveArrangement(): Promise<void> {
 // ── Shared reorder helper ──
 
 function reorderItems(from: number, to: number): void {
-  const arr = [...orderedItems.value];
-  const [moved] = arr.splice(from, 1);
-  // When dropping onto an empty slot beyond the item list, append to end
-  const insertAt = Math.min(to, arr.length);
-  arr.splice(insertAt, 0, moved);
-  arrangementOrder.value = arr.map(i => i.name);
+  // Capture current full grid state as sparse name array, then swap positions
+  const newOrder: (string | null)[] = displaySlots.value.map(s => s?.name ?? null);
+  const movedName = newOrder[from];
+  if (!movedName) return;
+
+  newOrder[from] = newOrder[to]; // swap (target may be null or another item)
+  newOrder[to] = movedName;
+
+  if (isCompact.value) {
+    // Save as compact (dense list of names, no nulls)
+    compactArrangement.value = newOrder.filter((n): n is string => n !== null);
+  } else {
+    sparseArrangement.value = newOrder;
+  }
   saveArrangement();
 }
 
 // ── Drag & Drop (mouse) ──
 
 function onDragStart(index: number, event: DragEvent): void {
-  if (index >= orderedItems.value.length) { event.preventDefault(); return; }
+  if (!displaySlots.value[index]) { event.preventDefault(); return; }
   dragSourceIndex.value = index;
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
@@ -373,7 +425,8 @@ function onDrop(event: DragEvent): void {
 // ── Drag & Drop (touch) ──
 
 function onTouchStart(index: number, event: TouchEvent): void {
-  if (index >= orderedItems.value.length) return;
+  const item = displaySlots.value[index];
+  if (!item) return;
   touchDragSourceIndex = index;
   isTouchDragging = false;
 
@@ -381,7 +434,6 @@ function onTouchStart(index: number, event: TouchEvent): void {
   touchStartTimer = setTimeout(() => {
     isTouchDragging = true;
     const touch = event.touches[0];
-    const item = orderedItems.value[index];
     const cat = categoryOf(item.name, item.isDirectory);
     touchDragGhost.value = {
       x: touch.clientX - GHOST_OFFSET_PX,
@@ -523,7 +575,7 @@ onBeforeUnmount(() => {
   transition: background 0.15s ease;
 }
 
-.grid-cell:hover {
+.grid-cell:not(.empty-slot):hover {
   background: rgba(255, 255, 255, 0.08);
 }
 

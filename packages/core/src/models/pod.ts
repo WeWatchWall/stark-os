@@ -432,6 +432,7 @@ export class PodModel {
       },
       scheduling: input.scheduling,
       volumeMounts: input.volumeMounts ?? [],
+      args: input.args ?? [],
       incarnation: 1,
       createdBy,
       scheduledAt: undefined,

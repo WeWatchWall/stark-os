@@ -6,11 +6,14 @@
     @drop.prevent="onDrop"
   >
     <div
-      v-for="(item, index) in orderedItems"
-      :key="item.name"
+      v-for="(slot, index) in displaySlots"
+      :key="slot ? slot.name : `empty-${index}`"
       class="grid-cell"
-      :class="{ 'drag-over': dropTargetIndex === index }"
-      :draggable="true"
+      :class="{
+        'drag-over': dropTargetIndex === index,
+        'empty-slot': !slot,
+      }"
+      :draggable="!!slot"
       @dragstart="onDragStart(index, $event)"
       @dragend="onDragEnd"
       @dragenter.prevent="onDragEnter(index)"
@@ -19,10 +22,12 @@
       @touchmove.prevent="onTouchMove($event)"
       @touchend="onTouchEnd"
     >
-      <div class="icon-wrapper" :style="{ color: getColor(item) }">
-        <div class="icon-svg" v-html="getSvg(item)"></div>
-      </div>
-      <span class="icon-label" :title="item.name">{{ item.name }}</span>
+      <template v-if="slot">
+        <div class="icon-wrapper" :style="{ color: getColor(slot) }">
+          <div class="icon-svg" v-html="getSvg(slot)"></div>
+        </div>
+        <span class="icon-label" :title="slot.name">{{ slot.name }}</span>
+      </template>
     </div>
 
     <!-- Ghost element for touch drag -->
@@ -157,6 +162,11 @@ const arrangementOrder = ref<string[]>([]);
 const dragSourceIndex = ref<number | null>(null);
 const dropTargetIndex = ref<number | null>(null);
 
+// Container size (tracked via ResizeObserver for slot computation)
+const containerWidth = ref(0);
+const containerHeight = ref(0);
+let resizeObserver: ResizeObserver | null = null;
+
 // Touch drag state
 const touchDragGhost = ref<{ x: number; y: number; svg: string; color: string; name: string } | null>(null);
 let touchDragSourceIndex: number | null = null;
@@ -187,6 +197,41 @@ const orderedItems = computed(() => {
   }
 
   return result;
+});
+
+// ── Grid slot computation ──
+
+/** Number of grid slots needed to fill the visible container area. */
+const totalSlots = computed(() => {
+  const w = containerWidth.value;
+  const h = containerHeight.value;
+  if (w === 0 || h === 0) return orderedItems.value.length || 1;
+
+  // Breakpoints & sizes mirror the CSS media-query values above
+  let minCellW = 80, rowH = 90;
+  if (w <= 480)       { minCellW = 64; rowH = 80; }
+  else if (w <= 768)  { minCellW = 72; rowH = 84; }
+  else if (w >= 1200) { minCellW = 88; rowH = 96; }
+
+  // Gap ≈ CSS clamp(0px, 0.5vw, 4px), Padding ≈ CSS clamp(2px, 1vw, 8px)
+  const gap = Math.max(0, Math.min(w * 0.005, 4));
+  const pad = Math.max(2, Math.min(w * 0.01, 8));
+
+  // CSS auto-fill formula: floor((available + gap) / (min + gap))
+  // because N columns occupy N*min + (N-1)*gap = N*(min+gap) - gap
+  const availW = w - 2 * pad;
+  const cols = Math.max(1, Math.floor((availW + gap) / (minCellW + gap)));
+  const availH = h - 2 * pad;
+  const rows = Math.max(1, Math.ceil(availH / (rowH + gap)));
+
+  return Math.max(orderedItems.value.length, cols * rows);
+});
+
+/** Items + null placeholders to fill the grid. */
+const displaySlots = computed<Array<DesktopItem | null>>(() => {
+  const out: Array<DesktopItem | null> = orderedItems.value.map(i => i);
+  while (out.length < totalSlots.value) out.push(null);
+  return out;
 });
 
 // ── Icon helpers ──
@@ -268,9 +313,22 @@ async function saveArrangement(): Promise<void> {
   }
 }
 
+// ── Shared reorder helper ──
+
+function reorderItems(from: number, to: number): void {
+  const arr = [...orderedItems.value];
+  const [moved] = arr.splice(from, 1);
+  // When dropping onto an empty slot beyond the item list, append to end
+  const insertAt = Math.min(to, arr.length);
+  arr.splice(insertAt, 0, moved);
+  arrangementOrder.value = arr.map(i => i.name);
+  saveArrangement();
+}
+
 // ── Drag & Drop (mouse) ──
 
 function onDragStart(index: number, event: DragEvent): void {
+  if (index >= orderedItems.value.length) { event.preventDefault(); return; }
   dragSourceIndex.value = index;
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
@@ -309,20 +367,13 @@ function onDrop(event: DragEvent): void {
   dropTargetIndex.value = null;
 
   if (from === null || to === null || from === to) return;
-
-  // Reorder
-  const arr = [...orderedItems.value];
-  const [moved] = arr.splice(from, 1);
-  arr.splice(to, 0, moved);
-
-  // Update arrangement
-  arrangementOrder.value = arr.map(i => i.name);
-  saveArrangement();
+  reorderItems(from, to);
 }
 
 // ── Drag & Drop (touch) ──
 
 function onTouchStart(index: number, event: TouchEvent): void {
+  if (index >= orderedItems.value.length) return;
   touchDragSourceIndex = index;
   isTouchDragging = false;
 
@@ -380,11 +431,7 @@ function onTouchEnd(): void {
     const from = touchDragSourceIndex;
     const to = dropTargetIndex.value;
     if (from !== to) {
-      const arr = [...orderedItems.value];
-      const [moved] = arr.splice(from, 1);
-      arr.splice(to, 0, moved);
-      arrangementOrder.value = arr.map(i => i.name);
-      saveArrangement();
+      reorderItems(from, to);
     }
   }
 
@@ -405,6 +452,19 @@ onMounted(async () => {
   await loadArrangement();
   await readDesktopDir();
 
+  // Track container size for slot computation
+  if (gridContainer.value) {
+    containerWidth.value = gridContainer.value.clientWidth;
+    containerHeight.value = gridContainer.value.clientHeight;
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        containerWidth.value = entry.contentRect.width;
+        containerHeight.value = entry.contentRect.height;
+      }
+    });
+    resizeObserver.observe(gridContainer.value);
+  }
+
   // Refresh every 5 seconds to pick up terminal changes
   refreshInterval = setInterval(() => readDesktopDir(), REFRESH_INTERVAL_MS);
 });
@@ -412,6 +472,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (refreshInterval) clearInterval(refreshInterval);
   if (touchStartTimer) clearTimeout(touchStartTimer);
+  resizeObserver?.disconnect();
 });
 </script>
 
@@ -423,8 +484,8 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   grid-auto-rows: 90px;
   align-content: start;
-  gap: 4px;
-  padding: 8px;
+  gap: clamp(0px, 0.5vw, 4px);
+  padding: clamp(2px, 1vw, 8px);
   overflow-y: auto;
   user-select: none;
 }
@@ -434,8 +495,6 @@ onBeforeUnmount(() => {
   .desktop-grid {
     grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
     grid-auto-rows: 80px;
-    gap: 2px;
-    padding: 4px;
   }
 }
 
@@ -482,6 +541,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  pointer-events: none;
 }
 
 @media (max-width: 480px) {
@@ -512,6 +572,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
 }
 
 @media (max-width: 480px) {

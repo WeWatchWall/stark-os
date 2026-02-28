@@ -14,13 +14,14 @@
         'empty-slot': !slot,
       }"
       :draggable="!!slot"
+      @dblclick="onDblClick(index)"
       @dragstart="onDragStart(index, $event)"
       @dragend="onDragEnd"
       @dragenter.prevent="onDragEnter(index)"
       @dragleave="onDragLeave(index)"
       @touchstart="onTouchStart(index, $event)"
       @touchmove.prevent="onTouchMove($event)"
-      @touchend="onTouchEnd"
+      @touchend="onTouchEnd(index)"
     >
       <template v-if="slot">
         <div class="icon-wrapper" :style="{ color: getColor(slot) }">
@@ -48,6 +49,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { createStarkAPI } from '@stark-o/browser-runtime';
 
 /* ── Tunable constants ── */
 const LONG_PRESS_MS = 300;
@@ -173,6 +175,10 @@ const touchDragGhost = ref<{ x: number; y: number; svg: string; color: string; n
 let touchDragSourceIndex: number | null = null;
 let touchStartTimer: ReturnType<typeof setTimeout> | null = null;
 let isTouchDragging = false;
+
+// Touch tap detection for folder open (double-tap)
+let lastTapIndex: number | null = null;
+let lastTapTime = 0;
 
 // ── Grid slot computation ──
 
@@ -473,7 +479,7 @@ function onTouchMove(event: TouchEvent): void {
   }
 }
 
-function onTouchEnd(): void {
+function onTouchEnd(index: number): void {
   if (touchStartTimer) {
     clearTimeout(touchStartTimer);
     touchStartTimer = null;
@@ -487,10 +493,56 @@ function onTouchEnd(): void {
     }
   }
 
+  // Detect double-tap on non-drag touch (folder open)
+  if (!isTouchDragging) {
+    const now = Date.now();
+    if (lastTapIndex === index && now - lastTapTime < 400) {
+      onDblClick(index);
+      lastTapIndex = null;
+      lastTapTime = 0;
+    } else {
+      lastTapIndex = index;
+      lastTapTime = now;
+    }
+  }
+
   touchDragGhost.value = null;
   touchDragSourceIndex = null;
   dropTargetIndex.value = null;
   isTouchDragging = false;
+}
+
+// ── Double-click / tap to open folder ──
+
+function onDblClick(index: number): void {
+  const item = displaySlots.value[index];
+  if (!item || !item.isDirectory) return;
+  launchFilesApp('/home/desktop/' + item.name);
+}
+
+/**
+ * Read the current browser node ID from the pack execution context.
+ */
+function getBrowserNodeId(): string | null {
+  try {
+    const env = (window.parent as Record<string, unknown>).__STARK_ENV__ as
+      Record<string, string> | undefined;
+    return env?.STARK_NODE_ID ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function launchFilesApp(folderPath: string): Promise<void> {
+  try {
+    const api = createStarkAPI();
+    const browserNodeId = getBrowserNodeId();
+    const opts: { args: string[]; nodeId?: string } = { args: [folderPath] };
+    if (browserNodeId) opts.nodeId = browserNodeId;
+    await api.pod.create('files', opts);
+  } catch (err) {
+    console.warn('Desktop: failed to launch files app:', err);
+  }
 }
 
 // ── Periodic refresh ──

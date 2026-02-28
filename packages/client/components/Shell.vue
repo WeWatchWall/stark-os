@@ -32,7 +32,12 @@
         <div :id="shell.startMenuContainerId" class="start-menu-surface" />
       </div>
 
-      <!-- Desktop watermark (always visible behind windows) -->
+      <!-- Desktop grid surface (full-size background, behind windows) -->
+      <div class="desktop-grid-surface">
+        <div :id="shell.desktopContainerId" class="desktop-grid-inner" />
+      </div>
+
+      <!-- Desktop watermark (always visible, behind windows) -->
       <div class="desktop-watermark">
         <img src="~/assets/Logo.png" alt="StarkOS" class="watermark" />
       </div>
@@ -142,6 +147,25 @@ onUnmounted(() => {
   pointer-events: none;
   user-select: none;
   z-index: 0;
+}
+
+/* ── Desktop grid surface (behind windows, above watermark) ── */
+.desktop-grid-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: auto;
+}
+.desktop-grid-inner {
+  width: 100%;
+  height: 100%;
+}
+.desktop-grid-inner :deep(iframe) {
+  width: 100%;
+  height: 100% !important;
+  border: none;
+  display: block;
+  background: transparent;
 }
 .watermark {
   width: 260px;

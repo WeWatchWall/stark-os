@@ -140,6 +140,14 @@ export const useShellStore = defineStore('shell', () => {
     activeWorkspaceId.value = id;
   }
 
+  /* ── Desktop Grid ── */
+  /** Container ID for the chromeless desktop-grid surface */
+  const desktopContainerId = 'stark-desktop-grid';
+  /** Whether the desktop pod has been attached */
+  const desktopAttached = ref(false);
+  /** Pod ID of the desktop (set by containerIdProvider) */
+  const desktopPodId = ref<string | null>(null);
+
   /* ── Start Menu ── */
   const startMenuVisible = ref(false);
   /** Container ID for the chromeless start-menu surface */
@@ -327,6 +335,10 @@ export const useShellStore = defineStore('shell', () => {
     toggleStartMenu,
     showStartMenu,
     hideStartMenu,
+    /* Desktop Grid */
+    desktopContainerId,
+    desktopAttached,
+    desktopPodId,
     /* App Switcher */
     appSwitcherVisible,
     showAppSwitcher,

@@ -52,6 +52,7 @@ interface PodRow {
   volume_mounts: VolumeMount[];
   granted_capabilities: string[];
   incarnation: number;
+  args: string[];
   created_by: string;
   scheduled_at: string | null;
   started_at: string | null;
@@ -119,6 +120,7 @@ function rowToPod(row: PodRow): Pod {
     volumeMounts: row.volume_mounts ?? [],
     grantedCapabilities: (row.granted_capabilities ?? []) as Capability[],
     incarnation: row.incarnation ?? 1,
+    args: row.args ?? [],
     createdBy: row.created_by,
     scheduledAt: row.scheduled_at ? new Date(row.scheduled_at) : undefined,
     startedAt: row.started_at ? new Date(row.started_at) : undefined,
@@ -219,6 +221,7 @@ export class PodQueries {
       },
       volume_mounts: input.volumeMounts ?? [],
       created_by: createdBy,
+      args: input.args ?? [],
       metadata: input.metadata ?? {},
     };
 
@@ -841,6 +844,7 @@ export class PodQueries {
         memory: input.resourceLimits?.memory ?? defaultResourceLimits.memory,
       },
       created_by: createdBy,
+      args: input.args ?? [],
       metadata: input.metadata ?? {},
       service_id: serviceId,
       incarnation: incarnation,

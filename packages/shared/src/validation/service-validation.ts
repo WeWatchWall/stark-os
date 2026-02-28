@@ -6,7 +6,7 @@
 import type { ServiceStatus, CreateServiceInput, UpdateServiceInput } from '../types/service';
 import type { ValidationResult, ValidationError } from './pack-validation';
 import { validateLabels, validateAnnotations } from './node-validation';
-import { validateTolerations, validateResourceRequirements } from './pod-validation';
+import { validateTolerations, validateResourceRequirements, validateArgs } from './pod-validation';
 import { validateSchedulingConfig } from './scheduling-validation';
 import { validateVolumeMounts } from './volume-validation';
 
@@ -434,6 +434,11 @@ export function validateCreateServiceInput(input: unknown): ValidationResult {
     errors.push(...validateVolumeMounts(data.volumeMounts));
   }
 
+  // Optional: args
+  if (data.args !== undefined) {
+    errors.push(...validateArgs(data.args));
+  }
+
   // Optional: metadata
   const metadataError = validateServiceMetadata(data.metadata);
   if (metadataError) errors.push(metadataError);
@@ -536,6 +541,11 @@ export function validateUpdateServiceInput(input: unknown): ValidationResult {
   // Optional: volumeMounts
   if (data.volumeMounts !== undefined) {
     errors.push(...validateVolumeMounts(data.volumeMounts));
+  }
+
+  // Optional: args
+  if (data.args !== undefined) {
+    errors.push(...validateArgs(data.args));
   }
 
   // Optional: metadata

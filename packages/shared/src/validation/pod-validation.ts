@@ -359,6 +359,11 @@ export function validateResourceRequirements(
 }
 
 /**
+ * Maximum args count
+ */
+const MAX_ARGS = 100;
+
+/**
  * Validate pod metadata
  */
 export function validatePodMetadata(metadata: unknown): ValidationError | null {
@@ -384,6 +389,47 @@ export function validatePodMetadata(metadata: unknown): ValidationError | null {
   }
 
   return null;
+}
+
+/**
+ * Validate args array
+ */
+export function validateArgs(args: unknown): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (args === undefined || args === null) {
+    return errors; // Optional field
+  }
+
+  if (!Array.isArray(args)) {
+    errors.push({
+      field: 'args',
+      message: 'Args must be an array',
+      code: 'INVALID_TYPE',
+    });
+    return errors;
+  }
+
+  if (args.length > MAX_ARGS) {
+    errors.push({
+      field: 'args',
+      message: `Args cannot have more than ${MAX_ARGS} entries`,
+      code: 'TOO_MANY_ENTRIES',
+    });
+    return errors;
+  }
+
+  for (let i = 0; i < args.length; i++) {
+    if (typeof args[i] !== 'string') {
+      errors.push({
+        field: `args[${i}]`,
+        message: 'Each arg must be a string',
+        code: 'INVALID_TYPE',
+      });
+    }
+  }
+
+  return errors;
 }
 
 /**
@@ -436,6 +482,9 @@ export function validateCreatePodInput(input: unknown): ValidationResult {
 
   // Validate volume mounts
   errors.push(...validateVolumeMounts(data.volumeMounts));
+
+  // Validate args
+  errors.push(...validateArgs(data.args));
 
   const metadataError = validatePodMetadata(data.metadata);
   if (metadataError) errors.push(metadataError);

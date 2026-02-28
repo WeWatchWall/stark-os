@@ -176,6 +176,8 @@ export interface Pod {
   scheduling?: PodSchedulingConfig;
   /** Volume mounts for this pod */
   volumeMounts: VolumeMount[];
+  /** Arguments passed to the pack entrypoint */
+  args: string[];
   /** User who created the pod */
   createdBy: string;
   /** When pod was scheduled */
@@ -230,6 +232,8 @@ export interface CreatePodInput {
   nodeId?: string;
   /** Volume mounts */
   volumeMounts?: VolumeMount[];
+  /** Arguments passed to the pack entrypoint */
+  args?: string[];
   /** Additional metadata */
   metadata?: Record<string, unknown>;
 }

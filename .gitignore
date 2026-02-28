@@ -47,6 +47,9 @@ supabase/.temp/
 # Lock files (optional - uncomment if needed)
 # package-lock.json
 # yarn.lock
+# System-app and example lock files (generated per-app on install)
+system-apps/*/pnpm-lock.yaml
+examples/*/pnpm-lock.yaml
 # Nuxt build artifacts
 .nuxt/
 .output/

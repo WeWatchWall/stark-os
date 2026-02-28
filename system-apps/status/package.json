@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "cd ../.. && pnpm -r run build",
     "dev": "nuxt dev",
     "build": "nuxt generate",
     "preview": "nuxt preview",
@@ -15,8 +16,8 @@
     "primevue": "^4.5.4",
     "@primevue/themes": "^4.5.4",
     "chart.js": "^4.5.1",
-    "@stark-o/browser-runtime": "workspace:*",
-    "@stark-o/shared": "workspace:*"
+    "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
+    "@stark-o/shared": "link:../../packages/shared"
   },
   "devDependencies": {
     "@primevue/nuxt-module": "^4.5.4",

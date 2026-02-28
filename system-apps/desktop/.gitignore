@@ -6,9 +6,6 @@
 .cache
 dist
 
-# Nuxt auto-generates an empty pnpm-workspace.yaml that shadows the real one
-pnpm-workspace.yaml
-
 # Node dependencies
 node_modules
 

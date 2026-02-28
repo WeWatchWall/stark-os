@@ -541,7 +541,7 @@ async function launchFilesApp(folderPath: string): Promise<void> {
     if (browserNodeId) opts.nodeId = browserNodeId;
     await api.pod.create('files', opts);
   } catch (err) {
-    console.warn('Desktop: failed to launch files app:', err);
+    console.warn('Desktop: failed to launch files app for path:', folderPath, err);
   }
 }
 

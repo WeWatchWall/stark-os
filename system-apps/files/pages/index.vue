@@ -256,7 +256,7 @@ const history = ref<string[]>([DEFAULT_PATH]);
 const historyIndex = ref(0);
 
 // Touch support: detect tap (not long-press/scroll)
-let lastTouchStart = 0;
+let lastTapTime = 0;
 
 const canGoBack = computed(() => historyIndex.value > 0);
 const canGoForward = computed(() => historyIndex.value < history.value.length - 1);
@@ -338,7 +338,7 @@ async function readDir(path: string): Promise<void> {
     currentPath.value = normalized;
     addressBarValue.value = normalized;
   } catch (err) {
-    console.warn('Files: failed to read directory:', err);
+    console.warn('Files: failed to read directory:', path, err);
     errorMsg.value = `Cannot open: ${path}`;
     items.value = [];
   } finally {
@@ -394,8 +394,8 @@ function onItemActivate(item: FileItem): void {
 function onTouchActivate(item: FileItem, event: TouchEvent): void {
   // Detect single tap (quick touch, not a scroll/long-press)
   const now = Date.now();
-  const elapsed = now - lastTouchStart;
-  lastTouchStart = now;
+  const elapsed = now - lastTapTime;
+  lastTapTime = now;
 
   // If this is a second tap within 400ms, treat as double-tap
   if (elapsed < 400) {

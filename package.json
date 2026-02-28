@@ -43,6 +43,7 @@
     "build:server": "pnpm --filter @stark-o/server run build",
     "build:cli": "pnpm --filter @stark-o/cli run build",
     "build:client": "pnpm --filter @stark-o/client run generate",
+    "build:system-apps": "pnpm -r run build && node scripts/build-apps.js system-apps",
     "dev": "pnpm -r --parallel run dev",
     "dev:server": "pnpm --filter @stark-o/server run dev",
     "dev:test": "pnpm --filter @stark-o/server run chaos -k",

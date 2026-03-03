@@ -68,7 +68,7 @@ export type PackNamespace = 'system' | 'user';
 export interface Pack {
   /** Unique identifier (UUID) */
   id: string;
-  /** Pack name (unique with version) */
+  /** Pack name (unique with version per resource namespace) */
   name: string;
   /** Semantic version */
   version: string;
@@ -78,6 +78,8 @@ export interface Pack {
   ownerId: string;
   /** Pack namespace (system or user) - determines trust level */
   namespace: PackNamespace;
+  /** Resource namespace for isolation (unique name+version within this) */
+  resourceNamespace: string;
   /** Pack visibility (private or public) */
   visibility: PackVisibility;
   /** Path to bundle in storage */
@@ -112,6 +114,8 @@ export interface RegisterPackInput {
   runtimeTag: RuntimeTag;
   /** Pack namespace (default: user) - system requires admin role */
   namespace?: PackNamespace;
+  /** Resource namespace for isolation (default: 'default') */
+  resourceNamespace?: string;
   /** Pack visibility (default: private) */
   visibility?: PackVisibility;
   /** Pack description */

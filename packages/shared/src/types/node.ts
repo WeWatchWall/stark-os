@@ -56,8 +56,10 @@ export interface AllocatableResources {
 export interface Node {
   /** Unique identifier (UUID) */
   id: string;
-  /** Node name (unique) */
+  /** Node name (unique per namespace) */
   name: string;
+  /** Namespace for resource isolation */
+  namespace: string;
   /** Runtime type */
   runtimeType: RuntimeType;
   /** Current status */
@@ -104,6 +106,8 @@ export interface Node {
 export interface RegisterNodeInput {
   /** Node name */
   name: string;
+  /** Namespace (default: 'default') */
+  namespace?: string;
   /** Runtime type */
   runtimeType: RuntimeType;
   /** Node capabilities */
@@ -155,6 +159,7 @@ export interface NodeHeartbeat {
 export interface NodeListItem {
   id: string;
   name: string;
+  namespace: string;
   runtimeType: RuntimeType;
   status: NodeStatus;
   lastHeartbeat?: Date;

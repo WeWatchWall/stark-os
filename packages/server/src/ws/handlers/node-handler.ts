@@ -6,8 +6,9 @@
  */
 
 import type { RegisterNodeInput, NodeHeartbeat, UserRole } from '@stark-o/shared';
-import { validateRegisterNodeInput, createServiceLogger, getServiceRegistry } from '@stark-o/shared';
+import { validateRegisterNodeInput, createServiceLogger, getServiceRegistry, getUserNamespace } from '@stark-o/shared';
 import { getNodeQueries } from '../../supabase/nodes.js';
+import { getUserById } from '../../supabase/auth.js';
 import { getPodQueriesAdmin } from '../../supabase/pods.js';
 import { getConnectionManager, sendToNode } from '../../services/connection-service.js';
 import { getServiceController } from '../../services/service-controller.js';
@@ -134,8 +135,18 @@ export async function handleNodeRegister(
 
   const nodeQueries = getNodeQueries();
 
-  // Check if node already exists
-  const existsResult = await nodeQueries.nodeExists(payload.name);
+  // Resolve namespace: use user's personal namespace as default for writes
+  let namespace = payload.namespace;
+  if (!namespace && ws.userId) {
+    const userResult = await getUserById(ws.userId);
+    if (userResult.data?.email) {
+      namespace = getUserNamespace(userResult.data.email);
+    }
+  }
+  namespace = namespace ?? 'default';
+
+  // Check if node already exists in namespace
+  const existsResult = await nodeQueries.nodeExists(payload.name, namespace);
   if (existsResult.error) {
     sendResponse(
       ws,
@@ -150,7 +161,7 @@ export async function handleNodeRegister(
     sendResponse(
       ws,
       'node:register:error',
-      { code: 'CONFLICT', message: `Node ${payload.name} already exists` },
+      { code: 'CONFLICT', message: `Node ${payload.name} already exists in namespace ${namespace}` },
       correlationId,
     );
     return;
@@ -161,6 +172,7 @@ export async function handleNodeRegister(
   const isAdmin = ws.userRoles?.includes('admin') ?? false;
   const createResult = await nodeQueries.createNode({
     name: payload.name,
+    namespace,
     runtimeType: payload.runtimeType,
     capabilities: payload.capabilities ?? {},
     allocatable: payload.allocatable,

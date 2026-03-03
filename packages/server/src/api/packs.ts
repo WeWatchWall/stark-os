@@ -7,7 +7,7 @@
 
 import { Router, Request, Response } from 'express';
 import type { RuntimeTag, RegisterPackInput, UpdatePackInput, PackVisibility, Capability } from '@stark-o/shared';
-import { validateRegisterPackInput, validateUpdatePackInput, createServiceLogger, generateCorrelationId, grantCapabilities } from '@stark-o/shared';
+import { validateRegisterPackInput, validateUpdatePackInput, createServiceLogger, generateCorrelationId, grantCapabilities, getUserNamespace } from '@stark-o/shared';
 import { getPackQueriesAdmin } from '../supabase/packs.js';
 import {
   authMiddleware,
@@ -217,9 +217,12 @@ async function registerPack(req: Request, res: Response): Promise<void> {
 
     const input = req.body as RegisterPackInput;
 
+    // Resolve resource namespace: use user's personal namespace as default for writes
+    const authReq = req as AuthenticatedRequest;
+    const resourceNamespace = input.resourceNamespace ?? (authReq.user?.email ? getUserNamespace(authReq.user.email) : 'default');
+
     // System packs can only be registered by admins
     if (input.namespace === 'system') {
-      const authReq = req as AuthenticatedRequest;
       const isAdmin = authReq.user?.roles?.includes('admin') ?? false;
       if (!isAdmin) {
         requestLogger.warn('Non-admin attempted to register system pack', { userId, namespace: input.namespace });
@@ -228,11 +231,11 @@ async function registerPack(req: Request, res: Response): Promise<void> {
       }
     }
 
-    // Check for duplicate pack name+version
+    // Check for duplicate pack name+version within resource namespace
     // Use admin client for both reads and writes — RLS blocks the anon client from seeing private packs,
     // but permissions are already verified via RBAC middleware before reaching this handler.
     const packQueriesAdmin = getPackQueriesAdmin();
-    const existsResult = await packQueriesAdmin.packExists(input.name, input.version);
+    const existsResult = await packQueriesAdmin.packExists(input.name, input.version, resourceNamespace);
     
     if (existsResult.error) {
       sendError(res, 'INTERNAL_ERROR', 'Failed to check pack existence', 500);
@@ -242,12 +245,13 @@ async function registerPack(req: Request, res: Response): Promise<void> {
     if (existsResult.data) {
       requestLogger.info('Pack registration conflict - pack already exists', { 
         name: input.name, 
-        version: input.version 
+        version: input.version,
+        resourceNamespace,
       });
       sendError(
         res,
         'CONFLICT',
-        `Pack ${input.name}@${input.version} already exists`,
+        `Pack ${input.name}@${input.version} already exists in namespace ${resourceNamespace}`,
         409
       );
       return;
@@ -255,10 +259,9 @@ async function registerPack(req: Request, res: Response): Promise<void> {
 
     // Generate bundle path and create pack
     const bundlePath = generateBundlePath(input.name, input.version);
-    requestLogger.debug('Creating pack record', { name: input.name, version: input.version, bundlePath });
+    requestLogger.debug('Creating pack record', { name: input.name, version: input.version, resourceNamespace, bundlePath });
     
     // Grant capabilities based on namespace, runtime, and requested capabilities
-    const authReq = req as AuthenticatedRequest;
     const isAdmin = authReq.user?.roles?.includes('admin') ?? false;
     const requestedCapabilities = (input.metadata?.requestedCapabilities ?? []) as Capability[];
     
@@ -285,6 +288,7 @@ async function registerPack(req: Request, res: Response): Promise<void> {
     
     const createResult = await packQueriesAdmin.createPack({
       ...input,
+      resourceNamespace,
       ownerId: userId,
       bundlePath,
       grantedCapabilities: capabilityResult.granted,
@@ -368,6 +372,7 @@ async function listPacks(req: Request, res: Response): Promise<void> {
     const runtimeTag = req.query.runtimeTag as RuntimeTag | undefined;
     const search = req.query.search as string | undefined;
     const ownerId = req.query.ownerId as string | undefined;
+    const resourceNamespace = req.query.namespace as string | undefined;
 
     // Validate runtime tag if provided
     if (runtimeTag && !['node', 'browser', 'universal'].includes(runtimeTag)) {
@@ -400,6 +405,7 @@ async function listPacks(req: Request, res: Response): Promise<void> {
       ownerId,
       runtimeTag,
       search,
+      resourceNamespace,
       limit: pageSize,
       offset,
     });

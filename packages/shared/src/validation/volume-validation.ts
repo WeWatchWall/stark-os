@@ -31,6 +31,12 @@ const MOUNT_PATH_PATTERN = /^\/[a-zA-Z0-9_./-]+$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
+ * Namespace name pattern: lowercase, alphanumeric, hyphens.
+ * Must start and end with alphanumeric. Length: 1-63 chars.
+ */
+const NAMESPACE_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
  * Validate volume name
  */
 export function validateVolumeName(name: unknown): ValidationError | null {
@@ -228,6 +234,35 @@ export function validateCreateVolumeInput(input: unknown): ValidationResult {
       message: 'Node ID must be a valid UUID',
       code: 'INVALID_FORMAT',
     });
+  }
+
+  // Optional: namespace
+  if (data.namespace !== undefined && data.namespace !== null) {
+    if (typeof data.namespace !== 'string') {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace must be a string',
+        code: 'INVALID_TYPE',
+      });
+    } else if (data.namespace.length === 0) {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace cannot be empty',
+        code: 'EMPTY',
+      });
+    } else if (data.namespace.length > 63) {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace cannot exceed 63 characters',
+        code: 'TOO_LONG',
+      });
+    } else if (!NAMESPACE_NAME_PATTERN.test(data.namespace)) {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace must be lowercase alphanumeric with hyphens, starting and ending with alphanumeric',
+        code: 'INVALID_FORMAT',
+      });
+    }
   }
 
   return {

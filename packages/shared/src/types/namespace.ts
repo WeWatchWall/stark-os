@@ -149,6 +149,32 @@ export interface NamespaceListItem {
 export const RESERVED_NAMESPACES = ['default', 'stark-system', 'stark-public'] as const;
 
 /**
+ * The global default namespace name
+ */
+export const DEFAULT_NAMESPACE = 'default';
+
+/**
+ * Derive a user's personal namespace name from their email address.
+ * Takes the local part (before @), lowercases, replaces non-alphanumeric
+ * characters with hyphens, strips leading/trailing hyphens, and truncates
+ * to 63 characters.
+ */
+export function getUserNamespace(email: string): string {
+  const local = email.split('@')[0] ?? email;
+  const sanitized = local
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')   // non-alphanum → hyphen
+    .replace(/-+/g, '-')           // collapse consecutive hyphens
+    .replace(/^-|-$/g, '');        // strip leading/trailing hyphens
+
+  // Ensure at least one character and max 63
+  if (sanitized.length === 0) {
+    return 'user';
+  }
+  return sanitized.slice(0, 63);
+}
+
+/**
  * Check if a namespace name is reserved
  */
 export function isReservedNamespace(name: string): boolean {

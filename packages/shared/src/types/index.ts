@@ -197,6 +197,8 @@ export type {
 
 export {
   RESERVED_NAMESPACES,
+  DEFAULT_NAMESPACE,
+  getUserNamespace,
   isReservedNamespace,
   hasQuotaAvailable,
   getRemainingQuota,

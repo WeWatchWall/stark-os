@@ -286,6 +286,55 @@ const VALID_VISIBILITY_VALUES = ['private', 'public'];
 const VALID_NAMESPACE_VALUES = ['system', 'user'];
 
 /**
+ * Resource namespace name pattern: lowercase, alphanumeric, hyphens.
+ * Must start and end with alphanumeric. Length: 1-63 chars.
+ */
+const RESOURCE_NAMESPACE_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * Validate resource namespace (for pack isolation)
+ */
+export function validateResourceNamespace(resourceNamespace: unknown): ValidationError | null {
+  if (resourceNamespace === undefined || resourceNamespace === null) {
+    return null; // Optional — defaults to 'default'
+  }
+
+  if (typeof resourceNamespace !== 'string') {
+    return {
+      field: 'resourceNamespace',
+      message: 'Resource namespace must be a string',
+      code: 'INVALID_TYPE',
+    };
+  }
+
+  if (resourceNamespace.length === 0) {
+    return {
+      field: 'resourceNamespace',
+      message: 'Resource namespace cannot be empty',
+      code: 'EMPTY',
+    };
+  }
+
+  if (resourceNamespace.length > 63) {
+    return {
+      field: 'resourceNamespace',
+      message: 'Resource namespace cannot exceed 63 characters',
+      code: 'TOO_LONG',
+    };
+  }
+
+  if (!RESOURCE_NAMESPACE_PATTERN.test(resourceNamespace)) {
+    return {
+      field: 'resourceNamespace',
+      message: 'Resource namespace must be lowercase alphanumeric with hyphens, starting and ending with alphanumeric',
+      code: 'INVALID_FORMAT',
+    };
+  }
+
+  return null;
+}
+
+/**
  * Validate pack visibility
  */
 export function validatePackVisibility(visibility: unknown): ValidationError | null {
@@ -434,6 +483,9 @@ export function validateRegisterPackInput(input: unknown): ValidationResult {
 
   const namespaceError = validatePackNamespace(data.namespace);
   if (namespaceError) errors.push(namespaceError);
+
+  const resourceNamespaceError = validateResourceNamespace(data.resourceNamespace);
+  if (resourceNamespaceError) errors.push(resourceNamespaceError);
 
   const metadataError = validatePackMetadata(data.metadata);
   if (metadataError) errors.push(metadataError);

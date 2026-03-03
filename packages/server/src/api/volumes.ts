@@ -12,6 +12,7 @@ import {
   validateCreateVolumeInput,
   createServiceLogger,
   generateCorrelationId,
+  getUserNamespace,
 } from '@stark-o/shared';
 import { getVolumeQueries } from '../supabase/volumes.js';
 import { getConnectionManager } from '../services/connection-service.js';
@@ -108,15 +109,18 @@ async function createVolume(req: Request, res: Response): Promise<void> {
 
     const { name, nodeId } = input as { name: string; nodeId: string };
 
-    // Check uniqueness (name + nodeId)
+    // Resolve namespace: use user's personal namespace as default for writes
+    const namespace = (input as { namespace?: string }).namespace ?? (authReq.user?.email ? getUserNamespace(authReq.user.email) : 'default');
+
+    // Check uniqueness (name within namespace)
     const queries = getVolumeQueries();
-    const exists = await queries.volumeExists(name, nodeId);
+    const exists = await queries.volumeExists(name, namespace);
     if (exists) {
-      sendError(res, 'CONFLICT', `Volume '${name}' already exists on node '${nodeId}'`, 409);
+      sendError(res, 'CONFLICT', `Volume '${name}' already exists in namespace '${namespace}'`, 409);
       return;
     }
 
-    const result = await queries.createVolume({ name, nodeId });
+    const result = await queries.createVolume({ name, nodeId, namespace });
 
     if (result.error) {
       logger.error('Failed to create volume', undefined, {
@@ -130,6 +134,7 @@ async function createVolume(req: Request, res: Response): Promise<void> {
     logger.info('Volume created', {
       volumeId: result.data!.id,
       name,
+      namespace,
       nodeId,
       correlationId,
     });
@@ -169,9 +174,10 @@ async function listVolumes(req: Request, res: Response): Promise<void> {
 
   try {
     const nodeId = req.query.nodeId as string | undefined;
+    const namespace = req.query.namespace as string | undefined;
 
     const queries = getVolumeQueries();
-    const result = await queries.listVolumes({ nodeId });
+    const result = await queries.listVolumes({ nodeId, namespace });
 
     if (result.error) {
       sendError(res, 'INTERNAL_ERROR', 'Failed to list volumes', 500);

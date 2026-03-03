@@ -6,6 +6,13 @@
 import type { Labels, Annotations } from './labels';
 
 /**
+ * Namespace name pattern: lowercase, alphanumeric, hyphens.
+ * Must start and end with alphanumeric. Length: 1-63 chars.
+ * Shared across all validation files to prevent duplication.
+ */
+export const NAMESPACE_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
  * Namespace phase
  * - active: Namespace is active and accepting resources
  * - terminating: Namespace is being deleted
@@ -158,6 +165,10 @@ export const DEFAULT_NAMESPACE = 'default';
  * Takes the local part (before @), lowercases, replaces non-alphanumeric
  * characters with hyphens, strips leading/trailing hyphens, and truncates
  * to 63 characters.
+ *
+ * NOTE: This logic is mirrored in SQL in
+ * `supabase/migrations/036_namespace_scoping.sql` (function derive_user_namespace).
+ * Changes here must be kept in sync with the SQL implementation.
  */
 export function getUserNamespace(email: string): string {
   const local = email.split('@')[0] ?? email;

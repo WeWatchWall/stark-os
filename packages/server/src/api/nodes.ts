@@ -19,7 +19,6 @@ import {
   generateCorrelationId,
   ALL_RUNTIME_TYPES,
   ALL_NODE_STATUSES,
-  getUserNamespace,
 } from '@stark-o/shared';
 import { getNodeQueries } from '../supabase/nodes.js';
 import { getPodQueriesAdmin } from '../supabase/pods.js';
@@ -30,6 +29,7 @@ import {
   canReadNode,
   canUpdateNode,
   canDeleteNode,
+  resolveWriteNamespace,
 } from '../middleware/index.js';
 
 /**
@@ -168,8 +168,7 @@ export async function registerNode(req: Request, res: Response): Promise<void> {
     const input = req.body as RegisterNodeInput;
 
     // Resolve namespace: use user's personal namespace as default for writes
-    const user = (req as Request & { user?: { id: string; email?: string } }).user;
-    const namespace = input.namespace ?? (user?.email ? getUserNamespace(user.email) : 'default');
+    const namespace = resolveWriteNamespace(input.namespace, req);
 
     // Check for duplicate node name within namespace
     const nodeQueries = getNodeQueries();

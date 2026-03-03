@@ -85,3 +85,6 @@ export {
   rateLimitInfoMiddleware,
   type RateLimitConfig,
 } from './rate-limit-middleware.js';
+
+// Namespace Resolution
+export { resolveWriteNamespace } from './resolve-namespace.js';

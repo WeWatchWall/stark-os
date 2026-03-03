@@ -12,7 +12,6 @@ import {
   validateCreateVolumeInput,
   createServiceLogger,
   generateCorrelationId,
-  getUserNamespace,
 } from '@stark-o/shared';
 import { getVolumeQueries } from '../supabase/volumes.js';
 import { getConnectionManager } from '../services/connection-service.js';
@@ -22,6 +21,7 @@ import {
   abilityMiddleware,
   canCreatePod,
   canReadPod,
+  resolveWriteNamespace,
   type AuthenticatedRequest,
 } from '../middleware/index.js';
 
@@ -110,7 +110,7 @@ async function createVolume(req: Request, res: Response): Promise<void> {
     const { name, nodeId } = input as { name: string; nodeId: string };
 
     // Resolve namespace: use user's personal namespace as default for writes
-    const namespace = (input as { namespace?: string }).namespace ?? (authReq.user?.email ? getUserNamespace(authReq.user.email) : 'default');
+    const namespace = resolveWriteNamespace((input as { namespace?: string }).namespace, req);
 
     // Check uniqueness (name within namespace)
     const queries = getVolumeQueries();

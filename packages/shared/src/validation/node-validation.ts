@@ -5,6 +5,7 @@
 
 import type { RuntimeType } from '../types/node';
 import type { ValidationResult, ValidationError } from './pack-validation';
+import { NAMESPACE_NAME_PATTERN } from '../types/namespace.js';
 
 /**
  * Valid runtime types
@@ -424,12 +425,6 @@ export function validateAllocatableResources(resources: unknown): ValidationErro
 
   return errors;
 }
-
-/**
- * Namespace name pattern: lowercase, alphanumeric, hyphens.
- * Must start and end with alphanumeric. Length: 1-63 chars.
- */
-const NAMESPACE_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /**
  * Validate optional namespace field (for node/volume registration)

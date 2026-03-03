@@ -7,7 +7,7 @@
 
 import { Router, Request, Response } from 'express';
 import type { RuntimeTag, RegisterPackInput, UpdatePackInput, PackVisibility, Capability } from '@stark-o/shared';
-import { validateRegisterPackInput, validateUpdatePackInput, createServiceLogger, generateCorrelationId, grantCapabilities, getUserNamespace } from '@stark-o/shared';
+import { validateRegisterPackInput, validateUpdatePackInput, createServiceLogger, generateCorrelationId, grantCapabilities } from '@stark-o/shared';
 import { getPackQueriesAdmin } from '../supabase/packs.js';
 import {
   authMiddleware,
@@ -16,6 +16,7 @@ import {
   canReadPack,
   canUpdatePack,
   canDeletePack,
+  resolveWriteNamespace,
 } from '../middleware/index.js';
 import type { AuthenticatedRequest } from '../middleware/auth-middleware.js';
 
@@ -219,7 +220,7 @@ async function registerPack(req: Request, res: Response): Promise<void> {
 
     // Resolve resource namespace: use user's personal namespace as default for writes
     const authReq = req as AuthenticatedRequest;
-    const resourceNamespace = input.resourceNamespace ?? (authReq.user?.email ? getUserNamespace(authReq.user.email) : 'default');
+    const resourceNamespace = resolveWriteNamespace(input.resourceNamespace, req);
 
     // System packs can only be registered by admins
     if (input.namespace === 'system') {

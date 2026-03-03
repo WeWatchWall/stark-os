@@ -418,6 +418,7 @@ export class NodeModel {
     return {
       id: this._node.id,
       name: this._node.name,
+      namespace: this._node.namespace,
       runtimeType: this._node.runtimeType,
       status: this._node.status,
       lastHeartbeat: this._node.lastHeartbeat,
@@ -443,6 +444,7 @@ export class NodeModel {
     const node: Node = {
       id: id ?? crypto.randomUUID(),
       name: input.name,
+      namespace: input.namespace ?? 'default',
       runtimeType: input.runtimeType,
       status: 'online',
       lastHeartbeat: now,
@@ -546,6 +548,7 @@ export function createReactiveNodeListItem(node: Node): ComputedRef<NodeListItem
   return computed(() => ({
     id: reactiveNode.id,
     name: reactiveNode.name,
+    namespace: reactiveNode.namespace,
     runtimeType: reactiveNode.runtimeType,
     status: reactiveNode.status,
     lastHeartbeat: reactiveNode.lastHeartbeat,

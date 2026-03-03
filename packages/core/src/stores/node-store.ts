@@ -91,6 +91,7 @@ export function addNode(input: RegisterNodeInput & { id?: string; registeredBy?:
   const node: Node = {
     id: input.id ?? crypto.randomUUID(),
     name: input.name,
+    namespace: input.namespace ?? 'default',
     runtimeType: input.runtimeType,
     status: 'online',
     lastHeartbeat: now,

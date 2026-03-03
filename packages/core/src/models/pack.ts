@@ -218,6 +218,7 @@ export class PackModel {
       runtimeTag: input.runtimeTag,
       ownerId,
       namespace: input.namespace ?? 'user',
+      resourceNamespace: input.resourceNamespace ?? 'default',
       visibility: input.visibility ?? 'private',
       bundlePath,
       description: input.description,

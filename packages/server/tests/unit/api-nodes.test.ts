@@ -247,7 +247,7 @@ describe('Node API Handlers', () => {
         success: false,
         error: {
           code: 'CONFLICT',
-          message: 'Node test-node already exists',
+          message: 'Node test-node already exists in namespace default',
         },
       });
     });

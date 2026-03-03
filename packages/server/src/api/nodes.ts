@@ -29,6 +29,7 @@ import {
   canReadNode,
   canUpdateNode,
   canDeleteNode,
+  resolveWriteNamespace,
 } from '../middleware/index.js';
 
 /**
@@ -166,9 +167,12 @@ export async function registerNode(req: Request, res: Response): Promise<void> {
 
     const input = req.body as RegisterNodeInput;
 
-    // Check for duplicate node name
+    // Resolve namespace: use user's personal namespace as default for writes
+    const namespace = resolveWriteNamespace(input.namespace, req);
+
+    // Check for duplicate node name within namespace
     const nodeQueries = getNodeQueries();
-    const existsResult = await nodeQueries.nodeExists(input.name);
+    const existsResult = await nodeQueries.nodeExists(input.name, namespace);
 
     if (existsResult.error) {
       sendError(res, 'INTERNAL_ERROR', 'Failed to check node existence', 500);
@@ -178,19 +182,22 @@ export async function registerNode(req: Request, res: Response): Promise<void> {
     if (existsResult.data) {
       requestLogger.info('Node registration conflict - node already exists', {
         name: input.name,
+        namespace,
       });
-      sendError(res, 'CONFLICT', `Node ${input.name} already exists`, 409);
+      sendError(res, 'CONFLICT', `Node ${input.name} already exists in namespace ${namespace}`, 409);
       return;
     }
 
     // Create node
     requestLogger.debug('Creating node record', {
       name: input.name,
+      namespace,
       runtimeType: input.runtimeType,
     });
 
     const createResult = await nodeQueries.createNode({
       ...input,
+      namespace,
       registeredBy: userId,
     });
 
@@ -247,6 +254,7 @@ export async function listNodes(req: Request, res: Response): Promise<void> {
     const runtimeType = (req.query.runtime ?? req.query.runtimeType) as RuntimeType | undefined;
     const status = req.query.status as NodeStatus | undefined;
     const search = req.query.search as string | undefined;
+    const namespace = req.query.namespace as string | undefined;
 
     // Validate runtimeType filter if provided
     if (runtimeType && !ALL_RUNTIME_TYPES.includes(runtimeType)) {
@@ -273,7 +281,7 @@ export async function listNodes(req: Request, res: Response): Promise<void> {
     const nodeQueries = getNodeQueries();
 
     // Get total count
-    const countResult = await nodeQueries.countNodes({ runtimeType, status, search });
+    const countResult = await nodeQueries.countNodes({ runtimeType, status, search, namespace });
     if (countResult.error) {
       sendError(res, 'INTERNAL_ERROR', 'Failed to count nodes', 500);
       return;
@@ -284,6 +292,7 @@ export async function listNodes(req: Request, res: Response): Promise<void> {
       runtimeType,
       status,
       search,
+      namespace,
       limit: pageSize,
       offset,
     });
@@ -377,7 +386,8 @@ export async function getNodeByName(req: Request, res: Response): Promise<void> 
     }
 
     const nodeQueries = getNodeQueries();
-    const result = await nodeQueries.getNodeByName(name);
+    const namespace = req.query.namespace as string | undefined;
+    const result = await nodeQueries.getNodeByName(name, namespace);
 
     if (result.error) {
       if (result.error.code === 'PGRST116') {

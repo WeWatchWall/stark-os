@@ -280,7 +280,7 @@ describe('Pack API Handlers', () => {
         success: false,
         error: {
           code: 'CONFLICT',
-          message: 'Pack test-pack@1.0.0 already exists',
+          message: 'Pack test-pack@1.0.0 already exists in namespace default',
         },
       });
     });

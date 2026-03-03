@@ -29,6 +29,7 @@ interface PackRow {
   runtime_tag: RuntimeTag;
   owner_id: string;
   namespace: PackNamespace;
+  resource_namespace: string;
   visibility: 'private' | 'public';
   bundle_path: string;
   bundle_content: string | null;
@@ -58,6 +59,7 @@ function rowToPack(row: PackRow): Pack {
     runtimeTag: row.runtime_tag,
     ownerId: row.owner_id,
     namespace: row.namespace,
+    resourceNamespace: row.resource_namespace ?? 'default',
     visibility: row.visibility,
     bundlePath: row.bundle_path,
     bundleContent: row.bundle_content ?? undefined,
@@ -121,6 +123,7 @@ export class PackQueries {
         runtime_tag: input.runtimeTag,
         owner_id: input.ownerId,
         namespace: input.namespace ?? 'user',
+        resource_namespace: input.resourceNamespace ?? 'default',
         visibility: input.visibility ?? 'private',
         bundle_path: input.bundlePath,
         bundle_content: input.bundleContent ?? null,
@@ -156,15 +159,20 @@ export class PackQueries {
   }
 
   /**
-   * Retrieves a pack by name and version
+   * Retrieves a pack by name and version, optionally scoped to resource namespace
    */
-  async getPackByNameAndVersion(name: string, version: string): Promise<PackResult<Pack>> {
-    const { data, error } = await this.client
+  async getPackByNameAndVersion(name: string, version: string, resourceNamespace?: string): Promise<PackResult<Pack>> {
+    let query = this.client
       .from('packs')
       .select('*')
       .eq('name', name)
-      .eq('version', version)
-      .single();
+      .eq('version', version);
+
+    if (resourceNamespace !== undefined) {
+      query = query.eq('resource_namespace', resourceNamespace);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
       return { data: null, error };
@@ -199,6 +207,7 @@ export class PackQueries {
     ownerId?: string;
     runtimeTag?: RuntimeTag;
     search?: string;
+    resourceNamespace?: string;
     limit?: number;
     offset?: number;
   }): Promise<PackResult<PackListItem[]>> {
@@ -207,6 +216,10 @@ export class PackQueries {
     let query = this.client
       .from('packs')
       .select('*');
+
+    if (options?.resourceNamespace) {
+      query = query.eq('resource_namespace', options.resourceNamespace);
+    }
 
     if (options?.ownerId) {
       query = query.eq('owner_id', options.ownerId);
@@ -346,15 +359,20 @@ export class PackQueries {
   }
 
   /**
-   * Checks if a pack name and version already exists
+   * Checks if a pack name and version already exists, optionally scoped to resource namespace
    */
-  async packExists(name: string, version: string): Promise<PackResult<boolean>> {
-    const { data, error } = await this.client
+  async packExists(name: string, version: string, resourceNamespace?: string): Promise<PackResult<boolean>> {
+    let query = this.client
       .from('packs')
       .select('id')
       .eq('name', name)
-      .eq('version', version)
-      .maybeSingle();
+      .eq('version', version);
+
+    if (resourceNamespace !== undefined) {
+      query = query.eq('resource_namespace', resourceNamespace);
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       return { data: null, error };
@@ -487,8 +505,8 @@ export const createPack = (input: RegisterPackInput & { ownerId: string; bundleP
 export const getPackById = (id: string) =>
   getPackQueries().getPackById(id);
 
-export const getPackByNameAndVersion = (name: string, version: string) =>
-  getPackQueries().getPackByNameAndVersion(name, version);
+export const getPackByNameAndVersion = (name: string, version: string, resourceNamespace?: string) =>
+  getPackQueries().getPackByNameAndVersion(name, version, resourceNamespace);
 
 export const getLatestPackVersion = (name: string) =>
   getPackQueries().getLatestPackVersion(name);
@@ -508,8 +526,8 @@ export const deletePack = (id: string) =>
 export const deletePackByName = (name: string) =>
   getPackQueries().deletePackByName(name);
 
-export const packExists = (name: string, version: string) =>
-  getPackQueries().packExists(name, version);
+export const packExists = (name: string, version: string, resourceNamespace?: string) =>
+  getPackQueries().packExists(name, version, resourceNamespace);
 
 export const countPacks = (options?: Parameters<PackQueries['countPacks']>[0]) =>
   getPackQueries().countPacks(options);

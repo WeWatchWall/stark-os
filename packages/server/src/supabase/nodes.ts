@@ -27,6 +27,7 @@ import { DEFAULT_ALLOCATABLE, DEFAULT_ALLOCATED } from '@stark-o/shared';
 interface NodeRow {
   id: string;
   name: string;
+  namespace: string;
   runtime_type: RuntimeType;
   status: NodeStatus;
   last_heartbeat: string | null;
@@ -63,6 +64,7 @@ function rowToNode(row: NodeRow): Node {
   return {
     id: row.id,
     name: row.name,
+    namespace: row.namespace ?? 'default',
     runtimeType: row.runtime_type,
     status: row.status,
     lastHeartbeat: row.last_heartbeat ? new Date(row.last_heartbeat) : undefined,
@@ -92,6 +94,7 @@ function rowToNodeListItem(row: NodeRow & { pod_count?: number }): NodeListItem 
   return {
     id: row.id,
     name: row.name,
+    namespace: row.namespace ?? 'default',
     runtimeType: row.runtime_type,
     status: row.status,
     lastHeartbeat: row.last_heartbeat ? new Date(row.last_heartbeat) : undefined,
@@ -126,6 +129,7 @@ export class NodeQueries {
       .from('nodes')
       .insert({
         name: input.name,
+        namespace: input.namespace ?? 'default',
         runtime_type: input.runtimeType,
         status: 'online' as NodeStatus,
         capabilities: input.capabilities ?? {},
@@ -168,14 +172,19 @@ export class NodeQueries {
   }
 
   /**
-   * Retrieves a node by name
+   * Retrieves a node by name within a namespace
    */
-  async getNodeByName(name: string): Promise<NodeResult<Node>> {
-    const { data, error } = await this.client
+  async getNodeByName(name: string, namespace?: string): Promise<NodeResult<Node>> {
+    let query = this.client
       .from('nodes')
       .select('*')
-      .eq('name', name)
-      .single();
+      .eq('name', name);
+
+    if (namespace !== undefined) {
+      query = query.eq('namespace', namespace);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
       return { data: null, error };
@@ -185,13 +194,19 @@ export class NodeQueries {
   }
 
   /**
-   * Check if a node with the given name exists
+   * Check if a node with the given name exists in the specified namespace
    */
-  async nodeExists(name: string): Promise<NodeResult<boolean>> {
-    const { count, error } = await this.client
+  async nodeExists(name: string, namespace?: string): Promise<NodeResult<boolean>> {
+    let query = this.client
       .from('nodes')
       .select('id', { count: 'exact', head: true })
       .eq('name', name);
+
+    if (namespace !== undefined) {
+      query = query.eq('namespace', namespace);
+    }
+
+    const { count, error } = await query;
 
     if (error) {
       return { data: null, error };
@@ -207,11 +222,16 @@ export class NodeQueries {
     runtimeType?: RuntimeType;
     status?: NodeStatus;
     search?: string;
+    namespace?: string;
     connectionId?: string;
     limit?: number;
     offset?: number;
   }): Promise<NodeResult<NodeListItem[]>> {
     let query = this.client.from('nodes').select('*');
+
+    if (options?.namespace) {
+      query = query.eq('namespace', options.namespace);
+    }
 
     if (options?.runtimeType) {
       query = query.eq('runtime_type', options.runtimeType);
@@ -256,8 +276,13 @@ export class NodeQueries {
     runtimeType?: RuntimeType;
     status?: NodeStatus;
     search?: string;
+    namespace?: string;
   }): Promise<NodeResult<number>> {
     let query = this.client.from('nodes').select('id', { count: 'exact', head: true });
+
+    if (options?.namespace) {
+      query = query.eq('namespace', options.namespace);
+    }
 
     if (options?.runtimeType) {
       query = query.eq('runtime_type', options.runtimeType);

@@ -6,6 +6,13 @@
 import type { Labels, Annotations } from './labels';
 
 /**
+ * Namespace name pattern: lowercase, alphanumeric, hyphens.
+ * Must start and end with alphanumeric. Length: 1-63 chars.
+ * Shared across all validation files to prevent duplication.
+ */
+export const NAMESPACE_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
  * Namespace phase
  * - active: Namespace is active and accepting resources
  * - terminating: Namespace is being deleted
@@ -147,6 +154,36 @@ export interface NamespaceListItem {
  * Reserved namespace names
  */
 export const RESERVED_NAMESPACES = ['default', 'stark-system', 'stark-public'] as const;
+
+/**
+ * The global default namespace name
+ */
+export const DEFAULT_NAMESPACE = 'default';
+
+/**
+ * Derive a user's personal namespace name from their email address.
+ * Takes the local part (before @), lowercases, replaces non-alphanumeric
+ * characters with hyphens, strips leading/trailing hyphens, and truncates
+ * to 63 characters.
+ *
+ * NOTE: This logic is mirrored in SQL in
+ * `supabase/migrations/036_namespace_scoping.sql` (function derive_user_namespace).
+ * Changes here must be kept in sync with the SQL implementation.
+ */
+export function getUserNamespace(email: string): string {
+  const local = email.split('@')[0] ?? email;
+  const sanitized = local
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')   // non-alphanum → hyphen
+    .replace(/-+/g, '-')           // collapse consecutive hyphens
+    .replace(/^-|-$/g, '');        // strip leading/trailing hyphens
+
+  // Ensure at least one character and max 63
+  if (sanitized.length === 0) {
+    return 'user';
+  }
+  return sanitized.slice(0, 63);
+}
 
 /**
  * Check if a namespace name is reserved

@@ -21,8 +21,10 @@ export interface VolumeMount {
 export interface Volume {
   /** Unique identifier (UUID) */
   id: string;
-  /** Volume name (unique per node) */
+  /** Volume name (unique per namespace) */
   name: string;
+  /** Namespace for resource isolation */
+  namespace: string;
   /** Node ID the volume resides on */
   nodeId: string;
   /** Creation timestamp */
@@ -39,6 +41,8 @@ export interface CreateVolumeInput {
   name: string;
   /** Target node ID */
   nodeId: string;
+  /** Namespace (default: 'default') */
+  namespace?: string;
 }
 
 /**
@@ -47,6 +51,7 @@ export interface CreateVolumeInput {
 export interface VolumeListItem {
   id: string;
   name: string;
+  namespace: string;
   nodeId: string;
   createdAt: Date;
   updatedAt: Date;

@@ -15,6 +15,7 @@ export {
   validatePackMetadata,
   validateMinNodeVersion,
   validateRequestedCapabilities,
+  validateResourceNamespace,
   validateRegisterPackInput,
   validateUpdatePackInput,
   isRuntimeCompatible as validateRuntimeCompatibility,
@@ -31,6 +32,7 @@ export {
   validateTaint,
   validateTaints,
   validateAllocatableResources,
+  validateNamespaceField,
   validateRegisterNodeInput,
   validateUpdateNodeInput,
 } from './node-validation';

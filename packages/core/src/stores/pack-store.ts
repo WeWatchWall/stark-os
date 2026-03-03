@@ -115,6 +115,7 @@ export function registerPack(
     runtimeTag: input.runtimeTag,
     ownerId: input.ownerId,
     namespace: input.namespace ?? 'user',
+    resourceNamespace: input.resourceNamespace ?? 'default',
     visibility: input.visibility ?? 'private',
     bundlePath: input.bundlePath,
     description: input.description,

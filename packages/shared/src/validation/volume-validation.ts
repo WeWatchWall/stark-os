@@ -4,6 +4,7 @@
  */
 
 import type { ValidationResult, ValidationError } from './pack-validation';
+import { NAMESPACE_NAME_PATTERN } from '../types/namespace.js';
 
 /**
  * Volume name pattern (DNS-like: lowercase, alphanumeric, hyphens)
@@ -228,6 +229,35 @@ export function validateCreateVolumeInput(input: unknown): ValidationResult {
       message: 'Node ID must be a valid UUID',
       code: 'INVALID_FORMAT',
     });
+  }
+
+  // Optional: namespace
+  if (data.namespace !== undefined && data.namespace !== null) {
+    if (typeof data.namespace !== 'string') {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace must be a string',
+        code: 'INVALID_TYPE',
+      });
+    } else if (data.namespace.length === 0) {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace cannot be empty',
+        code: 'EMPTY',
+      });
+    } else if (data.namespace.length > 63) {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace cannot exceed 63 characters',
+        code: 'TOO_LONG',
+      });
+    } else if (!NAMESPACE_NAME_PATTERN.test(data.namespace)) {
+      errors.push({
+        field: 'namespace',
+        message: 'Namespace must be lowercase alphanumeric with hyphens, starting and ending with alphanumeric',
+        code: 'INVALID_FORMAT',
+      });
+    }
   }
 
   return {

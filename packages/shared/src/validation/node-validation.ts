@@ -5,6 +5,7 @@
 
 import type { RuntimeType } from '../types/node';
 import type { ValidationResult, ValidationError } from './pack-validation';
+import { NAMESPACE_NAME_PATTERN } from '../types/namespace.js';
 
 /**
  * Valid runtime types
@@ -426,6 +427,49 @@ export function validateAllocatableResources(resources: unknown): ValidationErro
 }
 
 /**
+ * Validate optional namespace field (for node/volume registration)
+ */
+export function validateNamespaceField(namespace: unknown): ValidationError | null {
+  if (namespace === undefined || namespace === null) {
+    return null; // Optional — defaults to 'default'
+  }
+
+  if (typeof namespace !== 'string') {
+    return {
+      field: 'namespace',
+      message: 'Namespace must be a string',
+      code: 'INVALID_TYPE',
+    };
+  }
+
+  if (namespace.length === 0) {
+    return {
+      field: 'namespace',
+      message: 'Namespace cannot be empty',
+      code: 'EMPTY',
+    };
+  }
+
+  if (namespace.length > 63) {
+    return {
+      field: 'namespace',
+      message: 'Namespace cannot exceed 63 characters',
+      code: 'TOO_LONG',
+    };
+  }
+
+  if (!NAMESPACE_NAME_PATTERN.test(namespace)) {
+    return {
+      field: 'namespace',
+      message: 'Namespace must be lowercase alphanumeric with hyphens, starting and ending with alphanumeric',
+      code: 'INVALID_FORMAT',
+    };
+  }
+
+  return null;
+}
+
+/**
  * Validate node registration input
  */
 export function validateRegisterNodeInput(input: unknown): ValidationResult {
@@ -455,6 +499,9 @@ export function validateRegisterNodeInput(input: unknown): ValidationResult {
   if (runtimeTypeError) errors.push(runtimeTypeError);
 
   // Validate optional fields
+  const namespaceError = validateNamespaceField(data.namespace);
+  if (namespaceError) errors.push(namespaceError);
+
   const capabilitiesError = validateNodeCapabilities(data.capabilities);
   if (capabilitiesError) errors.push(capabilitiesError);
 

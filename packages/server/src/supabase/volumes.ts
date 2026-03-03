@@ -18,6 +18,7 @@ import { getSupabaseServiceClient } from './client.js';
 interface VolumeRow {
   id: string;
   name: string;
+  namespace: string;
   node_id: string;
   created_at: string;
   updated_at: string;
@@ -42,6 +43,7 @@ function rowToVolume(row: VolumeRow): Volume {
   return {
     id: row.id,
     name: row.name,
+    namespace: row.namespace ?? 'default',
     nodeId: row.node_id,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -55,6 +57,7 @@ function rowToListItem(row: VolumeRow): VolumeListItem {
   return {
     id: row.id,
     name: row.name,
+    namespace: row.namespace ?? 'default',
     nodeId: row.node_id,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -75,12 +78,14 @@ export class VolumeQueries {
   async createVolume(input: {
     name: string;
     nodeId: string;
+    namespace?: string;
   }): Promise<VolumeResult<Volume>> {
     const { data, error } = await this.client
       .from('volumes')
       .insert({
         name: input.name,
         node_id: input.nodeId,
+        namespace: input.namespace ?? 'default',
       })
       .select()
       .single();
@@ -135,11 +140,16 @@ export class VolumeQueries {
    */
   async listVolumes(filters?: {
     nodeId?: string;
+    namespace?: string;
   }): Promise<VolumeResult<VolumeListItem[]>> {
     let query = this.client
       .from('volumes')
       .select('*')
       .order('created_at', { ascending: true });
+
+    if (filters?.namespace) {
+      query = query.eq('namespace', filters.namespace);
+    }
 
     if (filters?.nodeId) {
       query = query.eq('node_id', filters.nodeId);
@@ -158,17 +168,22 @@ export class VolumeQueries {
   }
 
   /**
-   * Check if a volume exists by name and node
+   * Check if a volume exists by name and namespace
    */
   async volumeExists(
     name: string,
-    nodeId: string
+    namespace?: string
   ): Promise<boolean> {
-    const { count } = await this.client
+    let query = this.client
       .from('volumes')
       .select('id', { count: 'exact', head: true })
-      .eq('name', name)
-      .eq('node_id', nodeId);
+      .eq('name', name);
+
+    if (namespace !== undefined) {
+      query = query.eq('namespace', namespace);
+    }
+
+    const { count } = await query;
 
     return (count ?? 0) > 0;
   }

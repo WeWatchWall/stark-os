@@ -15,6 +15,10 @@ vi.mock('../../src/supabase/nodes.js', () => ({
   getNodeQueries: vi.fn(),
 }));
 
+vi.mock('../../src/supabase/auth.js', () => ({
+  getUserById: vi.fn().mockResolvedValue({ data: null, error: null }),
+}));
+
 // Import after mocking
 import {
   handleNodeRegister,
@@ -22,6 +26,7 @@ import {
   handleNodeDisconnect,
 } from '../../src/ws/handlers/node-handler.js';
 import { getNodeQueries } from '../../src/supabase/nodes.js';
+import { getUserById } from '../../src/supabase/auth.js';
 
 /**
  * WebSocket message types
@@ -135,6 +140,7 @@ describe('WebSocket Node Handlers', () => {
     };
 
     vi.mocked(getNodeQueries).mockReturnValue(mockNodeQueries as any);
+    vi.mocked(getUserById).mockResolvedValue({ data: null, error: null });
   });
 
   afterEach(() => {
@@ -273,7 +279,7 @@ describe('WebSocket Node Handlers', () => {
           type: 'node:register:error',
           payload: {
             code: 'CONFLICT',
-            message: 'Node test-node already exists',
+            message: 'Node test-node already exists in namespace default',
           },
           correlationId: 'req-6',
         }),

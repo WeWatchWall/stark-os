@@ -194,11 +194,11 @@ export async function createNamespaceHandler(req: Request, res: Response): Promi
       return;
     }
 
-    // Authority check: non-admin users can only create their email-derived namespace
+    // Authority check: non-admin users can only create their username-derived namespace
     // or sub-namespaces under it (e.g. "alice" or "alice/my-project")
     const user = getUser(req);
     if (user && !user.roles.includes('admin')) {
-      const allowedNamespace = getUserNamespace(user.email);
+      const allowedNamespace = getUserNamespace(user.username);
       if (input.name !== allowedNamespace && !input.name.startsWith(allowedNamespace + '/')) {
         requestLogger.info('Namespace creation rejected - authority check failed', {
           userId: user.id,

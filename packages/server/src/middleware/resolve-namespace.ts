@@ -2,7 +2,7 @@
  * Namespace resolution utility
  *
  * Provides a helper to resolve the effective namespace for write operations.
- * Uses the user's personal namespace (derived from email) as the default
+ * Uses the user's personal namespace (derived from username) as the default
  * when no explicit namespace is provided.
  *
  * @module @stark-o/server/middleware/resolve-namespace
@@ -17,7 +17,7 @@ import type { AuthenticatedRequest } from './auth-middleware.js';
  *
  * Priority:
  *   1. Explicit namespace from the caller (body or argument)
- *   2. User's personal namespace (derived from email)
+ *   2. User's personal namespace (derived from username)
  *   3. 'default' global namespace
  */
 export function resolveWriteNamespace(
@@ -29,8 +29,8 @@ export function resolveWriteNamespace(
   }
 
   const authReq = req as AuthenticatedRequest;
-  if (authReq.user?.email) {
-    return getUserNamespace(authReq.user.email);
+  if (authReq.user?.username) {
+    return getUserNamespace(authReq.user.username);
   }
 
   return DEFAULT_NAMESPACE;

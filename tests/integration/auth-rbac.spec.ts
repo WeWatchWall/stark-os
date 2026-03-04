@@ -49,6 +49,7 @@ function createTestUser(role: UserRole, id?: string): User {
   return {
     id: userId,
     email: `${role}@example.com`,
+    username: role,
     displayName: `Test ${role.charAt(0).toUpperCase() + role.slice(1)}`,
     roles: [role],
     createdAt: new Date(),

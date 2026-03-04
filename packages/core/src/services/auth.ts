@@ -81,6 +81,7 @@ export interface AuthProviderError {
  */
 export interface RegisterAuthInput {
   email: string;
+  username: string;
   password: string;
   displayName?: string;
   roles?: UserRole[];

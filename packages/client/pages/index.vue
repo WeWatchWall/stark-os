@@ -61,7 +61,28 @@
               required
               autocomplete="username"
               :disabled="isLoading"
+              @blur="suggestUsername"
             />
+          </div>
+          <div class="form-group">
+            <label for="reg-username">Username</label>
+            <input
+              id="reg-username"
+              name="username"
+              v-model="username"
+              type="text"
+              placeholder="Choose a unique username"
+              required
+              maxlength="63"
+              pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}"
+              autocomplete="off"
+              :disabled="isLoading"
+              @blur="checkUsername"
+            />
+            <small v-if="usernameStatus === 'available'" class="field-hint field-hint--success">Username is available</small>
+            <small v-else-if="usernameStatus === 'taken'" class="field-hint field-hint--error">Username is already taken</small>
+            <small v-else-if="usernameStatus === 'checking'" class="field-hint">Checking availability...</small>
+            <small v-else class="field-hint">Used for your personal namespace</small>
           </div>
           <div class="form-group">
             <label for="reg-password">Password</label>
@@ -92,13 +113,13 @@
             />
           </div>
           <div v-if="authError" class="error-message">{{ authError }}</div>
-          <button type="submit" class="btn btn-primary" :disabled="isLoading">
+          <button type="submit" class="btn btn-primary" :disabled="isLoading || usernameStatus === 'taken'">
             {{ isLoading ? 'Creating account...' : 'Create Account' }}
           </button>
           <button
             type="button"
             class="btn btn-secondary"
-            @click="authMode = 'login'; authError = ''; confirmPassword = ''"
+            @click="authMode = 'login'; authError = ''; confirmPassword = ''; username = ''; usernameStatus = 'idle'"
             :disabled="isLoading"
           >
             Back to Sign In
@@ -131,6 +152,8 @@ const connectionState = ref<ConnectionState>('disconnected');
 const isAuthenticated = ref(false);
 const authMode = ref<'login' | 'register'>('login');
 const email = ref('');
+const username = ref('');
+const usernameStatus = ref<'idle' | 'checking' | 'available' | 'taken'>('idle');
 const password = ref('');
 const confirmPassword = ref('');
 const authError = ref('');
@@ -182,6 +205,47 @@ async function checkRegistrationStatus(): Promise<void> {
     }
   } catch (err) {
     console.warn('Failed to check registration status:', err);
+  }
+}
+
+/**
+ * Suggest a username based on the email local part
+ */
+function suggestUsername(): void {
+  if (username.value || !email.value) return;
+  const local = email.value.split('@')[0] ?? '';
+  const suggested = local
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 63);
+  if (suggested) {
+    username.value = suggested;
+    checkUsername();
+  }
+}
+
+/**
+ * Check if the chosen username is available
+ */
+async function checkUsername(): Promise<void> {
+  const trimmed = username.value.trim();
+  if (!trimmed) {
+    usernameStatus.value = 'idle';
+    return;
+  }
+  usernameStatus.value = 'checking';
+  try {
+    const response = await fetch(`${getHttpBaseUrl()}/auth/check-username?username=${encodeURIComponent(trimmed)}`);
+    const result = await response.json() as { success: boolean; data?: { available: boolean } };
+    if (result.success && result.data) {
+      usernameStatus.value = result.data.available ? 'available' : 'taken';
+    } else {
+      usernameStatus.value = 'idle';
+    }
+  } catch {
+    usernameStatus.value = 'idle';
   }
 }
 
@@ -257,6 +321,7 @@ async function handleRegister(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: email.value,
+        username: username.value.trim(),
         password: password.value,
       }),
     });
@@ -410,6 +475,8 @@ async function handleLogout(): Promise<void> {
   connectionState.value = 'disconnected';
   isAuthenticated.value = false;
   email.value = '';
+  username.value = '';
+  usernameStatus.value = 'idle';
   password.value = '';
   confirmPassword.value = '';
   authError.value = '';
@@ -557,6 +624,21 @@ onUnmounted(async () => {
 .form-group input:disabled {
   background-color: #f3f4f6;
   cursor: not-allowed;
+}
+
+.field-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.field-hint--success {
+  color: #16a34a;
+}
+
+.field-hint--error {
+  color: #dc2626;
 }
 
 .error-message {

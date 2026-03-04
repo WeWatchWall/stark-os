@@ -47,9 +47,9 @@ export interface StarkAPI {
     status(): { authenticated: boolean; email?: string; expiresAt?: string };
     /** Update the in-memory access token (called by runtime on auth:token-refreshed) */
     updateAccessToken(token: string): void;
-    setup(email: string, password: string, displayName?: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
+    setup(email: string, username: string, password: string, displayName?: string): Promise<{ user: { id: string; email: string; username: string }; accessToken: string }>;
     setupStatus(): Promise<{ needsSetup: boolean }>;
-    addUser(email: string, password: string, options?: { displayName?: string; roles?: string[] }): Promise<{ user: { id: string; email: string; roles?: string[] } }>;
+    addUser(email: string, username: string, password: string, options?: { displayName?: string; roles?: string[] }): Promise<{ user: { id: string; email: string; username: string; roles?: string[] } }>;
     listUsers(): Promise<unknown>;
   };
   pack: {
@@ -199,14 +199,14 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
         };
       },
       updateAccessToken(token: string) { currentAccessToken = token; },
-      async setup(email: string, password: string, displayName?: string) {
+      async setup(email: string, username: string, password: string, displayName?: string) {
         const api = getApi();
-        const response = await api.post('/auth/setup', { email, password, displayName: displayName || undefined });
+        const response = await api.post('/auth/setup', { email, username, password, displayName: displayName || undefined });
         const data = await handleResponse<{
           accessToken: string;
           refreshToken?: string;
           expiresAt: string;
-          user: { id: string; email: string };
+          user: { id: string; email: string; username: string };
         }>(response);
         saveCredentials({
           accessToken: data.accessToken,
@@ -222,14 +222,14 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
         const response = await api.get('/auth/setup/status');
         return handleResponse<{ needsSetup: boolean }>(response);
       },
-      async addUser(email: string, password: string, options?: { displayName?: string; roles?: string[] }) {
+      async addUser(email: string, username: string, password: string, options?: { displayName?: string; roles?: string[] }) {
         const api = getApi();
         const response = await api.post('/auth/users', {
-          email, password,
+          email, username, password,
           displayName: options?.displayName || undefined,
           roles: options?.roles ?? ['viewer'],
         });
-        return handleResponse<{ user: { id: string; email: string; roles?: string[] } }>(response);
+        return handleResponse<{ user: { id: string; email: string; username: string; roles?: string[] } }>(response);
       },
       async listUsers() {
         const api = getApi();

@@ -41,7 +41,7 @@ function createMockRequest(overrides: Partial<Request> = {}): Request {
     params: {},
     query: {},
     headers: {},
-    user: { id: 'dev-user-id' }, // Default authenticated user
+    user: { id: 'dev-user-id', username: 'dev' }, // Default authenticated user
     ...overrides,
   } as Request;
 }

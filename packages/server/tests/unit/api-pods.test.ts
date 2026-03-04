@@ -677,7 +677,7 @@ describe('Pod API Handlers', () => {
       const req = createMockRequest({
         params: { id: samplePod.id },
         headers: { authorization: 'Bearer test-token' },
-        user: { id: 'dev-user-id', email: 'dev@test.com', roles: ['developer'] },
+        user: { id: 'dev-user-id', email: 'dev@test.com', username: 'dev', roles: ['developer'] },
       });
       const res = createMockResponse();
 

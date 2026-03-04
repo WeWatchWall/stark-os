@@ -20,6 +20,8 @@ export interface User {
   id: string;
   /** Email address */
   email: string;
+  /** Unique username used for namespace resolution */
+  username: string;
   /** Display name */
   displayName?: string;
   /** Assigned roles */
@@ -35,6 +37,7 @@ export interface User {
  */
 export interface CreateUserInput {
   email: string;
+  username: string;
   displayName?: string;
   roles?: UserRole[];
 }

@@ -139,8 +139,8 @@ export async function handleNodeRegister(
   let namespace = payload.namespace;
   if (!namespace && ws.userId) {
     const userResult = await getUserById(ws.userId);
-    if (userResult.data?.email) {
-      namespace = getUserNamespace(userResult.data.email);
+    if (userResult.data?.username) {
+      namespace = getUserNamespace(userResult.data.username);
     }
   }
   namespace = namespace ?? 'default';

@@ -100,6 +100,13 @@ export class UserModel {
   }
 
   /**
+   * User username
+   */
+  get username(): string {
+    return this._user.username;
+  }
+
+  /**
    * User display name
    */
   get displayName(): string | undefined {
@@ -261,6 +268,7 @@ export class UserModel {
     return {
       id: this._user.id,
       email: this._user.email,
+      username: this._user.username,
       displayName: this._user.displayName,
       roles: [...this._user.roles],
       createdAt: this._user.createdAt,
@@ -278,6 +286,7 @@ export class UserModel {
     const user: User = {
       id,
       email: input.email,
+      username: input.username,
       displayName: input.displayName,
       roles: input.roles ?? ['viewer'],
       createdAt: now,

@@ -162,18 +162,16 @@ export const RESERVED_NAMESPACES = ['default', 'stark-system', 'stark-public'] a
 export const DEFAULT_NAMESPACE = 'default';
 
 /**
- * Derive a user's personal namespace name from their email address.
- * Takes the local part (before @), lowercases, replaces non-alphanumeric
- * characters with hyphens, strips leading/trailing hyphens, and truncates
- * to 63 characters.
+ * Derive a user's personal namespace name from their username.
+ * Lowercases, replaces non-alphanumeric characters with hyphens,
+ * strips leading/trailing hyphens, and truncates to 63 characters.
  *
  * NOTE: This logic is mirrored in SQL in
  * `supabase/migrations/036_namespace_scoping.sql` (function derive_user_namespace).
  * Changes here must be kept in sync with the SQL implementation.
  */
-export function getUserNamespace(email: string): string {
-  const local = email.split('@')[0] ?? email;
-  const sanitized = local
+export function getUserNamespace(username: string): string {
+  const sanitized = username
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '-')   // non-alphanum → hyphen
     .replace(/-+/g, '-')           // collapse consecutive hyphens

@@ -249,6 +249,20 @@ async function setupHandler(options: { email?: string }): Promise<void> {
       process.exit(1);
     }
 
+    // Get username
+    const suggestedUsername = email.split('@')[0]
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 63) ?? '';
+    const username = await prompt(`Username (${suggestedUsername}): `) || suggestedUsername;
+
+    if (!username) {
+      error('Username is required');
+      process.exit(1);
+    }
+
     // Get password
     const password = await prompt('Password: ', true);
     if (!password) {
@@ -275,6 +289,7 @@ async function setupHandler(options: { email?: string }): Promise<void> {
 
     const setupResponse = await apiClient.post('/auth/setup', {
       email,
+      username,
       password,
       displayName: displayName || undefined,
     });
@@ -282,7 +297,7 @@ async function setupHandler(options: { email?: string }): Promise<void> {
     const setupData = await setupResponse.json() as {
       success: boolean;
       data?: {
-        user: { id: string; email: string; roles: string[] };
+        user: { id: string; email: string; username: string; roles: string[] };
         accessToken: string;
         refreshToken?: string;
         expiresAt: string;
@@ -338,6 +353,20 @@ async function addUserHandler(options: { email?: string; role?: string[] }): Pro
     process.exit(1);
   }
 
+  // Get username
+  const suggestedUsername = email.split('@')[0]
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 63) ?? '';
+  const username = await prompt(`Username (${suggestedUsername}): `) || suggestedUsername;
+
+  if (!username) {
+    error('Username is required');
+    process.exit(1);
+  }
+
   // Get password
   const password = await prompt('Password for new user: ', true);
   if (!password) {
@@ -366,6 +395,7 @@ async function addUserHandler(options: { email?: string; role?: string[] }): Pro
   try {
     const response = await apiClient.post('/auth/users', {
       email,
+      username,
       password,
       displayName: displayName || undefined,
       roles,
@@ -373,7 +403,7 @@ async function addUserHandler(options: { email?: string; role?: string[] }): Pro
 
     const data = await response.json() as {
       success: boolean;
-      data?: { user: { id: string; email: string; roles: string[] } };
+      data?: { user: { id: string; email: string; username: string; roles: string[] } };
       error?: { code: string; message: string };
     };
 
@@ -390,6 +420,7 @@ async function addUserHandler(options: { email?: string; role?: string[] }): Pro
 
     success(`User created: ${data.data!.user.email}`);
     console.log(chalk.dim(`User ID: ${data.data!.user.id}`));
+    console.log(chalk.dim(`Username: ${data.data!.user.username}`));
     console.log(chalk.dim(`Roles: ${data.data!.user.roles.join(', ')}`));
   } catch (err) {
     error('Failed to create user', err instanceof Error ? { message: err.message } : undefined);
@@ -510,6 +541,20 @@ async function registerHandler(options: { email?: string }): Promise<void> {
       process.exit(1);
     }
 
+    // Get username
+    const suggestedUsername = email.split('@')[0]
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 63) ?? '';
+    const username = await prompt(`Username (${suggestedUsername}): `) || suggestedUsername;
+
+    if (!username) {
+      error('Username is required');
+      process.exit(1);
+    }
+
     // Get password
     const password = await prompt('Password: ', true);
     if (!password) {
@@ -536,6 +581,7 @@ async function registerHandler(options: { email?: string }): Promise<void> {
 
     const registerResponse = await apiClient.post('/auth/register', {
       email,
+      username,
       password,
       displayName: displayName || undefined,
     });
@@ -543,7 +589,7 @@ async function registerHandler(options: { email?: string }): Promise<void> {
     const registerData = await registerResponse.json() as {
       success: boolean;
       data?: {
-        user: { id: string; email: string; roles: string[] };
+        user: { id: string; email: string; username: string; roles: string[] };
         accessToken: string;
         refreshToken?: string;
         expiresAt: string;

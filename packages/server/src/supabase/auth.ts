@@ -28,6 +28,7 @@ import { getSupabaseClient, getSupabaseServiceClient, createSupabaseUserClient }
 interface UserRow {
   id: string;
   email: string;
+  username: string;
   display_name: string | null;
   roles: string[];
   created_at: string;
@@ -112,6 +113,7 @@ function rowToUser(row: UserRow): User {
   return {
     id: row.id,
     email: row.email,
+    username: row.username,
     displayName: row.display_name ?? undefined,
     roles: row.roles as UserRole[],
     createdAt: new Date(row.created_at),
@@ -168,6 +170,7 @@ export class SupabaseAuthProvider implements AuthProvider {
         password: input.password,
         options: {
           data: {
+            username: input.username,
             display_name: input.displayName,
             roles: input.roles ?? ['viewer'],
           },
@@ -206,7 +209,8 @@ export class SupabaseAuthProvider implements AuthProvider {
           .insert({
             id: authUser.id,
             email: input.email,
-            display_name: input.displayName ?? input.email.split('@')[0],
+            username: input.username,
+            display_name: input.displayName ?? input.username,
             roles: input.roles ?? ['viewer'],
           })
           .select()
@@ -702,6 +706,22 @@ export class UserQueries {
       .from('users')
       .select('id', { count: 'exact', head: true })
       .eq('email', email.toLowerCase());
+
+    if (result.error !== null) {
+      return { data: null, error: result.error };
+    }
+
+    return { data: (result.count ?? 0) > 0, error: null };
+  }
+
+  /**
+   * Check if a user with the given username exists
+   */
+  async usernameExists(username: string): Promise<AuthResult<boolean>> {
+    const result = await this.client
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('username', username);
 
     if (result.error !== null) {
       return { data: null, error: result.error };

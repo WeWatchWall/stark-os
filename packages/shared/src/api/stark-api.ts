@@ -34,9 +34,9 @@ export interface StarkAPI {
     status(): { authenticated: boolean; email?: string; expiresAt?: string };
     /** Update the in-memory access token (called by runtime on auth:token-refreshed) */
     updateAccessToken(token: string): void;
-    setup(email: string, password: string, displayName?: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
+    setup(email: string, username: string, password: string, displayName?: string): Promise<{ user: { id: string; email: string; username: string }; accessToken: string }>;
     setupStatus(): Promise<{ needsSetup: boolean }>;
-    addUser(email: string, password: string, options?: { displayName?: string; roles?: string[] }): Promise<{ user: { id: string; email: string; roles?: string[] } }>;
+    addUser(email: string, username: string, password: string, options?: { displayName?: string; roles?: string[] }): Promise<{ user: { id: string; email: string; username: string; roles?: string[] } }>;
     listUsers(): Promise<unknown>;
   };
   pack: {
@@ -245,20 +245,20 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         return { authenticated: !!resolveAccessToken(), email: undefined, expiresAt: undefined };
       },
       updateAccessToken(token: string) { currentAccessToken = token; },
-      async setup(email: string, password: string, displayName?: string) {
-        const response = await apiPost('/auth/setup', { email, password, displayName });
-        return handleResponse<{ accessToken: string; user: { id: string; email: string } }>(response);
+      async setup(email: string, username: string, password: string, displayName?: string) {
+        const response = await apiPost('/auth/setup', { email, username, password, displayName });
+        return handleResponse<{ accessToken: string; user: { id: string; email: string; username: string } }>(response);
       },
       async setupStatus() {
         return handleResponse<{ needsSetup: boolean }>(await apiGet('/auth/setup/status'));
       },
-      async addUser(email: string, password: string, options?: { displayName?: string; roles?: string[] }) {
+      async addUser(email: string, username: string, password: string, options?: { displayName?: string; roles?: string[] }) {
         const response = await apiPost('/auth/users', {
-          email, password,
+          email, username, password,
           displayName: options?.displayName,
           roles: options?.roles ?? ['viewer'],
         });
-        return handleResponse<{ user: { id: string; email: string; roles?: string[] } }>(response);
+        return handleResponse<{ user: { id: string; email: string; username: string; roles?: string[] } }>(response);
       },
       async listUsers() {
         return handleResponse<unknown>(await apiGet('/auth/users'));

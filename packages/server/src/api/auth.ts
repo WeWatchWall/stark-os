@@ -54,6 +54,7 @@ interface AuthSessionResponse {
   user: {
     id: string;
     email: string;
+    username: string;
     displayName?: string;
     roles: string[];
     createdAt: string;
@@ -86,6 +87,11 @@ interface ValidationResult {
  * Email regex pattern
  */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
+
+/**
+ * Username pattern: alphanumeric, hyphens, underscores, 1-63 chars, must start with alphanumeric
+ */
+const USERNAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$/;
 
 /**
  * Password minimum length
@@ -122,6 +128,34 @@ function validateEmail(email: unknown): ValidationError | null {
 
   if (!EMAIL_REGEX.test(trimmedEmail)) {
     return { code: 'INVALID_FORMAT', message: 'Email must be a valid email address' };
+  }
+
+  return null;
+}
+
+/**
+ * Validates username format
+ */
+function validateUsername(username: unknown): ValidationError | null {
+  if (username === undefined || username === null || username === '') {
+    return { code: 'REQUIRED', message: 'Username is required' };
+  }
+
+  if (typeof username !== 'string') {
+    return { code: 'INVALID_TYPE', message: 'Username must be a string' };
+  }
+
+  const trimmedUsername = username.trim();
+  if (trimmedUsername === '') {
+    return { code: 'REQUIRED', message: 'Username is required' };
+  }
+
+  if (trimmedUsername.length > 63) {
+    return { code: 'TOO_LONG', message: 'Username must be at most 63 characters' };
+  }
+
+  if (!USERNAME_REGEX.test(trimmedUsername)) {
+    return { code: 'INVALID_FORMAT', message: 'Username must start with a letter or digit and contain only letters, digits, hyphens, and underscores' };
   }
 
   return null;
@@ -203,6 +237,7 @@ function validateRegisterInput(body: unknown): ValidationResult {
       valid: false,
       errors: {
         email: { code: 'REQUIRED', message: 'Email is required' },
+        username: { code: 'REQUIRED', message: 'Username is required' },
         password: { code: 'REQUIRED', message: 'Password is required' },
       },
     };
@@ -212,6 +247,9 @@ function validateRegisterInput(body: unknown): ValidationResult {
 
   const emailError = validateEmail(input.email);
   if (emailError) errors.email = emailError;
+
+  const usernameError = validateUsername(input.username);
+  if (usernameError) errors.username = usernameError;
 
   const passwordError = validateRegisterPassword(input.password);
   if (passwordError) errors.password = passwordError;
@@ -334,15 +372,17 @@ export async function register(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const { email, password, displayName, roles } = req.body as {
+    const { email, password, username, displayName, roles } = req.body as {
       email: string;
+      username: string;
       password: string;
       displayName?: string;
       roles?: string[];
     };
 
-    // Normalize email
+    // Normalize email and username
     const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsername = username.trim();
 
     // Determine roles:
     // - Admins can specify any valid roles
@@ -375,6 +415,7 @@ export async function register(req: Request, res: Response): Promise<void> {
     const authQueries = getAuthQueries();
     const result = await authQueries.registerUser({
       email: normalizedEmail,
+      username: normalizedUsername,
       password,
       displayName,
       roles: userRoles,
@@ -403,6 +444,7 @@ export async function register(req: Request, res: Response): Promise<void> {
       user: {
         id: session.user.id,
         email: session.user.email,
+        username: session.user.username,
         displayName: session.user.displayName,
         roles: session.user.roles,
         createdAt: session.user.createdAt.toISOString(),
@@ -493,6 +535,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       user: {
         id: session.user.id,
         email: session.user.email,
+        username: session.user.username,
         displayName: session.user.displayName,
         roles: session.user.roles,
         createdAt: session.user.createdAt.toISOString(),
@@ -604,6 +647,7 @@ export async function refresh(req: Request, res: Response): Promise<void> {
       user: {
         id: session.user.id,
         email: session.user.email,
+        username: session.user.username,
         displayName: session.user.displayName,
         roles: session.user.roles,
         createdAt: session.user.createdAt.toISOString(),
@@ -693,19 +737,22 @@ export async function setup(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const { email, password, displayName } = req.body as {
+    const { email, password, username, displayName } = req.body as {
       email: string;
+      username: string;
       password: string;
       displayName?: string;
     };
 
-    // Normalize email
+    // Normalize email and username
     const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsername = username.trim();
 
     // Register user with admin role
     const authQueries = getAuthQueries();
     const result = await authQueries.registerUser({
       email: normalizedEmail,
+      username: normalizedUsername,
       password,
       displayName,
       roles: ['admin'],
@@ -727,6 +774,7 @@ export async function setup(req: Request, res: Response): Promise<void> {
       user: {
         id: session.user.id,
         email: session.user.email,
+        username: session.user.username,
         displayName: session.user.displayName,
         roles: session.user.roles,
         createdAt: session.user.createdAt.toISOString(),
@@ -793,15 +841,17 @@ export async function createUser(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const { email, password, displayName, roles } = req.body as {
+    const { email, password, username, displayName, roles } = req.body as {
       email: string;
+      username: string;
       password: string;
       displayName?: string;
       roles?: string[];
     };
 
-    // Normalize email
+    // Normalize email and username
     const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsername = username.trim();
 
     // Validate roles if provided
     const validRoles = ['admin', 'node', 'viewer'];
@@ -811,6 +861,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
     const authQueries = getAuthQueries();
     const result = await authQueries.registerUser({
       email: normalizedEmail,
+      username: normalizedUsername,
       password,
       displayName,
       roles: userRoles as ('admin' | 'node' | 'viewer')[],
@@ -846,6 +897,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
       user: {
         id: session.user.id,
         email: session.user.email,
+        username: session.user.username,
         displayName: session.user.displayName,
         roles: session.user.roles,
         createdAt: session.user.createdAt.toISOString(),
@@ -924,6 +976,7 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
       users: users.map(u => ({
         id: u.id,
         email: u.email,
+        username: u.username,
         displayName: u.displayName,
         roles: u.roles,
         createdAt: u.createdAt.toISOString(),
@@ -933,6 +986,38 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
     }, 200);
   } catch (error) {
     requestLogger.error('Error listing users', error instanceof Error ? error : undefined);
+    sendError(res, 'INTERNAL_ERROR', 'An unexpected error occurred', 500);
+  }
+}
+
+/**
+ * GET /auth/check-username - Check if a username is available
+ */
+export async function checkUsernameAvailability(req: Request, res: Response): Promise<void> {
+  const correlationId = generateCorrelationId();
+  const requestLogger = logger.withCorrelationId(correlationId);
+
+  try {
+    const { username } = req.query;
+
+    if (!username || typeof username !== 'string' || username.trim() === '') {
+      sendError(res, 'VALIDATION_ERROR', 'Username query parameter is required', 400);
+      return;
+    }
+
+    const trimmedUsername = username.trim();
+    const userQueries = getUserQueries();
+    const result = await userQueries.usernameExists(trimmedUsername);
+
+    if (result.error) {
+      requestLogger.error('Error checking username availability', new Error(result.error.message));
+      sendError(res, 'INTERNAL_ERROR', 'Failed to check username availability', 500);
+      return;
+    }
+
+    sendSuccess(res, { available: !result.data }, 200);
+  } catch (error) {
+    requestLogger.error('Error checking username', error instanceof Error ? error : undefined);
     sendError(res, 'INTERNAL_ERROR', 'An unexpected error occurred', 500);
   }
 }
@@ -955,6 +1040,7 @@ export function createAuthRouter(): Router {
   router.post('/setup', setup);
   router.get('/users', listUsers);
   router.post('/users', createUser);
+  router.get('/check-username', checkUsernameAvailability);
 
   return router;
 }

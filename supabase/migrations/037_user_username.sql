@@ -71,6 +71,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Function: derive a namespace name from a username.
 -- Lowercases, replaces non-alphanum with hyphens, collapses consecutive
 -- hyphens, strips leading/trailing hyphens, and truncates to 63 characters.
+DROP FUNCTION IF EXISTS derive_user_namespace(TEXT);
 CREATE OR REPLACE FUNCTION derive_user_namespace(uname TEXT)
 RETURNS TEXT AS $$
 DECLARE

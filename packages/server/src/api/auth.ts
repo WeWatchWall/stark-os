@@ -155,7 +155,7 @@ function validateUsername(username: unknown): ValidationError | null {
   }
 
   if (!USERNAME_REGEX.test(trimmedUsername)) {
-    return { code: 'INVALID_FORMAT', message: 'Username must start with a letter or digit and contain only letters, digits, hyphens, and underscores' };
+    return { code: 'INVALID_FORMAT', message: 'Username must be 1-63 characters, start with a letter or digit, and contain only letters, digits, hyphens, and underscores' };
   }
 
   return null;

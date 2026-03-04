@@ -74,7 +74,7 @@
               placeholder="Choose a unique username"
               required
               maxlength="63"
-              pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*"
+              pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}"
               autocomplete="off"
               :disabled="isLoading"
               @blur="checkUsername"

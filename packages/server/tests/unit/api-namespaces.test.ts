@@ -433,15 +433,16 @@ describe('Namespace API Handlers', () => {
       });
     });
 
-    it('should return 403 when non-admin user creates namespace not matching their email', async () => {
+    it('should return 403 when non-admin user creates namespace not matching their username', async () => {
       const req = createMockRequest({
         body: { name: 'arbitrary-namespace' },
         headers: { authorization: 'Bearer test-token' },
       });
-      // Attach a regular user with email
-      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+      // Attach a regular user with username
+      (req as Request & { user?: { id: string; email: string; username: string; roles: string[] } }).user = {
         id: 'user-123',
         email: 'alice@example.com',
+        username: 'alice',
         roles: ['user'],
       };
       const res = createMockResponse();
@@ -461,7 +462,7 @@ describe('Namespace API Handlers', () => {
       });
     });
 
-    it('should allow non-admin user to create their email-derived namespace', async () => {
+    it('should allow non-admin user to create their username-derived namespace', async () => {
       mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
       mockNamespaceQueries.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice' }, error: null });
 
@@ -469,9 +470,10 @@ describe('Namespace API Handlers', () => {
         body: { name: 'alice' },
         headers: { authorization: 'Bearer test-token' },
       });
-      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+      (req as Request & { user?: { id: string; email: string; username: string; roles: string[] } }).user = {
         id: 'user-123',
         email: 'alice@example.com',
+        username: 'alice',
         roles: ['user'],
       };
       const res = createMockResponse();
@@ -495,9 +497,10 @@ describe('Namespace API Handlers', () => {
         body: { name: 'test-namespace' },
         headers: { authorization: 'Bearer test-token' },
       });
-      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+      (req as Request & { user?: { id: string; email: string; username: string; roles: string[] } }).user = {
         id: 'admin-123',
         email: 'admin@example.com',
+        username: 'admin',
         roles: ['admin'],
       };
       const res = createMockResponse();
@@ -507,14 +510,15 @@ describe('Namespace API Handlers', () => {
       expect(res._status).toBe(201);
     });
 
-    it('should suggest correct namespace name for email with special characters', async () => {
+    it('should suggest correct namespace name for username with special characters', async () => {
       const req = createMockRequest({
         body: { name: 'wrong-namespace' },
         headers: { authorization: 'Bearer test-token' },
       });
-      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+      (req as Request & { user?: { id: string; email: string; username: string; roles: string[] } }).user = {
         id: 'user-456',
         email: 'john.doe+test@example.com',
+        username: 'john.doe+test',
         roles: ['user'],
       };
       const res = createMockResponse();
@@ -533,7 +537,7 @@ describe('Namespace API Handlers', () => {
       });
     });
 
-    it('should allow non-admin user to create a sub-namespace under their email-derived namespace', async () => {
+    it('should allow non-admin user to create a sub-namespace under their username-derived namespace', async () => {
       mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
       mockNamespaceQueries.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice/my-project' }, error: null });
 
@@ -541,9 +545,10 @@ describe('Namespace API Handlers', () => {
         body: { name: 'alice/my-project' },
         headers: { authorization: 'Bearer test-token' },
       });
-      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+      (req as Request & { user?: { id: string; email: string; username: string; roles: string[] } }).user = {
         id: 'user-123',
         email: 'alice@example.com',
+        username: 'alice',
         roles: ['user'],
       };
       const res = createMockResponse();
@@ -564,9 +569,10 @@ describe('Namespace API Handlers', () => {
         body: { name: 'bob/my-project' },
         headers: { authorization: 'Bearer test-token' },
       });
-      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+      (req as Request & { user?: { id: string; email: string; username: string; roles: string[] } }).user = {
         id: 'user-123',
         email: 'alice@example.com',
+        username: 'alice',
         roles: ['user'],
       };
       const res = createMockResponse();

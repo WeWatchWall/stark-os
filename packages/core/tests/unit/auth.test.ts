@@ -34,6 +34,7 @@ function createMockUser(overrides: Partial<User> = {}): User {
   return {
     id: 'user-123',
     email: 'test@example.com',
+    username: 'test',
     displayName: 'Test User',
     roles: ['developer'] as UserRole[],
     createdAt: new Date('2024-01-01'),

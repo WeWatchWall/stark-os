@@ -69,6 +69,7 @@ function createMockResponse(): Response & { _json: unknown; _status: number } {
 const sampleUser: User = {
   id: '22222222-2222-4222-8222-222222222222',
   email: 'test@example.com',
+  username: 'test',
   displayName: 'Test User',
   roles: ['developer'],
   createdAt: new Date(),
@@ -270,7 +271,7 @@ describe('Auth API Handlers', () => {
       });
 
       const req = createMockRequest({
-        body: { email: 'existing@example.com', password: 'Password123' },
+        body: { email: 'existing@example.com', username: 'existing', password: 'Password123' },
       });
       const res = createMockResponse();
 
@@ -293,7 +294,7 @@ describe('Auth API Handlers', () => {
       });
 
       const req = createMockRequest({
-        body: { email: 'test@example.com', password: 'Password123' },
+        body: { email: 'test@example.com', username: 'test', password: 'Password123' },
       });
       const res = createMockResponse();
 
@@ -315,6 +316,7 @@ describe('Auth API Handlers', () => {
       expect(mockAuthQueries.registerUser).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'test@example.com',
+          username: 'test',
           password: 'Password123',
         })
       );
@@ -334,6 +336,7 @@ describe('Auth API Handlers', () => {
       const req = createMockRequest({
         body: {
           email: 'test@example.com',
+          username: 'test',
           password: 'Password123',
           displayName: 'John Doe',
         },
@@ -346,6 +349,7 @@ describe('Auth API Handlers', () => {
       expect(mockAuthQueries.registerUser).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'test@example.com',
+          username: 'test',
           password: 'Password123',
           displayName: 'John Doe',
         })
@@ -356,6 +360,7 @@ describe('Auth API Handlers', () => {
       const req = createMockRequest({
         body: {
           email: 'test@example.com',
+          username: 'test',
           password: 'Password123',
           displayName: 'a'.repeat(101),
         },
@@ -384,7 +389,7 @@ describe('Auth API Handlers', () => {
       });
 
       const req = createMockRequest({
-        body: { email: 'test@example.com', password: 'Password123' },
+        body: { email: 'test@example.com', username: 'test', password: 'Password123' },
       });
       const res = createMockResponse();
 

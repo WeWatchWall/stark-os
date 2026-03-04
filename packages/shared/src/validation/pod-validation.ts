@@ -135,6 +135,14 @@ export function validateNamespace(namespace: unknown): ValidationError | null {
     };
   }
 
+  if (namespace.length > 63) {
+    return {
+      field: 'namespace',
+      message: 'Namespace cannot exceed 63 characters',
+      code: 'TOO_LONG',
+    };
+  }
+
   if (!NAMESPACE_NAME_PATTERN.test(namespace)) {
     return {
       field: 'namespace',

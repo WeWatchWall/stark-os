@@ -8,9 +8,10 @@ import type { Labels, Annotations } from './labels';
 /**
  * Namespace name pattern: lowercase, alphanumeric, hyphens.
  * Must start and end with alphanumeric. Length: 1-63 chars.
+ * Supports hierarchical names with forward-slash separators (e.g. "alice/my-project").
  * Shared across all validation files to prevent duplication.
  */
-export const NAMESPACE_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+export const NAMESPACE_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\/[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 
 /**
  * Namespace phase

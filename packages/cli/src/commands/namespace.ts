@@ -137,6 +137,15 @@ async function createHandler(
     const result = (await response.json()) as ApiResponse<{ namespace: Namespace }>;
 
     if (!result.success || !result.data) {
+      if (result.error?.code === 'NAMESPACE_AUTHORITY') {
+        const suggested = (result.error.details as Record<string, unknown> | undefined)?.suggestedName as string | undefined;
+        error(result.error.message);
+        if (suggested) {
+          info(`Try: ${chalk.bold(`stark namespace create ${suggested}`)}`);
+          info(`  or: ${chalk.bold(`stark namespace create ${suggested}/<name>`)}`);
+        }
+        process.exit(1);
+      }
       error('Failed to create namespace', result.error);
       process.exit(1);
     }

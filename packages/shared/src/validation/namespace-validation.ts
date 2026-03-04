@@ -10,9 +10,10 @@ import type { ValidationResult, ValidationError } from './pack-validation';
 import { validateLabels, validateAnnotations } from './node-validation';
 
 /**
- * Namespace name pattern: lowercase, alphanumeric, hyphens, 1-63 chars
+ * Namespace name pattern: lowercase letter start, alphanumeric, hyphens, 1-63 chars.
+ * Supports hierarchical names with forward-slash separators (e.g. "alice/my-project").
  */
-const NAMESPACE_NAME_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
+const NAMESPACE_NAME_PATTERN = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)*$/;
 
 /**
  * Reserved namespace names that cannot be created by users
@@ -59,7 +60,7 @@ export function validateNamespaceName(name: unknown): ValidationError | null {
     return {
       field: 'name',
       message:
-        'Namespace name must start with a lowercase letter and contain only lowercase alphanumeric characters and hyphens',
+        'Namespace name must start with a lowercase letter and contain only lowercase alphanumeric characters, hyphens, and forward slashes',
       code: 'INVALID_FORMAT',
     };
   }

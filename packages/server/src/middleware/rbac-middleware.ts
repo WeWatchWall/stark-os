@@ -121,6 +121,7 @@ export function defineAbilityFor(user: User): AppAbility {
         can('read', 'Node');    // Read own nodes
         can('update', 'Node');  // Update own nodes
         can('delete', 'Node');  // Delete own nodes
+        can('create', 'Namespace'); // Create own namespace (email-derived only)
         can('read', 'Namespace'); // Read namespaces
         break;
 

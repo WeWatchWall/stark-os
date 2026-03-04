@@ -115,9 +115,9 @@ export function validatePodPackVersion(version: unknown): ValidationError | null
 }
 
 /**
- * Namespace name pattern
+ * Namespace name pattern: supports hierarchical names with forward-slash separators.
  */
-const NAMESPACE_NAME_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
+const NAMESPACE_NAME_PATTERN = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)*$/;
 
 /**
  * Validate namespace
@@ -135,11 +135,19 @@ export function validateNamespace(namespace: unknown): ValidationError | null {
     };
   }
 
+  if (namespace.length > 63) {
+    return {
+      field: 'namespace',
+      message: 'Namespace cannot exceed 63 characters',
+      code: 'TOO_LONG',
+    };
+  }
+
   if (!NAMESPACE_NAME_PATTERN.test(namespace)) {
     return {
       field: 'namespace',
       message:
-        'Namespace must start with a lowercase letter and contain only lowercase alphanumeric characters and hyphens, max 63 characters',
+        'Namespace must start with a lowercase letter and contain only lowercase alphanumeric characters, hyphens, and forward slashes, max 63 characters',
       code: 'INVALID_FORMAT',
     };
   }

@@ -17,9 +17,11 @@ import {
   validateCreateNamespaceInput,
   validateUpdateNamespaceInput,
   isReservedNamespaceName,
+  getUserNamespace,
   createServiceLogger,
   generateCorrelationId,
 } from '@stark-o/shared';
+import type { User } from '@stark-o/shared';
 import { getNamespaceQueries } from '../supabase/namespaces.js';
 import {
   authMiddleware,
@@ -137,6 +139,14 @@ function getUserId(req: Request): string | null {
 }
 
 /**
+ * Extract full user from request (middleware should set this)
+ */
+function getUser(req: Request): User | null {
+  const user = (req as Request & { user?: User }).user;
+  return user ?? null;
+}
+
+/**
  * POST /api/namespaces - Create a new namespace
  */
 export async function createNamespaceHandler(req: Request, res: Response): Promise<void> {
@@ -182,6 +192,28 @@ export async function createNamespaceHandler(req: Request, res: Response): Promi
         400
       );
       return;
+    }
+
+    // Authority check: non-admin users can only create their email-derived namespace
+    // or sub-namespaces under it (e.g. "alice" or "alice/my-project")
+    const user = getUser(req);
+    if (user && !user.roles.includes('admin')) {
+      const allowedNamespace = getUserNamespace(user.email);
+      if (input.name !== allowedNamespace && !input.name.startsWith(allowedNamespace + '/')) {
+        requestLogger.info('Namespace creation rejected - authority check failed', {
+          userId: user.id,
+          requestedName: input.name,
+          allowedName: allowedNamespace,
+        });
+        sendError(
+          res,
+          'NAMESPACE_AUTHORITY',
+          `You do not have permission to create namespace '${input.name}'. Regular users can only create their personal namespace or sub-namespaces (e.g. '${allowedNamespace}/<name>').`,
+          403,
+          { suggestedName: allowedNamespace }
+        );
+        return;
+      }
     }
 
     // Check for duplicate namespace name

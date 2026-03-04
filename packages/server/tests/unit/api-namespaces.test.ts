@@ -432,6 +432,158 @@ describe('Namespace API Handlers', () => {
         },
       });
     });
+
+    it('should return 403 when non-admin user creates namespace not matching their email', async () => {
+      const req = createMockRequest({
+        body: { name: 'arbitrary-namespace' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      // Attach a regular user with email
+      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+        id: 'user-123',
+        email: 'alice@example.com',
+        roles: ['user'],
+      };
+      const res = createMockResponse();
+
+      await createNamespace(req, res);
+
+      expect(res._status).toBe(403);
+      expect(res._json).toMatchObject({
+        success: false,
+        error: {
+          code: 'NAMESPACE_AUTHORITY',
+          message: expect.stringContaining('do not have permission'),
+          details: {
+            suggestedName: 'alice',
+          },
+        },
+      });
+    });
+
+    it('should allow non-admin user to create their email-derived namespace', async () => {
+      mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
+      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice' }, error: null });
+
+      const req = createMockRequest({
+        body: { name: 'alice' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+        id: 'user-123',
+        email: 'alice@example.com',
+        roles: ['user'],
+      };
+      const res = createMockResponse();
+
+      await createNamespace(req, res);
+
+      expect(res._status).toBe(201);
+      expect(res._json).toMatchObject({
+        success: true,
+        data: {
+          namespace: expect.objectContaining({ name: 'alice' }),
+        },
+      });
+    });
+
+    it('should allow admin user to create any namespace', async () => {
+      mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
+      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: sampleNamespace, error: null });
+
+      const req = createMockRequest({
+        body: { name: 'test-namespace' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+        id: 'admin-123',
+        email: 'admin@example.com',
+        roles: ['admin'],
+      };
+      const res = createMockResponse();
+
+      await createNamespace(req, res);
+
+      expect(res._status).toBe(201);
+    });
+
+    it('should suggest correct namespace name for email with special characters', async () => {
+      const req = createMockRequest({
+        body: { name: 'wrong-namespace' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+        id: 'user-456',
+        email: 'john.doe+test@example.com',
+        roles: ['user'],
+      };
+      const res = createMockResponse();
+
+      await createNamespace(req, res);
+
+      expect(res._status).toBe(403);
+      expect(res._json).toMatchObject({
+        success: false,
+        error: {
+          code: 'NAMESPACE_AUTHORITY',
+          details: {
+            suggestedName: 'john-doe-test',
+          },
+        },
+      });
+    });
+
+    it('should allow non-admin user to create a sub-namespace under their email-derived namespace', async () => {
+      mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
+      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice/my-project' }, error: null });
+
+      const req = createMockRequest({
+        body: { name: 'alice/my-project' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+        id: 'user-123',
+        email: 'alice@example.com',
+        roles: ['user'],
+      };
+      const res = createMockResponse();
+
+      await createNamespace(req, res);
+
+      expect(res._status).toBe(201);
+      expect(res._json).toMatchObject({
+        success: true,
+        data: {
+          namespace: expect.objectContaining({ name: 'alice/my-project' }),
+        },
+      });
+    });
+
+    it('should reject non-admin user creating sub-namespace under another user prefix', async () => {
+      const req = createMockRequest({
+        body: { name: 'bob/my-project' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      (req as Request & { user?: { id: string; email: string; roles: string[] } }).user = {
+        id: 'user-123',
+        email: 'alice@example.com',
+        roles: ['user'],
+      };
+      const res = createMockResponse();
+
+      await createNamespace(req, res);
+
+      expect(res._status).toBe(403);
+      expect(res._json).toMatchObject({
+        success: false,
+        error: {
+          code: 'NAMESPACE_AUTHORITY',
+          details: {
+            suggestedName: 'alice',
+          },
+        },
+      });
+    });
   });
 
   describe('GET /api/namespaces - listNamespaces', () => {

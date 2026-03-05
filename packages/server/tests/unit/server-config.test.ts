@@ -185,6 +185,40 @@ describe('Server Configuration', () => {
       }
     });
 
+    it('should reject corsOrigins arrays containing non-string elements', () => {
+      const testConfig = {
+        corsOrigins: ['https://valid.com', 123, null],
+      };
+
+      const starkDir = path.dirname(CONFIG_PATH);
+      fs.mkdirSync(starkDir, { recursive: true });
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(testConfig, null, 2));
+
+      try {
+        const result = loadSavedConfig();
+        expect(result.corsOrigins).toBeUndefined();
+      } finally {
+        try { fs.unlinkSync(CONFIG_PATH); } catch { /* ignore */ }
+      }
+    });
+
+    it('should reject invalid nodeEnv values', () => {
+      const testConfig = {
+        nodeEnv: 'staging', // not in allowed set
+      };
+
+      const starkDir = path.dirname(CONFIG_PATH);
+      fs.mkdirSync(starkDir, { recursive: true });
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(testConfig, null, 2));
+
+      try {
+        const result = loadSavedConfig();
+        expect(result.nodeEnv).toBeUndefined();
+      } finally {
+        try { fs.unlinkSync(CONFIG_PATH); } catch { /* ignore */ }
+      }
+    });
+
     it('should return an empty object for invalid JSON', () => {
       const starkDir = path.dirname(CONFIG_PATH);
       fs.mkdirSync(starkDir, { recursive: true });

@@ -87,10 +87,11 @@ export function loadSavedConfig(): Partial<ServerConfig> {
     if (typeof parsed.httpPort === 'number') saved.httpPort = parsed.httpPort;
     if (typeof parsed.host === 'string') saved.host = parsed.host;
     if (typeof parsed.enableCors === 'boolean') saved.enableCors = parsed.enableCors;
-    if (Array.isArray(parsed.corsOrigins)) saved.corsOrigins = parsed.corsOrigins;
+    if (Array.isArray(parsed.corsOrigins) && parsed.corsOrigins.every((o: unknown) => typeof o === 'string')) saved.corsOrigins = parsed.corsOrigins;
     if (typeof parsed.enableLogging === 'boolean') saved.enableLogging = parsed.enableLogging;
     if (typeof parsed.wsPath === 'string') saved.wsPath = parsed.wsPath;
-    if (typeof parsed.nodeEnv === 'string') saved.nodeEnv = parsed.nodeEnv as ServerConfig['nodeEnv'];
+    const validNodeEnvs = ['development', 'production', 'test'];
+    if (typeof parsed.nodeEnv === 'string' && validNodeEnvs.includes(parsed.nodeEnv)) saved.nodeEnv = parsed.nodeEnv as ServerConfig['nodeEnv'];
     if (typeof parsed.supabaseUrl === 'string') saved.supabaseUrl = parsed.supabaseUrl;
     if (typeof parsed.supabaseAnonKey === 'string') saved.supabaseAnonKey = parsed.supabaseAnonKey;
     if (typeof parsed.supabaseServiceRoleKey === 'string') saved.supabaseServiceRoleKey = parsed.supabaseServiceRoleKey;

@@ -3,10 +3,10 @@
  *
  * Runtime-agnostic programmatic API for orchestrator operations.
  * Works in Node.js, browsers, and Web Workers — uses only `fetch`
- * (no localStorage, no JSZip).
+ * and `JSZip` (no localStorage).
  *
- * Browser-specific features (volume zip operations) are NOT included here;
- * they live in `@stark-o/browser-runtime/api`.
+ * Browser-specific features (localStorage credentials, config management)
+ * live in `@stark-o/browser-runtime/api`.
  *
  * @module @stark-o/shared/api/stark-api
  */
@@ -40,21 +40,21 @@ export interface StarkAPI {
     listUsers(): Promise<unknown>;
   };
   pack: {
-    list(): Promise<unknown>;
+    list(options?: { pageSize?: number }): Promise<unknown>;
     versions(name: string): Promise<unknown>;
     info(name: string): Promise<unknown>;
     delete(name: string): Promise<void>;
   };
   node: {
-    list(): Promise<unknown>;
+    list(options?: { pageSize?: number }): Promise<unknown>;
     status(nameOrId: string): Promise<unknown>;
     logs(nameOrId: string, options?: { tail?: number }): Promise<unknown>;
   };
   pod: {
-    list(options?: { namespace?: string; status?: string }): Promise<unknown>;
+    list(options?: { namespace?: string; status?: string; pageSize?: number }): Promise<unknown>;
     status(podId: string): Promise<unknown>;
-    create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; args?: string[] }): Promise<unknown>;
-    stop(podId: string): Promise<unknown>;
+    create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }>; args?: string[] }): Promise<unknown>;
+    stop(podId: string): Promise<void>;
     rollback(podId: string): Promise<unknown>;
     history(podId: string): Promise<unknown>;
     logs(podId: string, options?: { tail?: number }): Promise<unknown>;
@@ -80,6 +80,8 @@ export interface StarkAPI {
     list(options?: { nodeNameOrId?: string }): Promise<unknown>;
     create(name: string, nodeNameOrId: string): Promise<unknown>;
     download(name: string, nodeNameOrId: string): Promise<{ files: Array<{ path: string; data: string }> }>;
+    downloadAsZip(name: string, nodeNameOrId: string): Promise<Uint8Array>;
+    archivePathAsZip(nodeNameOrId: string, name: string, archivePath: string): Promise<Uint8Array>;
   };
   chaos: {
     status(): Promise<unknown>;
@@ -100,15 +102,15 @@ export interface StarkAPI {
   };
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────
+// ── Exported helpers ──────────────────────────────────────────────────
 
-interface ApiResponse<T> {
+export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: { code: string; message: string; details?: Record<string, unknown> };
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
+export async function handleResponse<T>(response: Response): Promise<T> {
   const result = (await response.json()) as ApiResponse<T>;
   if (!result.success || !result.data) {
     throw new Error(result.error?.message ?? 'Request failed');
@@ -116,16 +118,16 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return result.data;
 }
 
-async function handleDeleteResponse(response: Response): Promise<void> {
+export async function handleDeleteResponse(response: Response): Promise<void> {
   const result = (await response.json()) as ApiResponse<unknown>;
   if (!result.success) {
     throw new Error(result.error?.message ?? 'Request failed');
   }
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-async function resolveNodeId(
+export async function resolveNodeId(
   nameOrId: string,
   apiFetch: (path: string) => Promise<Response>,
 ): Promise<string> {
@@ -143,13 +145,26 @@ async function resolveNodeId(
 }
 
 /**
+ * Decode a base64-encoded string to a Uint8Array.
+ * Works in Node.js 20+, browsers, and Web Workers.
+ */
+export function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryStr = atob(base64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
  * Resolve the API URL from available sources:
  * 1. Explicit apiUrl passed to config
  * 2. `__STARK_CONTEXT__.orchestratorUrl` (set by worker scripts)
  * 3. `location.origin` (main-thread browser)
  * 4. Fallback to localhost
  */
-function resolveApiUrl(explicitUrl?: string): string {
+export function resolveApiUrl(explicitUrl?: string): string {
   if (explicitUrl) return explicitUrl;
 
   // Check global __STARK_CONTEXT__ (set by pack-worker scripts)

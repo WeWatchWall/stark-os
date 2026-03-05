@@ -81,22 +81,25 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
     return createApiClient(cfg, initialToken);
   };
 
+  /** Default page size for browser list operations */
+  const DEFAULT_BROWSER_PAGE_SIZE = 100;
+
   return {
     // ── Delegated sections (identical to shared) ───────────────────
     pack: {
-      async list(options) { return base.pack.list(options ?? { pageSize: 100 }); },
+      async list(options) { return base.pack.list(options ?? { pageSize: DEFAULT_BROWSER_PAGE_SIZE }); },
       versions: base.pack.versions.bind(base.pack),
       info: base.pack.info.bind(base.pack),
       delete: base.pack.delete.bind(base.pack),
     },
     node: {
-      async list(options) { return base.node.list(options ?? { pageSize: 100 }); },
+      async list(options) { return base.node.list(options ?? { pageSize: DEFAULT_BROWSER_PAGE_SIZE }); },
       status: base.node.status.bind(base.node),
       logs: base.node.logs.bind(base.node),
     },
     pod: {
       async list(options) {
-        return base.pod.list({ pageSize: 100, ...options });
+        return base.pod.list({ pageSize: DEFAULT_BROWSER_PAGE_SIZE, ...options });
       },
       status: base.pod.status.bind(base.pod),
       create: base.pod.create.bind(base.pod),

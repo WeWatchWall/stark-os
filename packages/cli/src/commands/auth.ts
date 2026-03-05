@@ -14,7 +14,6 @@ import {
   clearCredentials,
   loadCredentials,
   isAuthenticated,
-  createCliSupabaseClient,
   createApiClient,
   type Credentials,
 } from '../config.js';
@@ -112,33 +111,36 @@ async function loginHandler(options: { email?: string }): Promise<void> {
     process.exit(1);
   }
 
-  // Authenticate with Supabase
+  // Authenticate with orchestrator
   info('Authenticating...');
 
   try {
-    const supabase = createCliSupabaseClient(config);
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const apiClient = createApiClient(config);
+    const response = await apiClient.post('/auth/login', { email, password });
 
-    if (authError) {
-      error('Authentication failed', { message: authError.message });
-      process.exit(1);
-    }
+    const data = await response.json() as {
+      success: boolean;
+      data?: {
+        accessToken: string;
+        refreshToken?: string;
+        expiresAt: string;
+        user: { id: string; email: string };
+      };
+      error?: { message: string };
+    };
 
-    if (!data.session || !data.user) {
-      error('Authentication failed: No session returned');
+    if (!response.ok || !data.success || !data.data) {
+      error('Authentication failed', data.error ? { message: data.error.message } : undefined);
       process.exit(1);
     }
 
     // Save credentials
     const credentials: Credentials = {
-      accessToken: data.session.access_token,
-      refreshToken: data.session.refresh_token,
-      expiresAt: new Date(data.session.expires_at! * 1000).toISOString(),
-      userId: data.user.id,
-      email: data.user.email!,
+      accessToken: data.data.accessToken,
+      refreshToken: data.data.refreshToken,
+      expiresAt: data.data.expiresAt,
+      userId: data.data.user.id,
+      email: data.data.user.email,
     };
 
     saveCredentials(credentials);
@@ -160,13 +162,6 @@ async function logoutHandler(): Promise<void> {
 
   const creds = loadCredentials()!;
   const email = creds.email;
-
-  try {
-    const supabase = createCliSupabaseClient();
-    await supabase.auth.signOut();
-  } catch {
-    // Ignore errors during signout
-  }
 
   clearCredentials();
   success(`Logged out from ${email}`);

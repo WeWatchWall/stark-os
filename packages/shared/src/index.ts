@@ -196,4 +196,11 @@ export {
   createStarkAPI as createPortableStarkAPI,
   type StarkAPI,
   type StarkAPIConfig,
+  type ApiResponse,
+  handleResponse,
+  handleDeleteResponse,
+  resolveNodeId as resolveNodeIdByFetch,
+  resolveApiUrl as resolvePortableApiUrl,
+  base64ToUint8Array,
+  UUID_PATTERN as NODE_UUID_PATTERN,
 } from './api/index.js';

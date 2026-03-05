@@ -9,6 +9,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./api": {
+      "import": "./dist/api/index.js",
+      "types": "./dist/api/index.d.ts"
     }
   },
   "scripts": {
@@ -19,6 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "node-cache": "^5.1.2",
     "simple-peer": "^9.11.1",
     "uuid": "^10.0.0",

@@ -90,7 +90,6 @@ describe('Config Module', () => {
       const config = loadConfig();
 
       expect(config.apiUrl).toBe('https://127.0.0.1:443');
-      expect(config.supabaseUrl).toBe('http://127.0.0.1:54321');
       expect(config.defaultNamespace).toBe('default');
       expect(config.defaultOutputFormat).toBe('table');
     });

@@ -28,6 +28,7 @@ import { getIngressManager } from './services/ingress-manager.js';
 import { setConnectionManager } from './services/connection-service.js';
 import { bootstrapChaosMode } from './chaos/bootstrap.js';
 import { loadAllNetworkPolicies } from './supabase/index.js';
+import { getSupabaseConfig } from './supabase/client.js';
 
 // ============================================================================
 // Configuration
@@ -107,7 +108,10 @@ export function loadSavedConfig(): Partial<ServerConfig> {
 
 /**
  * Default server configuration derived from environment variables.
+ * Supabase settings fall back to local dev defaults so they are always visible
+ * in ~/.stark/server-config.json even without env vars.
  */
+const _supa = getSupabaseConfig();
 const DEFAULT_CONFIG: ServerConfig = {
   port: parseInt(process.env.PORT || '443', 10),
   httpPort: parseInt(process.env.HTTP_PORT || '3000', 10),
@@ -117,9 +121,9 @@ const DEFAULT_CONFIG: ServerConfig = {
   enableLogging: process.env.ENABLE_LOGGING !== 'false',
   wsPath: process.env.WS_PATH || '/ws',
   nodeEnv: (process.env.NODE_ENV || 'development') as ServerConfig['nodeEnv'],
-  supabaseUrl: process.env.SUPABASE_URL,
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  supabaseUrl: _supa.url,
+  supabaseAnonKey: _supa.anonKey,
+  supabaseServiceRoleKey: _supa.serviceRoleKey,
   sslCert: process.env.SSL_CERT,
   sslKey: process.env.SSL_KEY,
   exposeHttp: process.env.EXPOSE_HTTP === 'true',

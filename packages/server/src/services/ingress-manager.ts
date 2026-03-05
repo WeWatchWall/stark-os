@@ -18,6 +18,7 @@ import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { randomUUID } from 'crypto';
 import { createServiceLogger } from '@stark-o/shared';
 import { getServiceRegistry } from '@stark-o/shared';
@@ -85,7 +86,7 @@ export class IngressManager {
   }
 
   /**
-   * Load or read cached SSL options from the same .cache/ directory
+   * Load or read cached SSL options from the same ~/.stark/certs/ directory
    * that the main server uses. Falls back to self-signed generation
    * via the `selfsigned` package if no certs exist yet.
    */
@@ -102,9 +103,9 @@ export class IngressManager {
     }
 
     // Dev path — read the cached self-signed cert that the main server generates
-    const cacheDir = path.join(process.cwd(), '.cache');
-    const certPath = path.join(cacheDir, 'localhost.crt');
-    const keyPath = path.join(cacheDir, 'localhost.key');
+    const certsDir = path.join(os.homedir(), '.stark', 'certs');
+    const certPath = path.join(certsDir, 'localhost.crt');
+    const keyPath = path.join(certsDir, 'localhost.key');
 
     // Dev path — try to read the cached self-signed cert that the main server generates
     try {
@@ -137,9 +138,11 @@ export class IngressManager {
       ],
     });
 
-    fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(certPath, pems.cert);
-    fs.writeFileSync(keyPath, pems.private);
+    fs.mkdirSync(certsDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(certPath, pems.cert, { mode: 0o600 });
+    fs.chmodSync(certPath, 0o600);
+    fs.writeFileSync(keyPath, pems.private, { mode: 0o600 });
+    fs.chmodSync(keyPath, 0o600);
 
     this.sslOptions = { cert: pems.cert, key: pems.private };
     return this.sslOptions;

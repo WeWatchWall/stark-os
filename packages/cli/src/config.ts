@@ -83,18 +83,31 @@ export function ensureConfigDir(): void {
 }
 
 /**
- * Loads CLI configuration
+ * Loads CLI configuration.
+ * If no config file exists, writes the effective defaults to disk.
  */
 export function loadConfig(): CliConfig {
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
+  const fileExists = fs.existsSync(CONFIG_FILE);
+
+  if (fileExists) {
+    try {
       const content = fs.readFileSync(CONFIG_FILE, 'utf-8');
       const parsed = JSON.parse(content) as Partial<CliConfig>;
       return { ...DEFAULT_CONFIG, ...parsed };
+    } catch {
+      // Return defaults on error but don't overwrite a (possibly recoverable) file
+      return DEFAULT_CONFIG;
     }
-  } catch {
-    // Return defaults on error
   }
+
+  // No config file found — persist the effective defaults so the user can inspect/edit them
+  try {
+    ensureConfigDir();
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2), { mode: 0o600 });
+  } catch {
+    // Non-fatal — continue even if the config file cannot be written
+  }
+
   return DEFAULT_CONFIG;
 }
 

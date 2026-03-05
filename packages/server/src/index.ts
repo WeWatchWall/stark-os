@@ -9,6 +9,7 @@ import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'node:url';
 import express, { Express } from 'express';
 import cors, { CorsOptions } from 'cors';
@@ -159,6 +160,18 @@ export interface ServerInstance {
 export function createServer(config: Partial<ServerConfig> = {}): ServerInstance {
   const finalConfig: ServerConfig = { ...DEFAULT_CONFIG, ...config };
 
+  // Persist the effective server configuration to ~/.stark/server-config.json
+  // so operators can inspect the resolved values.
+  try {
+    const starkDir = path.join(os.homedir(), '.stark');
+    fs.mkdirSync(starkDir, { recursive: true, mode: 0o700 });
+    const serverConfigPath = path.join(starkDir, 'server-config.json');
+    fs.writeFileSync(serverConfigPath, JSON.stringify(finalConfig, null, 2), { mode: 0o600 });
+    fs.chmodSync(serverConfigPath, 0o600);
+  } catch {
+    // Non-fatal — continue even if the config file cannot be written
+  }
+
   logger.info('Creating server', {
     httpsPort: finalConfig.port,
     httpPort: finalConfig.httpPort,
@@ -258,10 +271,10 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
         logger.info('Using provided SSL certificates');
       } else {
         // Auto-generate self-signed certificate for development
-        // Cache the certificate to avoid regenerating on each restart
-        const cacheDir = path.join(process.cwd(), '.cache');
-        const certPath = path.join(cacheDir, 'localhost.crt');
-        const keyPath = path.join(cacheDir, 'localhost.key');
+        // Cache the certificate under ~/.stark/certs to avoid regenerating on each restart
+        const certsDir = path.join(os.homedir(), '.stark', 'certs');
+        const certPath = path.join(certsDir, 'localhost.crt');
+        const keyPath = path.join(certsDir, 'localhost.key');
         
         let cert: string;
         let key: string;
@@ -270,7 +283,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
           // Try to reuse cached certificate
           cert = fs.readFileSync(certPath, 'utf-8');
           key = fs.readFileSync(keyPath, 'utf-8');
-          logger.info('Using cached self-signed certificate from .cache/');
+          logger.info('Using cached self-signed certificate from ~/.stark/certs/');
         } catch {
           // Generate new certificate and cache it
           logger.warn('No SSL certificates provided. Generating self-signed certificate for development.');
@@ -309,11 +322,13 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
           
           // Cache the certificate for future restarts
           // Use recursive:true which is safe even if dir already exists
-          fs.mkdirSync(cacheDir, { recursive: true });
-          fs.writeFileSync(certPath, cert);
-          fs.writeFileSync(keyPath, key);
+          fs.mkdirSync(certsDir, { recursive: true, mode: 0o700 });
+          fs.writeFileSync(certPath, cert, { mode: 0o600 });
+          fs.chmodSync(certPath, 0o600);
+          fs.writeFileSync(keyPath, key, { mode: 0o600 });
+          fs.chmodSync(keyPath, 0o600);
           
-          logger.info('Self-signed certificate generated and cached in .cache/');
+          logger.info('Self-signed certificate generated and cached in ~/.stark/certs/');
         }
         
         sslOptions = { cert, key };

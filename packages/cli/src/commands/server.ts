@@ -21,6 +21,7 @@ async function startHandler(options: {
   host?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  supabaseServiceKey?: string;
   exposeHttp?: boolean;
 }): Promise<void> {
   // Forward CLI flags into env vars so the server picks them up via its
@@ -29,6 +30,7 @@ async function startHandler(options: {
   if (options.host) process.env.HOST = options.host;
   if (options.supabaseUrl) process.env.SUPABASE_URL = options.supabaseUrl;
   if (options.supabaseAnonKey) process.env.SUPABASE_ANON_KEY = options.supabaseAnonKey;
+  if (options.supabaseServiceKey) process.env.SUPABASE_SERVICE_ROLE_KEY = options.supabaseServiceKey;
   if (options.exposeHttp) process.env.EXPOSE_HTTP = 'true';
 
   info(`Starting Stark Orchestrator server…`);
@@ -84,6 +86,7 @@ export function createServerCommand(): Command {
     .option('--host <host>', 'Bind address (default: 0.0.0.0)')
     .option('--supabase-url <url>', 'Supabase project URL')
     .option('--supabase-anon-key <key>', 'Supabase anonymous key')
+    .option('--supabase-service-key <key>', 'Supabase service role key')
     .option('--expose-http', 'Expose HTTP on external interface')
     .action(startHandler);
 

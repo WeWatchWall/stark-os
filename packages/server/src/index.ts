@@ -57,6 +57,8 @@ export interface ServerConfig {
   supabaseUrl?: string;
   /** Supabase anon key */
   supabaseAnonKey?: string;
+  /** Supabase service role key (admin operations, bypasses RLS) */
+  supabaseServiceRoleKey?: string;
   /** Path to SSL certificate file */
   sslCert?: string;
   /** Path to SSL key file */
@@ -66,7 +68,45 @@ export interface ServerConfig {
 }
 
 /**
- * Default server configuration
+ * Path to the persistent server configuration file.
+ * Users can edit this file to configure Supabase and other settings.
+ */
+export const SERVER_CONFIG_PATH = path.join(os.homedir(), '.stark', 'server-config.json');
+
+/**
+ * Loads the saved server configuration from ~/.stark/server-config.json.
+ * Returns an empty object if the file does not exist or cannot be read.
+ */
+export function loadSavedConfig(): Partial<ServerConfig> {
+  try {
+    const raw = fs.readFileSync(SERVER_CONFIG_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    // Only return recognised keys (guard against corrupted files)
+    const saved: Partial<ServerConfig> = {};
+    if (typeof parsed.port === 'number') saved.port = parsed.port;
+    if (typeof parsed.httpPort === 'number') saved.httpPort = parsed.httpPort;
+    if (typeof parsed.host === 'string') saved.host = parsed.host;
+    if (typeof parsed.enableCors === 'boolean') saved.enableCors = parsed.enableCors;
+    if (Array.isArray(parsed.corsOrigins) && parsed.corsOrigins.every((o: unknown) => typeof o === 'string')) saved.corsOrigins = parsed.corsOrigins;
+    if (typeof parsed.enableLogging === 'boolean') saved.enableLogging = parsed.enableLogging;
+    if (typeof parsed.wsPath === 'string') saved.wsPath = parsed.wsPath;
+    const validNodeEnvs = ['development', 'production', 'test'];
+    if (typeof parsed.nodeEnv === 'string' && validNodeEnvs.includes(parsed.nodeEnv)) saved.nodeEnv = parsed.nodeEnv as ServerConfig['nodeEnv'];
+    if (typeof parsed.supabaseUrl === 'string') saved.supabaseUrl = parsed.supabaseUrl;
+    if (typeof parsed.supabaseAnonKey === 'string') saved.supabaseAnonKey = parsed.supabaseAnonKey;
+    if (typeof parsed.supabaseServiceRoleKey === 'string') saved.supabaseServiceRoleKey = parsed.supabaseServiceRoleKey;
+    if (typeof parsed.sslCert === 'string') saved.sslCert = parsed.sslCert;
+    if (typeof parsed.sslKey === 'string') saved.sslKey = parsed.sslKey;
+    if (typeof parsed.exposeHttp === 'boolean') saved.exposeHttp = parsed.exposeHttp;
+    return saved;
+  } catch {
+    // File not found or invalid JSON — start from scratch
+    return {};
+  }
+}
+
+/**
+ * Default server configuration derived from environment variables.
  */
 const DEFAULT_CONFIG: ServerConfig = {
   port: parseInt(process.env.PORT || '443', 10),
@@ -79,6 +119,7 @@ const DEFAULT_CONFIG: ServerConfig = {
   nodeEnv: (process.env.NODE_ENV || 'development') as ServerConfig['nodeEnv'],
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   sslCert: process.env.SSL_CERT,
   sslKey: process.env.SSL_KEY,
   exposeHttp: process.env.EXPOSE_HTTP === 'true',
@@ -158,16 +199,33 @@ export interface ServerInstance {
  * Create and configure the server
  */
 export function createServer(config: Partial<ServerConfig> = {}): ServerInstance {
-  const finalConfig: ServerConfig = { ...DEFAULT_CONFIG, ...config };
+  // Layer 1 – hardcoded defaults + env vars (DEFAULT_CONFIG)
+  // Layer 2 – previously-saved config file (~/.stark/server-config.json)
+  // Layer 3 – explicit caller-supplied config (highest priority)
+  const savedConfig = loadSavedConfig();
+  const finalConfig: ServerConfig = { ...DEFAULT_CONFIG, ...savedConfig, ...config };
+
+  // Propagate Supabase settings to environment variables so that the Supabase
+  // client module (which reads from process.env) picks them up. Only set vars
+  // that are not already provided by the environment to preserve the existing
+  // env-var override behaviour.
+  if (finalConfig.supabaseUrl && !process.env.SUPABASE_URL) {
+    process.env.SUPABASE_URL = finalConfig.supabaseUrl;
+  }
+  if (finalConfig.supabaseAnonKey && !process.env.SUPABASE_ANON_KEY) {
+    process.env.SUPABASE_ANON_KEY = finalConfig.supabaseAnonKey;
+  }
+  if (finalConfig.supabaseServiceRoleKey && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    process.env.SUPABASE_SERVICE_ROLE_KEY = finalConfig.supabaseServiceRoleKey;
+  }
 
   // Persist the effective server configuration to ~/.stark/server-config.json
-  // so operators can inspect the resolved values.
+  // so operators can inspect and edit the resolved values.
   try {
     const starkDir = path.join(os.homedir(), '.stark');
     fs.mkdirSync(starkDir, { recursive: true, mode: 0o700 });
-    const serverConfigPath = path.join(starkDir, 'server-config.json');
-    fs.writeFileSync(serverConfigPath, JSON.stringify(finalConfig, null, 2), { mode: 0o600 });
-    fs.chmodSync(serverConfigPath, 0o600);
+    fs.writeFileSync(SERVER_CONFIG_PATH, JSON.stringify(finalConfig, null, 2), { mode: 0o600 });
+    fs.chmodSync(SERVER_CONFIG_PATH, 0o600);
   } catch {
     // Non-fatal — continue even if the config file cannot be written
   }

@@ -167,6 +167,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
     fs.mkdirSync(starkDir, { recursive: true, mode: 0o700 });
     const serverConfigPath = path.join(starkDir, 'server-config.json');
     fs.writeFileSync(serverConfigPath, JSON.stringify(finalConfig, null, 2), { mode: 0o600 });
+    fs.chmodSync(serverConfigPath, 0o600);
   } catch {
     // Non-fatal — continue even if the config file cannot be written
   }
@@ -323,7 +324,9 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
           // Use recursive:true which is safe even if dir already exists
           fs.mkdirSync(certsDir, { recursive: true, mode: 0o700 });
           fs.writeFileSync(certPath, cert, { mode: 0o600 });
+          fs.chmodSync(certPath, 0o600);
           fs.writeFileSync(keyPath, key, { mode: 0o600 });
+          fs.chmodSync(keyPath, 0o600);
           
           logger.info('Self-signed certificate generated and cached in ~/.stark/certs/');
         }

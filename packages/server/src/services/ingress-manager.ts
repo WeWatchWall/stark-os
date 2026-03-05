@@ -140,7 +140,9 @@ export class IngressManager {
 
     fs.mkdirSync(certsDir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(certPath, pems.cert, { mode: 0o600 });
+    fs.chmodSync(certPath, 0o600);
     fs.writeFileSync(keyPath, pems.private, { mode: 0o600 });
+    fs.chmodSync(keyPath, 0o600);
 
     this.sslOptions = { cert: pems.cert, key: pems.private };
     return this.sslOptions;

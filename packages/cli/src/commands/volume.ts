@@ -180,11 +180,11 @@ async function listHandler(options: {
 }
 
 /**
- * Download command handler — exports volume contents as a tar archive.
+ * Download command handler — exports volume contents as a zip archive.
  *
  * 1. Requests the file list (base64-encoded) from the orchestrator API.
  * 2. The orchestrator in turn asks the runtime via WebSocket.
- * 3. CLI receives JSON file entries and uses `tar` to write a tar archive.
+ * 3. CLI receives JSON file entries and uses `JSZip` to write a zip archive.
  */
 async function downloadHandler(
   nameArg: string | undefined,
@@ -240,44 +240,23 @@ async function downloadHandler(
     const { files } = result.data;
 
     if (files.length === 0) {
-      info('Volume is empty — writing empty tar archive');
+      info('Volume is empty — writing empty zip archive');
     }
 
-    // Write files to a temporary directory, then create tar archive
-    const { mkdirSync, writeFileSync, rmSync } = await import('fs');
-    const { join, dirname } = await import('path');
-    const { tmpdir } = await import('os');
-    const { randomUUID } = await import('crypto');
-    const tar = await import('tar');
+    // Create zip archive using JSZip
+    const { writeFileSync } = await import('fs');
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
 
-    const tmpDir = join(tmpdir(), `stark-volume-${randomUUID()}`);
-    const volumeDir = join(tmpDir, name);
-    mkdirSync(volumeDir, { recursive: true });
-
-    try {
-      // Write decoded files to the temp directory
-      for (const entry of files) {
-        const filePath = join(volumeDir, entry.path);
-        mkdirSync(dirname(filePath), { recursive: true });
-        const content = Buffer.from(entry.data, 'base64');
-        writeFileSync(filePath, content);
-      }
-
-      // Create tar archive using tar@7.5.7
-      await tar.create(
-        {
-          file: options.outFile,
-          cwd: tmpDir,
-          gzip: false,
-        },
-        [name]
-      );
-
-      success(`Volume '${name}' downloaded to ${options.outFile} (${files.length} file(s))`);
-    } finally {
-      // Clean up temp directory
-      rmSync(tmpDir, { recursive: true, force: true });
+    for (const entry of files) {
+      const content = Buffer.from(entry.data, 'base64');
+      zip.file(`${name}/${entry.path}`, content);
     }
+
+    const zipData = await zip.generateAsync({ type: 'uint8array' });
+    writeFileSync(options.outFile, zipData);
+
+    success(`Volume '${name}' downloaded to ${options.outFile} (${files.length} file(s))`);
   } catch (err) {
     error('Failed to download volume', err instanceof Error ? { message: err.message } : undefined);
     process.exit(1);
@@ -310,7 +289,7 @@ export function createVolumeCommand(): Command {
   // Download volume
   volume
     .command('download [name]')
-    .description('Download volume contents as a tar archive')
+    .description('Download volume contents as a zip archive')
     .option('--name <name>', 'Volume name')
     .requiredOption('-n, --node <nameOrId>', 'Node where the volume resides (name or UUID)')
     .requiredOption('-O, --out-file <path>', 'Output file path')

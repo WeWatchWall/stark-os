@@ -2,10 +2,10 @@
  * CLI Configuration
  *
  * Handles configuration loading, API client setup, and credentials management.
+ * Authentication goes through the orchestrator API (no direct Supabase dependency).
  * @module @stark-o/cli/config
  */
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -14,16 +14,6 @@ import * as os from 'node:os';
  * Default API URL (local development)
  */
 export const DEFAULT_API_URL = 'https://127.0.0.1:443';
-
-/**
- * Default Supabase URL (local development)
- */
-export const DEFAULT_SUPABASE_URL = 'http://127.0.0.1:54321';
-
-/**
- * Default Supabase anon key (local development)
- */
-export const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
 
 /**
  * Config directory path
@@ -45,8 +35,6 @@ export const CREDENTIALS_FILE = path.join(CONFIG_DIR, 'credentials.json');
  */
 export interface CliConfig {
   apiUrl: string;
-  supabaseUrl: string;
-  supabaseAnonKey: string;
   defaultNamespace?: string;
   defaultOutputFormat?: 'json' | 'table' | 'plain';
 }
@@ -67,8 +55,6 @@ export interface Credentials {
  */
 export const DEFAULT_CONFIG: CliConfig = {
   apiUrl: DEFAULT_API_URL,
-  supabaseUrl: DEFAULT_SUPABASE_URL,
-  supabaseAnonKey: DEFAULT_SUPABASE_ANON_KEY,
   defaultNamespace: 'default',
   defaultOutputFormat: 'table',
 };
@@ -180,33 +166,6 @@ export function getAccessToken(): string | null {
   if (expiresAt <= new Date()) return null;
 
   return creds.accessToken;
-}
-
-/**
- * Creates a Supabase client for CLI operations
- */
-export function createCliSupabaseClient(config?: CliConfig): SupabaseClient {
-  const cfg = config ?? loadConfig();
-  const accessToken = getAccessToken();
-
-  const client = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  });
-
-  // If we have an access token, set it
-  if (accessToken) {
-    // Note: Setting session with access token
-    void client.auth.setSession({
-      access_token: accessToken,
-      refresh_token: loadCredentials()?.refreshToken ?? '',
-    });
-  }
-
-  return client;
 }
 
 /**

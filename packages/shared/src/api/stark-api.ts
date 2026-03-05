@@ -200,9 +200,9 @@ export function resolveApiUrl(explicitUrl?: string): string {
 /**
  * Creates a portable StarkAPI instance.
  *
- * Unlike the browser-runtime's version, this does NOT use localStorage.
  * Auth tokens and API URL must be provided explicitly (or derived from
- * the global `__STARK_CONTEXT__`).
+ * the global `__STARK_CONTEXT__`). For browser-specific features like
+ * localStorage credential storage, use the browser-runtime wrapper.
  *
  * @param config - API URL and/or access token
  * @returns StarkAPI object suitable for `context.starkAPI`
@@ -280,13 +280,23 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       },
     },
     pack: {
-      async list() { return handleResponse<unknown>(await apiGet('/api/packs')); },
+      async list(options?: { pageSize?: number }) {
+        const params = new URLSearchParams();
+        if (options?.pageSize) params.set('pageSize', String(options.pageSize));
+        const qs = params.toString();
+        return handleResponse<unknown>(await apiGet(`/api/packs${qs ? '?' + qs : ''}`));
+      },
       async versions(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}/versions`)); },
       async info(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}`)); },
       async delete(name: string) { await handleDeleteResponse(await apiDelete(`/api/packs/name/${encodeURIComponent(name)}`)); },
     },
     node: {
-      async list() { return handleResponse<unknown>(await apiGet('/api/nodes')); },
+      async list(options?: { pageSize?: number }) {
+        const params = new URLSearchParams();
+        if (options?.pageSize) params.set('pageSize', String(options.pageSize));
+        const qs = params.toString();
+        return handleResponse<unknown>(await apiGet(`/api/nodes${qs ? '?' + qs : ''}`));
+      },
       async status(nameOrId: string) { return handleResponse<unknown>(await apiGet(`/api/nodes/name/${encodeURIComponent(nameOrId)}`)); },
       async logs(nameOrId: string, options?: { tail?: number }) {
         const nodeId = await resolveNodeId(nameOrId, apiGet);
@@ -297,22 +307,24 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       },
     },
     pod: {
-      async list(options?: { namespace?: string; status?: string }) {
+      async list(options?: { namespace?: string; status?: string; pageSize?: number }) {
         const params = new URLSearchParams();
+        if (options?.pageSize) params.set('pageSize', String(options.pageSize));
         if (options?.namespace) params.set('namespace', options.namespace);
         if (options?.status) params.set('status', options.status);
         const qs = params.toString();
         return handleResponse<unknown>(await apiGet(`/api/pods${qs ? '?' + qs : ''}`));
       },
       async status(podId: string) { return handleResponse<unknown>(await apiGet(`/api/pods/${podId}`)); },
-      async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; args?: string[] }) {
+      async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }>; args?: string[] }) {
         const body: Record<string, unknown> = { packName, namespace: options?.namespace ?? 'default' };
         if (options?.packVersion) body.packVersion = options.packVersion;
         if (options?.nodeId) body.nodeId = options.nodeId;
+        if (options?.volumeMounts) body.volumeMounts = options.volumeMounts;
         if (options?.args) body.args = options.args;
         return handleResponse<unknown>(await apiPost('/api/pods', body));
       },
-      async stop(podId: string) { return handleResponse<unknown>(await apiPost(`/api/pods/${podId}/stop`, {})); },
+      async stop(podId: string) { await handleDeleteResponse(await apiDelete(`/api/pods/${podId}`)); },
       async rollback(podId: string) { return handleResponse<unknown>(await apiPost(`/api/pods/${podId}/rollback`, {})); },
       async history(podId: string) { return handleResponse<unknown>(await apiGet(`/api/pods/${podId}/history`)); },
       async logs(podId: string, options?: { tail?: number }) {
@@ -375,6 +387,94 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         const params = new URLSearchParams({ nodeId });
         const url = `/api/volumes/name/${encodeURIComponent(name)}/download?${params.toString()}`;
         return handleResponse<{ files: Array<{ path: string; data: string }> }>(await apiGet(url));
+      },
+      async downloadAsZip(name: string, nodeNameOrId: string) {
+        const nodeId = await resolveNodeId(nodeNameOrId, apiGet);
+        const params = new URLSearchParams({ nodeId });
+        const url = `/api/volumes/name/${encodeURIComponent(name)}/download?${params.toString()}`;
+        const response = await apiGet(url);
+
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({ success: false })) as ApiResponse<unknown>;
+          throw new Error(result.error?.message ?? 'Failed to download volume');
+        }
+
+        const result = (await response.json()) as ApiResponse<{
+          volumeName: string;
+          files: Array<{ path: string; data: string }>;
+        }>;
+
+        if (!result.success || !result.data) {
+          throw new Error(result.error?.message ?? 'Failed to download volume');
+        }
+
+        const { files } = result.data;
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+
+        for (const entry of files) {
+          zip.file(`${name}/${entry.path}`, base64ToUint8Array(entry.data));
+        }
+
+        return zip.generateAsync({ type: 'uint8array' });
+      },
+      async archivePathAsZip(nodeNameOrId: string, name: string, archivePath: string) {
+        const nodeId = await resolveNodeId(nodeNameOrId, apiGet);
+        const params = new URLSearchParams({ nodeId });
+        const url = `/api/volumes/name/${encodeURIComponent(name)}/download?${params.toString()}`;
+        const response = await apiGet(url);
+
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({ success: false })) as ApiResponse<unknown>;
+          throw new Error(result.error?.message ?? 'Failed to access volume');
+        }
+
+        const result = (await response.json()) as ApiResponse<{
+          volumeName: string;
+          files: Array<{ path: string; data: string }>;
+        }>;
+
+        if (!result.success || !result.data) {
+          throw new Error(result.error?.message ?? 'Failed to access volume');
+        }
+
+        const { files } = result.data;
+
+        // Normalize the target path
+        const normalizedPath = archivePath.replace(/^\/+|\/+$/g, '');
+
+        // Filter files that are under the target path
+        const matchingFiles = files.filter((f) => {
+          const normalizedFilePath = f.path.replace(/^\/+/, '');
+          return normalizedFilePath === normalizedPath || normalizedFilePath.startsWith(normalizedPath + '/');
+        });
+
+        if (matchingFiles.length === 0) {
+          throw new Error(`No files found at path: ${archivePath}`);
+        }
+
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+
+        // Get the archive name from the last path segment
+        const pathParts = normalizedPath.split('/');
+        const archiveName = pathParts[pathParts.length - 1] ?? name;
+
+        for (const entry of matchingFiles) {
+          const normalizedFilePath = entry.path.replace(/^\/+/, '');
+          // Make the path relative to the parent of archivePath
+          const parentPath = pathParts.slice(0, -1).join('/');
+          const relativePath = parentPath
+            ? normalizedFilePath.slice(parentPath.length + 1)
+            : normalizedFilePath;
+
+          zip.file(relativePath, base64ToUint8Array(entry.data));
+        }
+
+        return zip.generateAsync({
+          type: 'uint8array',
+          comment: `Archive of ${archiveName} from volume ${name}`,
+        });
       },
     },
     chaos: {

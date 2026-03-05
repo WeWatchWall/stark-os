@@ -8,7 +8,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as os from 'node:os';
-import { createApiClient, requireAuth, loadConfig, createCliSupabaseClient, saveCredentials, loadCredentials, type Credentials } from '../config.js';
+import { createApiClient, requireAuth, loadConfig, saveCredentials, loadCredentials, type Credentials } from '../config.js';
 import {
   error,
   info,
@@ -803,30 +803,41 @@ async function agentStartHandler(options: {
   let authToken = options.token;
 
   if (!authToken && options.email && options.password) {
-    // Authenticate with email/password to get token
+    // Authenticate with email/password via orchestrator API
     info('Authenticating with orchestrator...');
     try {
       const config = loadConfig();
-      const supabase = createCliSupabaseClient(config);
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
+      const apiClient = createApiClient(config);
+      const response = await apiClient.post('/auth/login', {
         email: options.email,
         password: options.password,
       });
 
-      if (authError || !data.session) {
-        error('Authentication failed', authError ? { message: authError.message } : undefined);
+      const loginData = await response.json() as {
+        success: boolean;
+        data?: {
+          accessToken: string;
+          refreshToken?: string;
+          expiresAt: string;
+          user: { id: string; email: string };
+        };
+        error?: { message: string };
+      };
+
+      if (!response.ok || !loginData.success || !loginData.data) {
+        error('Authentication failed', loginData.error ? { message: loginData.error.message } : undefined);
         process.exit(1);
       }
 
-      authToken = data.session.access_token;
+      authToken = loginData.data.accessToken;
 
       // Save credentials for other CLI commands (no password stored)
       const credentials: Credentials = {
-        accessToken: data.session.access_token,
-        refreshToken: data.session.refresh_token,
-        expiresAt: new Date(data.session.expires_at! * 1000).toISOString(),
-        userId: data.user!.id,
-        email: data.user!.email!,
+        accessToken: loginData.data.accessToken,
+        refreshToken: loginData.data.refreshToken,
+        expiresAt: loginData.data.expiresAt,
+        userId: loginData.data.user.id,
+        email: loginData.data.user.email,
       };
       saveCredentials(credentials);
 

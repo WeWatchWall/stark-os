@@ -2,117 +2,42 @@
  * Browser Stark API
  *
  * Provides a standard programmatic API for orchestrator operations.
+ * Delegates common endpoint logic to the shared (portable) StarkAPI and
+ * adds browser-specific behaviour: localStorage credential/config
+ * persistence and a `config` section.
+ *
  * This is the object exposed as `context.starkAPI` to packs running in pods.
  *
  * @module @stark-o/browser-runtime/api/api
  */
 
 import {
+  createStarkAPI as createBaseStarkAPI,
+  type StarkAPI as BaseStarkAPI,
+} from '@stark-o/shared/api/stark-api.js';
+
+import {
   createApiClient,
   resolveApiUrl,
-  resolveNodeId,
   loadConfig,
   saveConfig,
   loadCredentials,
   saveCredentials,
   clearCredentials,
   isAuthenticated,
+  getAccessToken,
   type BrowserApiConfig,
 } from './client.js';
-import { downloadVolume as downloadVolumeZip, archiveVolumePath as archiveVolumePathZip } from './volume.js';
 
-/**
- * API response wrapper used by orchestrator endpoints
- */
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-    details?: Record<string, unknown>;
-  };
-}
+import {
+  handleResponse,
+} from '@stark-o/shared/api/stark-api.js';
 
 /**
  * Standard Stark API interface for browser environments.
- * Available to packs via `context.starkAPI`.
+ * Extends the portable StarkAPI with browser-specific features.
  */
-export interface StarkAPI {
-  auth: {
-    login(email: string, password: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
-    logout(): void;
-    whoami(): { email: string; userId: string } | null;
-    isAuthenticated(): boolean;
-    status(): { authenticated: boolean; email?: string; expiresAt?: string };
-    /** Update the in-memory access token (called by runtime on auth:token-refreshed) */
-    updateAccessToken(token: string): void;
-    setup(email: string, username: string, password: string, displayName?: string): Promise<{ user: { id: string; email: string; username: string }; accessToken: string }>;
-    setupStatus(): Promise<{ needsSetup: boolean }>;
-    addUser(email: string, username: string, password: string, options?: { displayName?: string; roles?: string[] }): Promise<{ user: { id: string; email: string; username: string; roles?: string[] } }>;
-    listUsers(): Promise<unknown>;
-  };
-  pack: {
-    list(): Promise<unknown>;
-    versions(name: string): Promise<unknown>;
-    info(name: string): Promise<unknown>;
-    delete(name: string): Promise<void>;
-  };
-  node: {
-    list(): Promise<unknown>;
-    status(nameOrId: string): Promise<unknown>;
-    logs(nameOrId: string, options?: { tail?: number }): Promise<unknown>;
-  };
-  pod: {
-    list(options?: { namespace?: string; status?: string }): Promise<unknown>;
-    status(podId: string): Promise<unknown>;
-    create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }>; args?: string[] }): Promise<unknown>;
-    stop(podId: string): Promise<void>;
-    rollback(podId: string): Promise<unknown>;
-    history(podId: string): Promise<unknown>;
-    logs(podId: string, options?: { tail?: number }): Promise<unknown>;
-  };
-  service: {
-    list(options?: { namespace?: string }): Promise<unknown>;
-    status(name: string): Promise<unknown>;
-    create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string; args?: string[] }): Promise<unknown>;
-  };
-  namespace: {
-    list(): Promise<unknown>;
-    get(name: string): Promise<unknown>;
-    create(name: string): Promise<unknown>;
-    delete(name: string): Promise<void>;
-    current(): string;
-    use(name: string): void;
-  };
-  secret: {
-    list(options?: { namespace?: string }): Promise<unknown>;
-    get(name: string, namespace?: string): Promise<unknown>;
-  };
-  volume: {
-    list(options?: { nodeNameOrId?: string }): Promise<unknown>;
-    create(name: string, nodeNameOrId: string): Promise<unknown>;
-    download(name: string, nodeNameOrId: string): Promise<{ files: Array<{ path: string; data: string }> }>;
-    downloadAsZip(name: string, nodeNameOrId: string): Promise<Uint8Array>;
-    archivePathAsZip(nodeNameOrId: string, name: string, archivePath: string): Promise<Uint8Array>;
-  };
-  chaos: {
-    status(): Promise<unknown>;
-    enable(): Promise<unknown>;
-    disable(): Promise<unknown>;
-    scenarios(): Promise<unknown>;
-    connections(): Promise<unknown>;
-    nodes(): Promise<unknown>;
-    events(): Promise<unknown>;
-    reset(): Promise<unknown>;
-  };
-  network: {
-    policies(): Promise<unknown>;
-    registry(): Promise<unknown>;
-  };
-  serverConfig: {
-    get(): Promise<unknown>;
-  };
+export interface StarkAPI extends BaseStarkAPI {
   config: {
     get(): BrowserApiConfig;
     set(key: string, value: string): void;
@@ -120,28 +45,11 @@ export interface StarkAPI {
 }
 
 /**
- * Helper to handle API response and throw on failure
- */
-async function handleResponse<T>(response: Response): Promise<T> {
-  const result = (await response.json()) as ApiResponse<T>;
-  if (!result.success || !result.data) {
-    throw new Error(result.error?.message ?? 'Request failed');
-  }
-  return result.data;
-}
-
-/**
- * Helper for API calls that don't return data (deletes)
- */
-async function handleDeleteResponse(response: Response): Promise<void> {
-  const result = (await response.json()) as ApiResponse<unknown>;
-  if (!result.success) {
-    throw new Error(result.error?.message ?? 'Request failed');
-  }
-}
-
-/**
- * Creates a standard StarkAPI instance.
+ * Creates a standard StarkAPI instance for browser environments.
+ *
+ * Wraps the shared (portable) StarkAPI and overrides auth/namespace
+ * methods with localStorage-backed versions. Adds a `config` section
+ * for managing API settings at runtime.
  *
  * @param overrides - Optional config overrides (e.g. apiUrl).
  *                    Pass `accessToken` to provide an explicit Bearer token
@@ -151,18 +59,61 @@ async function handleDeleteResponse(response: Response): Promise<void> {
 export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessToken?: string }): StarkAPI {
   const { accessToken: initialToken, ...configOverrides } = overrides ?? {};
 
-  // Mutable access token — updated in-memory by auth:token-refreshed messages
-  let currentAccessToken = initialToken;
-
   const getConfig = (): BrowserApiConfig => {
     const base = loadConfig();
     const apiUrl = configOverrides.apiUrl ?? resolveApiUrl();
     return { ...base, ...configOverrides, apiUrl };
   };
 
-  const getApi = () => createApiClient(getConfig(), currentAccessToken);
+  // Resolve the access token: explicit > localStorage > __STARK_CONTEXT__
+  const browserAccessToken = initialToken ?? getAccessToken() ?? undefined;
+
+  // Create the base (shared) API — it handles all endpoint logic
+  const base = createBaseStarkAPI({
+    apiUrl: getConfig().apiUrl,
+    accessToken: browserAccessToken,
+  });
+
+  // We need the browser API client for login/setup which need to
+  // re-resolve tokens dynamically and persist credentials.
+  const getApi = () => {
+    const cfg = getConfig();
+    return createApiClient(cfg, initialToken);
+  };
 
   return {
+    // ── Delegated sections (identical to shared) ───────────────────
+    pack: {
+      async list(options) { return base.pack.list(options ?? { pageSize: 100 }); },
+      versions: base.pack.versions.bind(base.pack),
+      info: base.pack.info.bind(base.pack),
+      delete: base.pack.delete.bind(base.pack),
+    },
+    node: {
+      async list(options) { return base.node.list(options ?? { pageSize: 100 }); },
+      status: base.node.status.bind(base.node),
+      logs: base.node.logs.bind(base.node),
+    },
+    pod: {
+      async list(options) {
+        return base.pod.list({ pageSize: 100, ...options });
+      },
+      status: base.pod.status.bind(base.pod),
+      create: base.pod.create.bind(base.pod),
+      stop: base.pod.stop.bind(base.pod),
+      rollback: base.pod.rollback.bind(base.pod),
+      history: base.pod.history.bind(base.pod),
+      logs: base.pod.logs.bind(base.pod),
+    },
+    service: base.service,
+    secret: base.secret,
+    volume: base.volume,
+    chaos: base.chaos,
+    network: base.network,
+    serverConfig: base.serverConfig,
+
+    // ── Browser-specific overrides ─────────────────────────────────
+
     auth: {
       async login(email: string, password: string) {
         const api = getApi();
@@ -180,6 +131,8 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           userId: data.user.id,
           email: data.user.email,
         });
+        // Keep the base API's in-memory token in sync
+        base.auth.updateAccessToken(data.accessToken);
         return data;
       },
       logout() { clearCredentials(); },
@@ -198,7 +151,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           expiresAt: authed ? creds?.expiresAt : undefined,
         };
       },
-      updateAccessToken(token: string) { currentAccessToken = token; },
+      updateAccessToken(token: string) { base.auth.updateAccessToken(token); },
       async setup(email: string, username: string, password: string, displayName?: string) {
         const api = getApi();
         const response = await api.post('/auth/setup', { email, username, password, displayName: displayName || undefined });
@@ -215,154 +168,25 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           userId: data.user.id,
           email: data.user.email,
         });
+        base.auth.updateAccessToken(data.accessToken);
         return data;
       },
-      async setupStatus() {
-        const api = getApi();
-        const response = await api.get('/auth/setup/status');
-        return handleResponse<{ needsSetup: boolean }>(response);
-      },
+      async setupStatus() { return base.auth.setupStatus(); },
       async addUser(email: string, username: string, password: string, options?: { displayName?: string; roles?: string[] }) {
-        const api = getApi();
-        const response = await api.post('/auth/users', {
-          email, username, password,
-          displayName: options?.displayName || undefined,
-          roles: options?.roles ?? ['viewer'],
-        });
-        return handleResponse<{ user: { id: string; email: string; username: string; roles?: string[] } }>(response);
+        return base.auth.addUser(email, username, password, options);
       },
-      async listUsers() {
-        const api = getApi();
-        const response = await api.get('/auth/users');
-        return handleResponse<unknown>(response);
-      },
+      async listUsers() { return base.auth.listUsers(); },
     },
-    pack: {
-      async list() { return handleResponse<unknown>(await getApi().get('/api/packs?pageSize=100')); },
-      async versions(name: string) { return handleResponse<unknown>(await getApi().get(`/api/packs/name/${encodeURIComponent(name)}/versions`)); },
-      async info(name: string) { return handleResponse<unknown>(await getApi().get(`/api/packs/name/${encodeURIComponent(name)}`)); },
-      async delete(name: string) { await handleDeleteResponse(await getApi().delete(`/api/packs/name/${encodeURIComponent(name)}`)); },
-    },
-    node: {
-      async list() { return handleResponse<unknown>(await getApi().get('/api/nodes?pageSize=100')); },
-      async status(nameOrId: string) { return handleResponse<unknown>(await getApi().get(`/api/nodes/name/${encodeURIComponent(nameOrId)}`)); },
-      async logs(nameOrId: string, options?: { tail?: number }) {
-        const api = getApi();
-        const nodeId = await resolveNodeId(nameOrId, api);
-        const params = new URLSearchParams();
-        if (options?.tail) params.set('tail', String(options.tail));
-        const qs = params.toString();
-        return handleResponse<unknown>(await api.get(`/api/nodes/${nodeId}/logs${qs ? '?' + qs : ''}`));
-      },
-    },
-    pod: {
-      async list(options?: { namespace?: string; status?: string }) {
-        const params = new URLSearchParams();
-        params.set('pageSize', '100');
-        if (options?.namespace) params.set('namespace', options.namespace);
-        if (options?.status) params.set('status', options.status);
-        return handleResponse<unknown>(await getApi().get(`/api/pods?${params.toString()}`));
-      },
-      async status(podId: string) { return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}`)); },
-      async create(packName: string, options?: { namespace?: string; packVersion?: string; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }>; args?: string[] }) {
-        const body: Record<string, unknown> = { packName, namespace: options?.namespace ?? 'default' };
-        if (options?.packVersion) body.packVersion = options.packVersion;
-        if (options?.nodeId) body.nodeId = options.nodeId;
-        if (options?.volumeMounts) body.volumeMounts = options.volumeMounts;
-        if (options?.args) body.args = options.args;
-        return handleResponse<unknown>(await getApi().post('/api/pods', body));
-      },
-      async stop(podId: string) { return handleDeleteResponse(await getApi().delete(`/api/pods/${podId}`)); },
-      async rollback(podId: string) { return handleResponse<unknown>(await getApi().post(`/api/pods/${podId}/rollback`, {})); },
-      async history(podId: string) { return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}/history`)); },
-      async logs(podId: string, options?: { tail?: number }) {
-        const params = new URLSearchParams();
-        if (options?.tail) params.set('tail', String(options.tail));
-        const qs = params.toString();
-        return handleResponse<unknown>(await getApi().get(`/api/pods/${podId}/logs${qs ? '?' + qs : ''}`));
-      },
-    },
-    service: {
-      async list(options?: { namespace?: string }) {
-        const params = new URLSearchParams();
-        if (options?.namespace) params.set('namespace', options.namespace);
-        const qs = params.toString();
-        return handleResponse<unknown>(await getApi().get(`/api/services${qs ? '?' + qs : ''}`));
-      },
-      async status(name: string) { return handleResponse<unknown>(await getApi().get(`/api/services/name/${encodeURIComponent(name)}`)); },
-      async create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string; args?: string[] }) {
-        const body: Record<string, unknown> = { packName, namespace: options?.namespace ?? 'default', replicas: options?.replicas ?? 1, visibility: options?.visibility ?? 'private' };
-        if (options?.args) body.args = options.args;
-        return handleResponse<unknown>(await getApi().post('/api/services', body));
-      },
-    },
+
     namespace: {
-      async list() { return handleResponse<unknown>(await getApi().get('/api/namespaces')); },
-      async get(name: string) { return handleResponse<unknown>(await getApi().get(`/api/namespaces/name/${encodeURIComponent(name)}`)); },
-      async create(name: string) { return handleResponse<unknown>(await getApi().post('/api/namespaces', { name })); },
-      async delete(name: string) { await handleDeleteResponse(await getApi().delete(`/api/namespaces/name/${encodeURIComponent(name)}`)); },
+      list: base.namespace.list.bind(base.namespace),
+      get: base.namespace.get.bind(base.namespace),
+      create: base.namespace.create.bind(base.namespace),
+      delete: base.namespace.delete.bind(base.namespace),
       current() { return loadConfig().defaultNamespace; },
       use(name: string) { saveConfig({ defaultNamespace: name }); },
     },
-    secret: {
-      async list(options?: { namespace?: string }) {
-        const params = new URLSearchParams();
-        if (options?.namespace) params.set('namespace', options.namespace);
-        const qs = params.toString();
-        return handleResponse<unknown>(await getApi().get(`/api/secrets${qs ? '?' + qs : ''}`));
-      },
-      async get(name: string, namespace?: string) {
-        const ns = namespace ?? 'default';
-        return handleResponse<unknown>(await getApi().get(`/api/secrets/name/${encodeURIComponent(name)}?namespace=${ns}`));
-      },
-    },
-    volume: {
-      async list(options?: { nodeNameOrId?: string }) {
-        const api = getApi();
-        const params = new URLSearchParams();
-        if (options?.nodeNameOrId) {
-          const nodeId = await resolveNodeId(options.nodeNameOrId, api);
-          params.set('nodeId', nodeId);
-        }
-        const qs = params.toString();
-        return handleResponse<unknown>(await api.get(`/api/volumes${qs ? '?' + qs : ''}`));
-      },
-      async create(name: string, nodeNameOrId: string) {
-        const api = getApi();
-        const nodeId = await resolveNodeId(nodeNameOrId, api);
-        return handleResponse<unknown>(await api.post('/api/volumes', { name, nodeId }));
-      },
-      async download(name: string, nodeNameOrId: string) {
-        const api = getApi();
-        const nodeId = await resolveNodeId(nodeNameOrId, api);
-        const params = new URLSearchParams({ nodeId });
-        const url = `/api/volumes/name/${encodeURIComponent(name)}/download?${params.toString()}`;
-        return handleResponse<{ files: Array<{ path: string; data: string }> }>(await api.get(url));
-      },
-      async downloadAsZip(name: string, nodeNameOrId: string) {
-        return downloadVolumeZip(name, nodeNameOrId);
-      },
-      async archivePathAsZip(nodeNameOrId: string, name: string, archivePath: string) {
-        return archiveVolumePathZip(nodeNameOrId, name, archivePath);
-      },
-    },
-    chaos: {
-      async status() { return handleResponse<unknown>(await getApi().get('/chaos/status')); },
-      async enable() { return handleResponse<unknown>(await getApi().post('/chaos/enable', {})); },
-      async disable() { return handleResponse<unknown>(await getApi().post('/chaos/disable', {})); },
-      async scenarios() { return handleResponse<unknown>(await getApi().get('/chaos/scenarios')); },
-      async connections() { return handleResponse<unknown>(await getApi().get('/chaos/connections')); },
-      async nodes() { return handleResponse<unknown>(await getApi().get('/chaos/nodes')); },
-      async events() { return handleResponse<unknown>(await getApi().get('/chaos/events')); },
-      async reset() { return handleResponse<unknown>(await getApi().post('/chaos/reset', {})); },
-    },
-    network: {
-      async policies() { return handleResponse<unknown>(await getApi().get('/api/network/policies')); },
-      async registry() { return handleResponse<unknown>(await getApi().get('/api/network/registry')); },
-    },
-    serverConfig: {
-      async get() { return handleResponse<unknown>(await getApi().get('/api/config')); },
-    },
+
     config: {
       get() { return getConfig(); },
       set(key: string, value: string) {

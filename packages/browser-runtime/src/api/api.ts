@@ -14,7 +14,7 @@
 import {
   createStarkAPI as createBaseStarkAPI,
   type StarkAPI as BaseStarkAPI,
-} from '@stark-o/shared/api/stark-api.js';
+} from '@stark-o/shared/api';
 
 import {
   createApiClient,
@@ -31,7 +31,7 @@ import {
 
 import {
   handleResponse,
-} from '@stark-o/shared/api/stark-api.js';
+} from '@stark-o/shared/api';
 
 /**
  * Standard Stark API interface for browser environments.

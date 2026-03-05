@@ -8,7 +8,7 @@
  * @module @stark-o/browser-runtime/api/volume
  */
 
-import { createStarkAPI } from '@stark-o/shared/api/stark-api.js';
+import { createStarkAPI } from '@stark-o/shared/api';
 import { getAccessToken, resolveApiUrl, requireAuth } from './client.js';
 
 /**

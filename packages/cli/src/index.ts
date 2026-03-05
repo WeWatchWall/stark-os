@@ -71,6 +71,9 @@ function createProgram(): Command {
     .option('--no-color', 'Disable colored output')
     .option('-k, --insecure', 'Skip TLS certificate verification (for self-signed certs)')
     .hook('preAction', (thisCommand) => {
+      // Ensure config dir + file exist (writes defaults on first run)
+      loadConfig();
+
       // Set output format from global option
       const opts = thisCommand.opts();
       if (opts.output) {

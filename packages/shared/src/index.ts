@@ -118,6 +118,7 @@ export {
   type LogMeta,
   type LogEntry,
   type LoggerConfig,
+  type LogPersistFn,
 } from './logging/logger.js';
 
 export {

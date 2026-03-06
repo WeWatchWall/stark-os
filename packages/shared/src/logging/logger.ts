@@ -20,6 +20,25 @@ const LOG_LEVEL_VALUES: Record<LogLevel, number> = {
 };
 
 /**
+ * Snapshot of the original console methods captured at module load time.
+ * This prevents the Logger from going through any console patches
+ * applied later (e.g. by pod console interceptors), which would
+ * otherwise cause duplicate prefixes.
+ */
+const ORIGINAL_CONSOLE = {
+  debug: console.debug.bind(console),
+  info: console.info.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+};
+
+/**
+ * Persist callback type for directing log entries to a secondary
+ * destination (e.g. LogManager for file-based persistence).
+ */
+export type LogPersistFn = (entry: LogEntry) => void;
+
+/**
  * Log entry metadata
  */
 export interface LogMeta {
@@ -74,6 +93,8 @@ export interface LoggerConfig {
   timestamps?: boolean;
   /** Custom output function */
   output?: (entry: LogEntry) => void;
+  /** Persist callback for secondary output (e.g. LogManager file persistence) */
+  persist?: LogPersistFn;
 }
 
 /**
@@ -91,6 +112,7 @@ const DEFAULT_CONFIG: LoggerConfig = {
 export class Logger {
   private config: LoggerConfig;
   private meta: LogMeta;
+  private _persist: LogPersistFn | null = null;
 
   constructor(config: Partial<LoggerConfig> = {}, meta: LogMeta = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -99,6 +121,17 @@ export class Logger {
       service: config.service || meta.service,
       component: config.component || meta.component,
     };
+    if (config.persist) {
+      this._persist = config.persist;
+    }
+  }
+
+  /**
+   * Set or replace the persist callback.
+   * Useful when the LogManager is initialised after the Logger is created.
+   */
+  setPersist(fn: LogPersistFn | null): void {
+    this._persist = fn;
   }
 
   /**
@@ -144,33 +177,40 @@ export class Logger {
       }
     }
 
-    // Output the entry
+    // Output the entry (console / custom output)
     if (this.config.output) {
       this.config.output(entry);
     } else {
       this.defaultOutput(entry);
     }
+
+    // Persist the entry (file / LogManager) if configured
+    if (this._persist) {
+      this._persist(entry);
+    }
   }
 
   /**
-   * Default output to console
+   * Default output to console.
+   * Uses original console references captured at module load time so that
+   * pod-level console patches do not inject duplicate prefixes.
    */
   private defaultOutput(entry: LogEntry): void {
     const output = this.config.pretty ? this.formatPretty(entry) : JSON.stringify(entry);
 
     switch (entry.level) {
       case 'debug':
-        console.debug(output);
+        ORIGINAL_CONSOLE.debug(output);
         break;
       case 'info':
-        console.info(output);
+        ORIGINAL_CONSOLE.info(output);
         break;
       case 'warn':
-        console.warn(output);
+        ORIGINAL_CONSOLE.warn(output);
         break;
       case 'error':
       case 'fatal':
-        console.error(output);
+        ORIGINAL_CONSOLE.error(output);
         break;
     }
   }
@@ -190,14 +230,29 @@ export class Logger {
     const color = levelColors[entry.level];
     const levelStr = entry.level.toUpperCase().padEnd(5);
 
-    let output = `${entry.timestamp} ${color}${levelStr}${reset} ${entry.message}`;
+    let output = `${entry.timestamp} ${color}${levelStr}${reset}`;
+
+    if (entry.meta?.component) {
+      output += ` ${color}[${entry.meta.component}]${reset}`;
+    }
+
+    output += ` ${entry.message}`;
 
     if (entry.meta?.correlationId) {
       output += ` ${color}[${entry.meta.correlationId}]${reset}`;
     }
 
-    if (entry.meta?.component) {
-      output += ` ${color}(${entry.meta.component})${reset}`;
+    // Serialize remaining meta (exclude well-known fields already rendered)
+    if (entry.meta) {
+      const extra: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(entry.meta)) {
+        if (k !== 'component' && k !== 'correlationId' && k !== 'service' && v !== undefined) {
+          extra[k] = v;
+        }
+      }
+      if (Object.keys(extra).length > 0) {
+        output += ` ${JSON.stringify(extra)}`;
+      }
     }
 
     if (entry.error) {
@@ -214,7 +269,9 @@ export class Logger {
    * Create a child logger with additional metadata
    */
   child(meta: LogMeta): Logger {
-    return new Logger(this.config, { ...this.meta, ...meta });
+    const child = new Logger(this.config, { ...this.meta, ...meta });
+    child._persist = this._persist;
+    return child;
   }
 
   /**

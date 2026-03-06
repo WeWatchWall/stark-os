@@ -10,6 +10,8 @@ import {
   mapLocalStatusToPodStatus,
   LogManager,
   cleanupStalePodLogs,
+  Logger,
+  createLogger,
   type LogEntry,
   type RegisterNodeInput,
   type NodeHeartbeat,
@@ -167,38 +169,17 @@ function generateUUID(): string {
 }
 
 /**
- * Simple browser-compatible logger
+ * Create a Logger instance suitable for the browser agent.
+ * Uses pretty output and the shared Logger from @stark-o/shared so that
+ * console output bypasses any pod-level console patches (preventing
+ * duplicate timestamp / pod-id prefixes).
  */
-interface BrowserLogger {
-  debug: (message: string, meta?: Record<string, unknown>) => void;
-  info: (message: string, meta?: Record<string, unknown>) => void;
-  warn: (message: string, meta?: Record<string, unknown>) => void;
-  error: (message: string, meta?: Record<string, unknown>) => void;
-}
-
-function createBrowserLogger(component: string, debug: boolean): BrowserLogger {
-  const prefix = `[${component}]`;
-
-  const formatMessage = (level: string, message: string, meta?: Record<string, unknown>): string => {
-    const timestamp = new Date().toISOString();
-    const metaStr = meta ? ` ${JSON.stringify(meta)}` : '';
-    return `${timestamp} ${level.toUpperCase()} ${prefix} ${message}${metaStr}`;
-  };
-
-  return {
-    debug: (message: string, meta?: Record<string, unknown>) => {
-      if (debug) console.debug(formatMessage('debug', message, meta));
-    },
-    info: (message: string, meta?: Record<string, unknown>) => {
-      console.info(formatMessage('info', message, meta));
-    },
-    warn: (message: string, meta?: Record<string, unknown>) => {
-      console.warn(formatMessage('warn', message, meta));
-    },
-    error: (message: string, meta?: Record<string, unknown>) => {
-      console.error(formatMessage('error', message, meta));
-    },
-  };
+function createBrowserLogger(component: string, debug: boolean): Logger {
+  return createLogger({
+    level: debug ? 'debug' : 'info',
+    component,
+    pretty: true,
+  });
 }
 
 /**
@@ -222,7 +203,7 @@ export class BrowserAgent {
     autoRegister: boolean;
   };
   private authToken: string;
-  private readonly logger: BrowserLogger;
+  private readonly logger: Logger;
   private readonly stateStore: BrowserStateStore;
   private ws: WebSocket | null = null;
   private nodeId: string | null = null;
@@ -451,6 +432,7 @@ export class BrowserAgent {
 
     // Tear down log managers
     if (this.nodeLogManager) {
+      this.logger.setPersist(null); // Disconnect logger from node log manager
       this.nodeLogManager.destroy();
       this.nodeLogManager = null;
     }
@@ -485,6 +467,14 @@ export class BrowserAgent {
       storage: this.logStorage,
     });
     await this.nodeLogManager.initialize();
+
+    // Wire the Logger to also persist entries to the node LogManager
+    this.logger.setPersist((entry) => {
+      if (this.nodeLogManager) {
+        this.nodeLogManager.log(entry);
+      }
+    });
+
     this.logger.info('Node log manager initialised', { nodeId: this.nodeId });
   }
 
@@ -504,20 +494,6 @@ export class BrowserAgent {
     await lm.initialize();
     this.podLogManagers.set(podId, lm);
     return lm;
-  }
-
-  /**
-   * Persist a log entry to the node's LogManager.
-   */
-  private logToNodeManager(level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string, meta?: Record<string, unknown>): void {
-    if (!this.nodeLogManager) return;
-    const entry: LogEntry = {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      meta,
-    };
-    this.nodeLogManager.log(entry);
   }
 
   /**
@@ -606,7 +582,6 @@ export class BrowserAgent {
           // This ensures banned nodes (silently terminated) keep incrementing attempts
           this.emit('connected');
           this.logger.info('Connected to orchestrator');
-          this.logToNodeManager('info', 'Connected to orchestrator');
           resolve();
         };
 
@@ -636,7 +611,6 @@ export class BrowserAgent {
             type: event.type,
             readyState: this.ws?.readyState
           });
-          this.logToNodeManager('error', 'WebSocket error');
           this.emit('error', new Error('WebSocket error'));
         };
 
@@ -713,8 +687,7 @@ export class BrowserAgent {
         break;
 
       case 'disconnect':
-        this.logger.info('Server requested disconnect', { payload: message.payload });
-        this.logToNodeManager('warn', 'Server requested disconnect', { payload: message.payload });
+        this.logger.warn('Server requested disconnect', { payload: message.payload });
         break;
 
       case 'pod:deploy': {
@@ -724,7 +697,6 @@ export class BrowserAgent {
           podId: deployPayload.podId,
           packName: deployPayload.pack?.name,
         });
-        this.logToNodeManager('info', 'Pod deploy requested', { podId: deployPayload.podId, packName: deployPayload.pack?.name });
         await this.logToPodManager(deployPayload.podId, 'info', 'Pod deploy requested', { packName: deployPayload.pack?.name });
         
         try {
@@ -737,7 +709,7 @@ export class BrowserAgent {
           const result = await this.podHandler.handleDeploy(deployPayload);
           if (result.success) {
             this.emit('pod:deployed', { podId: deployPayload.podId });
-            this.logToNodeManager('info', 'Pod deployed successfully', { podId: deployPayload.podId });
+            this.logger.info('Pod deployed successfully', { podId: deployPayload.podId });
             await this.logToPodManager(deployPayload.podId, 'info', 'Pod deployed successfully');
             // Send success response if there's a correlationId
             if (message.correlationId) {
@@ -761,7 +733,6 @@ export class BrowserAgent {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.logger.error('Pod deploy failed', { podId: deployPayload.podId, error: errorMessage });
-          this.logToNodeManager('error', 'Pod deploy failed', { podId: deployPayload.podId, error: errorMessage });
           await this.logToPodManager(deployPayload.podId, 'error', 'Pod deploy failed', { error: errorMessage });
           this.emit('pod:failed', { podId: deployPayload.podId, error: errorMessage });
           if (message.correlationId) {
@@ -782,14 +753,13 @@ export class BrowserAgent {
           podId: stopPayload.podId,
           reason: stopPayload.reason,
         });
-        this.logToNodeManager('info', 'Pod stop requested', { podId: stopPayload.podId, reason: stopPayload.reason });
         await this.logToPodManager(stopPayload.podId, 'info', 'Pod stop requested', { reason: stopPayload.reason });
         
         try {
           const result = await this.podHandler.handleStop(stopPayload);
           if (result.success) {
             this.emit('pod:stopped', { podId: stopPayload.podId });
-            this.logToNodeManager('info', 'Pod stopped successfully', { podId: stopPayload.podId });
+            this.logger.info('Pod stopped successfully', { podId: stopPayload.podId });
             await this.logToPodManager(stopPayload.podId, 'info', 'Pod stopped successfully');
             if (message.correlationId) {
               this.send({
@@ -799,7 +769,7 @@ export class BrowserAgent {
               });
             }
           } else {
-            this.logToNodeManager('error', 'Pod stop failed', { podId: stopPayload.podId, error: result.error });
+            this.logger.error('Pod stop failed', { podId: stopPayload.podId, error: result.error });
             await this.logToPodManager(stopPayload.podId, 'error', 'Pod stop failed', { error: result.error });
             if (message.correlationId) {
               this.send({
@@ -812,7 +782,6 @@ export class BrowserAgent {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.logger.error('Pod stop failed', { podId: stopPayload.podId, error: errorMessage });
-          this.logToNodeManager('error', 'Pod stop failed', { podId: stopPayload.podId, error: errorMessage });
           await this.logToPodManager(stopPayload.podId, 'error', 'Pod stop failed', { error: errorMessage });
           if (message.correlationId) {
             this.send({
@@ -950,8 +919,7 @@ export class BrowserAgent {
    * Only explicit auth errors (AUTH_FAILED) should clear credentials.
    */
   private handleClose(code: number, reason: string): void {
-    this.logger.info('WebSocket closed (transient)', { code, reason });
-    this.logToNodeManager('warn', 'WebSocket connection closed', { code, reason });
+    this.logger.warn('WebSocket closed (transient)', { code, reason });
     this.stopHeartbeat();
     this.stopMetricsCollection();
     this.clearPendingRequests('Connection closed');
@@ -989,7 +957,6 @@ export class BrowserAgent {
       this.reconnectAttempts >= this.config.maxReconnectAttempts
     ) {
       this.logger.error('Max reconnect attempts reached, giving up');
-      this.logToNodeManager('error', 'Max reconnect attempts reached');
       this.emit('error', new Error('Max reconnect attempts reached'));
       return;
     }
@@ -1002,7 +969,6 @@ export class BrowserAgent {
       maxAttempts: this.config.maxReconnectAttempts,
       delay,
     });
-    this.logToNodeManager('info', 'Scheduling reconnect', { attempt: this.reconnectAttempts, delay });
 
     this.emit('reconnecting', { attempt: this.reconnectAttempts, delay });
 
@@ -1484,14 +1450,13 @@ export class BrowserAgent {
       this.state = 'registered';
       this.reconnectAttempts = 0; // Reset only after successful registration
       this.emit('registered', response.node);
+
+      // Initialise persistent log manager now that we have a nodeId
+      await this.ensureNodeLogManager();
       this.logger.info('Node registered', {
         nodeId: this.nodeId,
         nodeName: this.config.nodeName,
       });
-
-      // Initialise persistent log manager now that we have a nodeId
-      await this.ensureNodeLogManager();
-      this.logToNodeManager('info', 'Node registered', { nodeId: this.nodeId, nodeName: this.config.nodeName });
 
       // Start heartbeat and metrics collection
       this.startHeartbeat();
@@ -1590,14 +1555,13 @@ export class BrowserAgent {
       this.state = 'registered';
       this.reconnectAttempts = 0; // Reset only after successful reconnection
       this.emit('registered', response.node);
+
+      // Initialise persistent log manager now that we have a nodeId
+      await this.ensureNodeLogManager();
       this.logger.info('Node reconnected', {
         nodeId: this.nodeId,
         nodeName: this.config.nodeName,
       });
-
-      // Initialise persistent log manager now that we have a nodeId
-      await this.ensureNodeLogManager();
-      this.logToNodeManager('info', 'Node reconnected', { nodeId: this.nodeId, nodeName: this.config.nodeName });
 
       // Start heartbeat and metrics collection
       this.startHeartbeat();
@@ -1990,7 +1954,6 @@ export class BrowserAgent {
         this.logger.error('Token refresh failed', { 
           error: result.error?.message ?? 'Unknown error' 
         });
-        this.logToNodeManager('error', 'Token refresh failed', { error: result.error?.message ?? 'Unknown error' });
         return false;
       }
 
@@ -2026,14 +1989,12 @@ export class BrowserAgent {
         userId: newCredentials.userId,
         expiresAt: newCredentials.expiresAt,
       });
-      this.logToNodeManager('info', 'Access token refreshed');
 
       return true;
     } catch (error) {
       this.logger.error('Token refresh failed', {
         error: error instanceof Error ? error.message : String(error),
       });
-      this.logToNodeManager('error', 'Token refresh failed', { error: error instanceof Error ? error.message : String(error) });
       return false;
     } finally {
       this.isRefreshingToken = false;
@@ -2064,7 +2025,6 @@ export class BrowserAgent {
       this.logger.debug('Heartbeat sent', { nodeId: this.nodeId });
     } catch (error) {
       this.logger.error('Heartbeat failed', { error: String(error), nodeId: this.nodeId });
-      this.logToNodeManager('error', 'Heartbeat failed', { error: error instanceof Error ? error.message : String(error) });
       // Don't emit error for heartbeat failures, the connection close will handle reconnect
     }
   }

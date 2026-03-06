@@ -104,57 +104,23 @@ describe('Logger', () => {
   });
 
   describe('formatPretty', () => {
-    it('places component before message', () => {
-      const outputs: string[] = [];
+    it('entry includes component in meta for pretty output', () => {
+      const entries: LogEntry[] = [];
       const logger = new Logger({
-        level: 'debug',
-        component: 'my-component',
-        pretty: true,
-        output: (entry) => {
-          // Use the pretty format directly by creating a logger that outputs to a custom function
-          // We need to test the internal formatPretty, so we use a trick:
-          // Create a logger WITHOUT custom output and capture its output
-        },
-      });
-
-      // Test via a captured output
-      let capturedOutput = '';
-      const testLogger = new Logger({
-        level: 'debug',
-        component: 'my-component',
-        pretty: true,
-        output: undefined,
-      });
-
-      // Spy on ORIGINAL console to capture the pretty output
-      const origInfo = console.info;
-      const infoSpy = vi.fn();
-      // We need to patch the internal ORIGINAL_CONSOLE. Since we can't,
-      // let's test indirectly via a custom output logger
-      const prettyLogger = new Logger({
         level: 'info',
         component: 'test-comp',
         pretty: true,
-        output: (entry) => {
-          // The entry is what would be passed to defaultOutput
-          // We can verify the entry structure
-          capturedOutput = entry.message;
-        },
+        output: (entry) => entries.push(entry),
       });
 
-      // Actually, the simplest way to test formatPretty is to check the
-      // pretty-formatted output by spying on console methods
-      // But ORIGINAL_CONSOLE is captured at module load time...
-      // Let's just test the entry structure
-      prettyLogger.info('hello world', { requestId: 'req-123' });
-      expect(capturedOutput).toBe('hello world');
+      logger.info('hello world', { requestId: 'req-123' });
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.message).toBe('hello world');
+      expect(entries[0]!.meta).toMatchObject({ component: 'test-comp', requestId: 'req-123' });
     });
 
-    it('serializes extra meta fields in pretty output', () => {
-      // We can't directly test formatPretty (it's private), but we can
-      // create a Logger with pretty=true and no custom output, then
-      // capture what's written to the console
-      // Since ORIGINAL_CONSOLE is used, we'll just verify the entry structure
+    it('serializes extra meta fields in entry', () => {
       const entries: LogEntry[] = [];
       const logger = new Logger({
         level: 'debug',

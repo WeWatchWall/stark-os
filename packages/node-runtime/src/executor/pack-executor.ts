@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'crypto';
 import { createRequire } from 'module';
+import { homedir } from 'os';
 import { join, isAbsolute } from 'path';
 import { Script, createContext } from 'vm';
 import {
@@ -422,7 +423,7 @@ export class PackExecutor {
           const { readFileSync } = await import('node:fs');
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const volumeRoot = join(process.cwd(), 'volumes', mount.name);
+          const volumeRoot = join(homedir(), '.stark', 'nodes', 'volumes', mount.name);
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           return readFileSync(join(volumeRoot, relative), 'utf-8');
         },
@@ -431,7 +432,7 @@ export class PackExecutor {
           const { dirname } = await import('node:path');
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const volumeRoot = join(process.cwd(), 'volumes', mount.name);
+          const volumeRoot = join(homedir(), '.stark', 'nodes', 'volumes', mount.name);
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           const fullPath = join(volumeRoot, relative);
           mkdirSync(dirname(fullPath), { recursive: true });
@@ -442,7 +443,7 @@ export class PackExecutor {
           const { dirname } = await import('node:path');
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const volumeRoot = join(process.cwd(), 'volumes', mount.name);
+          const volumeRoot = join(homedir(), '.stark', 'nodes', 'volumes', mount.name);
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
           const fullPath = join(volumeRoot, relative);
           mkdirSync(dirname(fullPath), { recursive: true });
@@ -1231,7 +1232,7 @@ export class PackExecutor {
    */
   async clearVolume(volumeName: string): Promise<void> {
     const { rm, mkdir } = await import('node:fs/promises');
-    const volumeRoot = join(process.cwd(), 'volumes', volumeName);
+    const volumeRoot = join(homedir(), '.stark', 'nodes', 'volumes', volumeName);
     try {
       await rm(volumeRoot, { recursive: true, force: true });
     } catch {
@@ -1244,12 +1245,12 @@ export class PackExecutor {
   /**
    * Collect all files from a named volume using native node:fs.
    * Uses the same path convention as the pack-worker and in-process volume
-   * helpers: join(process.cwd(), 'volumes', name).
+   * helpers: join(homedir(), '.stark', 'nodes', 'volumes', name).
    * Returns serializable file entries with base64-encoded content.
    */
   async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
     const { readdir, stat, readFile } = await import('node:fs/promises');
-    const volumeRoot = join(process.cwd(), 'volumes', volumeName);
+    const volumeRoot = join(homedir(), '.stark', 'nodes', 'volumes', volumeName);
     const files: VolumeFileEntry[] = [];
 
     const walk = async (dir: string, prefix: string): Promise<void> => {

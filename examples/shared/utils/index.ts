@@ -1,3 +1,7 @@
+// Re-export everything through this barrel.
+// icons.ts and opfs.ts live in lib/ (a subdirectory) so Nuxt does NOT
+// auto-import them directly — only this index.ts is scanned.
+
 export {
   getIconCategory,
   getIconSvg,
@@ -16,7 +20,7 @@ export {
   ICON_SPREADSHEET,
   ICON_CONFIG,
   type IconCategory,
-} from './icons';
+} from './lib/icons';
 
 export {
   buildOpfsFS,
@@ -30,7 +34,7 @@ export {
   readDirItems,
   type ReadonlyFS,
   type FileItem,
-} from './opfs';
+} from './lib/opfs';
 
 export {
   commands as terminalCommands,

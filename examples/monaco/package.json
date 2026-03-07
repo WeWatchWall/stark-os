@@ -12,6 +12,8 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
+    "@stark-o/shared": "link:../../packages/shared",
     "@vscode/codicons": "^0.0.44",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",

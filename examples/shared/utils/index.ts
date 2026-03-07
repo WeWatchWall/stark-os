@@ -21,5 +21,13 @@ export {
 export {
   buildOpfsFS,
   getStarkOpfsRoot,
+  getPathParts,
+  normalizePath,
+  getDirectoryHandle,
+  getFileHandle,
+  formatSize,
+  formatType,
+  readDirItems,
   type ReadonlyFS,
+  type FileItem,
 } from './opfs';

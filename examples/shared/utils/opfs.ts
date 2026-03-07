@@ -18,11 +18,22 @@ export interface ReadonlyFS {
   exists(path: string): Promise<boolean>;
   isFile(path: string): Promise<boolean>;
   isDirectory(path: string): Promise<boolean>;
+  unlink(path: string): Promise<void>;
+  rename(oldPath: string, newPath: string): Promise<void>;
+  stat(path: string): Promise<{ size: number; mtime: Date }>;
 }
 
-/* ── Path helpers ── */
+/* ── File item type used by file browsers ── */
 
-function getPathParts(resolvedPath: string): string[] {
+export interface FileItem {
+  name: string;
+  isDirectory: boolean;
+  size: number;
+}
+
+/* ── Path helpers (exported for reuse) ── */
+
+export function getPathParts(resolvedPath: string): string[] {
   const raw = resolvedPath.split('/').filter(p => p.length > 0);
   const normalized: string[] = [];
   for (const part of raw) {
@@ -33,7 +44,12 @@ function getPathParts(resolvedPath: string): string[] {
   return normalized;
 }
 
-async function getDirectoryHandle(
+export function normalizePath(p: string): string {
+  const parts = getPathParts(p);
+  return '/' + parts.join('/');
+}
+
+export async function getDirectoryHandle(
   root: FileSystemDirectoryHandle,
   resolvedPath: string,
   create = false,
@@ -46,7 +62,7 @@ async function getDirectoryHandle(
   return handle;
 }
 
-async function getFileHandle(
+export async function getFileHandle(
   root: FileSystemDirectoryHandle,
   resolvedPath: string,
   create = false,
@@ -68,7 +84,7 @@ async function getFileHandle(
  * `stark-orchestrator` directory — the same root the terminal uses.
  */
 export function buildOpfsFS(rootHandle: FileSystemDirectoryHandle): ReadonlyFS {
-  return {
+  const fs: ReadonlyFS = {
     async readFile(path: string): Promise<string> {
       const fh = await getFileHandle(rootHandle, path);
       const file = await fh.getFile();
@@ -147,8 +163,40 @@ export function buildOpfsFS(rootHandle: FileSystemDirectoryHandle): ReadonlyFS {
         return true;
       } catch { return false; }
     },
+
+    async unlink(path: string): Promise<void> {
+      const parts = getPathParts(path);
+      if (parts.length === 0) throw new Error('Cannot unlink root');
+      const name = parts.pop()!;
+      let parent = rootHandle;
+      for (const part of parts) parent = await parent.getDirectoryHandle(part);
+      await parent.removeEntry(name, { recursive: true });
+    },
+
+    async rename(oldPath: string, newPath: string): Promise<void> {
+      const content = await fs.readFile(oldPath);
+      await fs.writeFile(newPath, content);
+      await fs.unlink(oldPath);
+    },
+
+    async stat(path: string): Promise<{ size: number; mtime: Date }> {
+      const parts = getPathParts(path);
+      if (parts.length === 0) return { size: 0, mtime: new Date() };
+      const name = parts.pop()!;
+      let parent = rootHandle;
+      for (const part of parts) parent = await parent.getDirectoryHandle(part);
+      try {
+        const fh = await parent.getFileHandle(name);
+        const file = await fh.getFile();
+        return { size: file.size, mtime: new Date(file.lastModified) };
+      } catch {
+        await parent.getDirectoryHandle(name);
+        return { size: 0, mtime: new Date() };
+      }
+    },
   };
-}
+
+  return fs;
 
 /**
  * Convenience helper: obtain the shared Stark OS OPFS root handle.
@@ -161,4 +209,48 @@ export async function getStarkOpfsRoot(): Promise<FileSystemDirectoryHandle | nu
   } catch {
     return null;
   }
+}
+
+/* ── Format helpers (reusable across file browsers) ── */
+
+/** Format a byte count to a human-readable string (e.g. "1.2 MB"). */
+export function formatSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const val = bytes / Math.pow(1024, i);
+  return `${val < 10 && i > 0 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
+}
+
+/** Derive a human-readable file type from a filename (e.g. "PDF File"). */
+export function formatType(name: string): string {
+  const dot = name.lastIndexOf('.');
+  if (dot === -1) return 'File';
+  const ext = name.slice(dot + 1).toUpperCase();
+  return `${ext} File`;
+}
+
+/* ── Directory reading with sizes ── */
+
+/**
+ * Read a directory from OPFS and return FileItem entries (with file sizes).
+ */
+export async function readDirItems(
+  root: FileSystemDirectoryHandle,
+  path: string,
+  create = true,
+): Promise<FileItem[]> {
+  const dirHandle = await getDirectoryHandle(root, path, create);
+  const entries: FileItem[] = [];
+  for await (const [name, handle] of dirHandle.entries()) {
+    let size = 0;
+    if (handle.kind === 'file') {
+      try {
+        const file = await (handle as FileSystemFileHandle).getFile();
+        size = file.size;
+      } catch { /* skip size */ }
+    }
+    entries.push({ name, isDirectory: handle.kind === 'directory', size });
+  }
+  return entries;
 }

@@ -31,3 +31,17 @@ export {
   type ReadonlyFS,
   type FileItem,
 } from './opfs';
+
+export {
+  commands as terminalCommands,
+  normalizePath as terminalNormalizePath,
+  type TerminalFS,
+  type CommandContext,
+} from './terminal-commands';
+
+export {
+  parseCommandLine,
+  executePlan,
+  type ShellState,
+  type ExecutionPlan,
+} from './terminal-shell';

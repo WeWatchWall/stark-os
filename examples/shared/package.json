@@ -1,8 +1,16 @@
 {
   "name": "@stark-o/examples-shared",
   "version": "0.0.1",
-  "description": "Shared utilities for Stark OS apps — file icons, OPFS helpers, and more",
+  "description": "Shared utilities for Stark OS apps — file icons, OPFS helpers, terminal, files-picker, and more",
   "private": true,
   "type": "module",
-  "main": "./utils/index.ts"
+  "main": "./utils/index.ts",
+  "dependencies": {
+    "vue": "^3.5.0",
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
+    "@stark-o/shared": "link:../../packages/shared"
+  }
 }

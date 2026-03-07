@@ -742,6 +742,11 @@ async function opfsSaveFile(path: string, content: string): Promise<void> {
   await fs.writeFile(path, content);
 }
 
+/** Build a Monaco URI from an OPFS path. */
+function pathToMonacoUri(path: string) {
+  return monacoModule.Uri.parse(`file:///${path.replace(/^\//, '')}`);
+}
+
 async function opfsDeleteFile(path: string): Promise<boolean> {
   if (!fs) return false;
   try { await fs.unlink(path); return true; } catch { return false; }
@@ -1152,7 +1157,7 @@ async function openFile(path: string) {
       await initEditor(content, filename, path);
       return;
     }
-    const uri = monacoModule.Uri.parse(`file:///${path.replace(/^\//, '')}`);
+    const uri = pathToMonacoUri(path);
     model = monacoModule.editor.createModel(content, getLanguage(filename), uri);
     fileModels.set(path, model);
   }
@@ -1182,7 +1187,7 @@ async function initEditor(content: string, filename: string, path: string) {
 
   let model = fileModels.get(path);
   if (!model) {
-    const uri = monacoModule.Uri.parse(`file:///${path.replace(/^\//, '')}`);
+    const uri = pathToMonacoUri(path);;
     model = monacoModule.editor.createModel(content, getLanguage(filename), uri);
     fileModels.set(path, model);
   }
@@ -1352,7 +1357,7 @@ async function finishRename() {
       const content = model.getValue();
       model.dispose();
       if (monacoModule) {
-        const uri = monacoModule.Uri.parse(`file:///${newPath.replace(/^\//, '')}`);
+        const uri = pathToMonacoUri(newPath);
         const newModel = monacoModule.editor.createModel(content, getLanguage(newName), uri);
         fileModels.set(newPath, newModel);
         if (currentFile.value === oldPath && editor) {

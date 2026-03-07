@@ -197,6 +197,7 @@ export function buildOpfsFS(rootHandle: FileSystemDirectoryHandle): ReadonlyFS {
   };
 
   return fs;
+}
 
 /**
  * Convenience helper: obtain the shared Stark OS OPFS root handle.

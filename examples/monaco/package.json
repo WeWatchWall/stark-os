@@ -13,8 +13,9 @@
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.44",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
     "monaco-editor": "^0.52.2",
     "vue": "^3.5.0"
   },

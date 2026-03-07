@@ -1,5 +1,17 @@
 <template>
   <div class="page" @contextmenu.prevent>
+    <!-- Files Picker Dialog -->
+    <FilesPicker
+      v-model:visible="showFilePicker"
+      :mode="filePickerMode"
+      :title="filePickerTitle"
+      :extensions="filePickerExtensions"
+      :initial-path="projectRoot || '/home'"
+      :default-file-name="filePickerDefaultName"
+      @select="onPickerSelect"
+      @cancel="onPickerCancel"
+    />
+
     <!-- Notification toasts -->
     <div class="toast-container">
       <div
@@ -93,12 +105,15 @@
     </div>
 
     <!-- Sidebar -->
-    <div v-if="sidebarVisible" class="sidebar">
+    <div v-if="sidebarVisible" class="sidebar" :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }">
       <!-- Explorer panel -->
       <template v-if="activePanel === 'explorer'">
         <div class="sidebar-header">
           <span class="sidebar-title">EXPLORER</span>
           <div class="sidebar-actions">
+            <button class="icon-btn" title="Open Folder" @click="openFolder">
+              <i class="codicon codicon-folder-opened"></i>
+            </button>
             <button class="icon-btn" title="New File (Ctrl+N)" @click="createNewFile">
               <i class="codicon codicon-new-file"></i>
             </button>
@@ -108,36 +123,47 @@
           </div>
         </div>
         <div class="file-list">
-          <div
-            v-for="file in files"
-            :key="file"
-            class="file-item"
-            :class="{ active: openTabs.some(t => t.name === file) }"
-            @click="openFile(file)"
-            @dblclick="startRenaming(file)"
-            @contextmenu.prevent="showFileContextMenu($event, file)"
-          >
-            <i :class="'codicon codicon-' + getCodiconForFile(file)" class="file-codicon"></i>
-            <input
-              v-if="renamingFile === file"
-              ref="renameInput"
-              v-model="renameValue"
-              class="rename-input"
-              @blur="finishRename"
-              @keydown.enter="finishRename"
-              @keydown.escape="cancelRename"
-              @click.stop
-            />
-            <span v-else class="file-name">{{ file }}</span>
-            <button
-              class="delete-btn"
-              title="Delete"
-              @click.stop="removeFile(file)"
-            ><i class="codicon codicon-close"></i></button>
+          <template v-if="projectRoot">
+            <div
+              v-for="node in flatTree"
+              :key="node.path"
+              class="file-item"
+              :class="{ active: currentFile === node.path }"
+              :style="{ paddingLeft: (12 + node.depth * 16) + 'px' }"
+              @click="node.isDirectory ? toggleTreeNode(node) : openFile(node.path)"
+              @dblclick="!node.isDirectory && startRenaming(node.path)"
+              @contextmenu.prevent="!node.isDirectory && showFileContextMenu($event, node.path)"
+            >
+              <i v-if="node.isDirectory" :class="'codicon codicon-' + (node.expanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+              <span v-else class="tree-toggle-spacer"></span>
+              <i v-if="node.isDirectory" class="codicon codicon-folder file-codicon folder-icon"></i>
+              <i v-else :class="'codicon codicon-' + getCodiconForFile(node.name)" class="file-codicon"></i>
+              <input
+                v-if="renamingFile === node.path"
+                ref="renameInput"
+                v-model="renameValue"
+                class="rename-input"
+                @blur="finishRename"
+                @keydown.enter="finishRename"
+                @keydown.escape="cancelRename"
+                @click.stop
+              />
+              <span v-else class="file-name">{{ node.name }}</span>
+              <button
+                v-if="!node.isDirectory"
+                class="delete-btn"
+                title="Delete"
+                @click.stop="removeFile(node.path)"
+              ><i class="codicon codicon-close"></i></button>
+            </div>
+          </template>
+          <div v-if="!projectRoot" class="empty-hint">
+            <i class="codicon codicon-folder-opened"></i><br/>
+            No folder open.<br />Click <kbd>Open Folder</kbd> or press <kbd>Ctrl+N</kbd> to start.
           </div>
-          <div v-if="files.length === 0" class="empty-hint">
+          <div v-else-if="flatTree.length === 0" class="empty-hint">
             <i class="codicon codicon-new-file"></i><br/>
-            No files yet.<br />Press <kbd>Ctrl+N</kbd> to create one.
+            This folder is empty.<br />Press <kbd>Ctrl+N</kbd> to create a file.
           </div>
         </div>
       </template>
@@ -298,22 +324,30 @@
       </template>
     </div>
 
+    <!-- Sidebar resize handle -->
+    <div
+      v-if="sidebarVisible"
+      class="sidebar-resize-handle"
+      @mousedown="startResize"
+      @touchstart="startResize"
+    ></div>
+
     <!-- Main area -->
     <div class="main">
       <!-- Tab bar -->
       <div class="tab-bar" v-if="openTabs.length > 0">
         <div
           v-for="tab in openTabs"
-          :key="tab.name"
+          :key="tab.path"
           class="tab"
-          :class="{ active: tab.name === currentFile, modified: tab.modified }"
-          @click="switchToTab(tab.name)"
-          @auxclick.middle.prevent="closeTab(tab.name)"
+          :class="{ active: tab.path === currentFile, modified: tab.modified }"
+          @click="switchToTab(tab.path)"
+          @auxclick.middle.prevent="closeTab(tab.path)"
         >
           <i :class="'codicon codicon-' + getCodiconForFile(tab.name)" class="tab-codicon"></i>
           <span class="tab-label">{{ tab.name }}</span>
           <span v-if="tab.modified" class="tab-dot"><i class="codicon codicon-circle-filled"></i></span>
-          <button class="tab-close" @click.stop="closeTab(tab.name)"><i class="codicon codicon-close"></i></button>
+          <button class="tab-close" @click.stop="closeTab(tab.path)"><i class="codicon codicon-close"></i></button>
         </div>
       </div>
 
@@ -321,10 +355,10 @@
       <div v-if="currentFile" class="breadcrumbs">
         <i class="codicon codicon-home breadcrumb-home" @click="togglePanel('explorer')"></i>
         <i class="codicon codicon-chevron-right breadcrumb-sep"></i>
-        <i :class="'codicon codicon-' + getCodiconForFile(currentFile)" class="breadcrumb-icon"></i>
-        <span class="breadcrumb-item">{{ currentFile }}</span>
+        <i :class="'codicon codicon-' + getCodiconForFile(openTabs.find(t => t.path === currentFile)?.name || '')" class="breadcrumb-icon"></i>
+        <span class="breadcrumb-item">{{ openTabs.find(t => t.path === currentFile)?.name || '' }}</span>
         <i class="codicon codicon-chevron-right breadcrumb-sep"></i>
-        <span class="breadcrumb-lang">{{ getLanguageLabel(currentFile) }}</span>
+        <span class="breadcrumb-lang">{{ getLanguageLabel(openTabs.find(t => t.path === currentFile)?.name || '') }}</span>
       </div>
 
       <!-- Editor -->
@@ -340,19 +374,20 @@
           <div class="welcome-sections">
             <div class="welcome-section">
               <h3><i class="codicon codicon-rocket"></i> Start</h3>
+              <div class="welcome-link" @click="openFolder"><i class="codicon codicon-folder-opened"></i> Open Folder...</div>
               <div class="welcome-link" @click="createNewFile"><i class="codicon codicon-new-file"></i> New File...</div>
-              <div class="welcome-link" @click="openCommandPalette('files')"><i class="codicon codicon-folder-opened"></i> Open File...</div>
+              <div class="welcome-link" @click="openFilePicker"><i class="codicon codicon-go-to-file"></i> Open File...</div>
               <div class="welcome-link" @click="openCommandPalette('commands')"><i class="codicon codicon-terminal"></i> Command Palette...</div>
             </div>
             <div class="welcome-section">
               <h3><i class="codicon codicon-history"></i> Recent</h3>
-              <template v-if="files.length > 0">
+              <template v-if="openTabs.length > 0">
                 <div
-                  v-for="file in files.slice(0, 5)"
-                  :key="file"
+                  v-for="tab in openTabs.slice(0, 5)"
+                  :key="tab.path"
                   class="welcome-link"
-                  @click="openFile(file)"
-                ><i :class="'codicon codicon-' + getCodiconForFile(file)"></i> {{ file }}</div>
+                  @click="openFile(tab.path)"
+                ><i :class="'codicon codicon-' + getCodiconForFile(tab.name)"></i> {{ tab.name }}</div>
               </template>
               <div v-else class="welcome-hint">No recent files</div>
             </div>
@@ -381,7 +416,7 @@
         </div>
       </div>
 
-      <!-- Terminal panel (xterm.js integrated terminal) -->
+      <!-- Terminal panel (SharedTerminal component) -->
       <div v-if="terminalVisible" class="terminal-panel">
         <div class="terminal-header">
           <div class="terminal-tabs">
@@ -396,7 +431,9 @@
             </button>
           </div>
         </div>
-        <div ref="terminalContainer" class="terminal-body"></div>
+        <div class="terminal-body">
+          <SharedTerminal ref="terminalRef" :initial-path="terminalInitialPath" />
+        </div>
       </div>
 
       <!-- Status bar -->
@@ -434,19 +471,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
-// xterm.js terminal emulator
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import '@xterm/xterm/css/xterm.css';
+import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue';
+import SharedTerminal from '../../shared/components/SharedTerminal.vue';
+import FilesPicker from '../../shared/components/FilesPicker.vue';
+import type { PickerResult, ExtensionFilter } from '../../shared/components/FilesPicker.vue';
 import {
-  listFiles,
-  saveFile,
-  loadFile,
-  deleteFile,
-  renameFile,
-  searchInFiles,
-} from '~/composables/useOpfsStorage';
+  getStarkOpfsRoot,
+  buildOpfsFS,
+  normalizePath,
+  getPathParts,
+  getIconSvg,
+  getIconColor,
+  type ReadonlyFS,
+} from '../../shared/utils';
 import {
   extensionCatalog,
   loadExtensionState,
@@ -462,6 +499,7 @@ import {
 // ─── Types ──────────────────────────────────────────
 interface Tab {
   name: string;
+  path: string;  // full OPFS path
   modified: boolean;
 }
 interface SearchResult {
@@ -479,28 +517,55 @@ interface ToastMsg {
   message: string;
   type: 'info' | 'success' | 'error';
 }
+interface TreeNode {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  expanded: boolean;
+  children: TreeNode[];
+  depth: number;
+}
 
 // ─── Constants ──────────────────────────────────────
 const SAVE_DELAY = 1000;
 
+// ─── Shared OPFS FS ────────────────────────────────
+let opfsRoot: FileSystemDirectoryHandle | null = null;
+let fs: ReadonlyFS | null = null;
+
 // ─── State ──────────────────────────────────────────
 const monacoContainer = ref<HTMLElement | null>(null);
-const terminalContainer = ref<HTMLElement | null>(null);
+const terminalRef = ref<InstanceType<typeof SharedTerminal> | null>(null);
 const paletteInput = ref<HTMLInputElement | null>(null);
 const sidebarSearchInput = ref<HTMLInputElement | null>(null);
 const renameInput = ref<HTMLInputElement | null>(null);
 
-const files = ref<string[]>([]);
+const projectRoot = ref<string | null>(null);  // null = no project open
+const treeNodes = ref<TreeNode[]>([]);
 const currentFile = ref<string | null>(null);
 const saveStatus = ref<'saved' | 'saving' | 'idle'>('idle');
 const openTabs = ref<Tab[]>([]);
 const sidebarVisible = ref(true);
+const sidebarWidth = ref(260);
 const activePanel = ref<'explorer' | 'search' | 'extensions'>('explorer');
 const cursorLine = ref(1);
 const cursorColumn = ref(1);
 const editorTabSize = ref(2);
 const wordWrapEnabled = ref(true);
 const terminalVisible = ref(false);
+
+// Files-picker state
+const showFilePicker = ref(false);
+const filePickerMode = ref<'file' | 'files' | 'directory' | 'save'>('file');
+const filePickerTitle = ref('');
+const filePickerExtensions = ref<ExtensionFilter[]>([]);
+const filePickerDefaultName = ref('');
+let filePickerResolve: ((result: PickerResult | null) => void) | null = null;
+
+// Sidebar resize state
+let isResizing = false;
+let resizeStartX = 0;
+let resizeStartWidth = 0;
 
 // Command palette
 const showCommandPalette = ref(false);
@@ -518,7 +583,7 @@ const renamingFile = ref<string | null>(null);
 const renameValue = ref('');
 
 // Context menu
-const contextMenu = reactive({ show: false, x: 0, y: 0, file: '' });
+const contextMenu = reactive({ show: false, x: 0, y: 0, file: '', path: '' });
 
 // Notifications
 const toasts = ref<ToastMsg[]>([]);
@@ -530,12 +595,6 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let isLoadingFile = false;
 const fileModels = new Map<string, any>();
 
-// Terminal internals (xterm.js)
-let terminal: Terminal | null = null;
-let fitAddon: FitAddon | null = null;
-let terminalInputBuffer = '';
-let terminalInitialized = false;
-
 // Extensions state
 const extSearchQuery = ref('');
 const extCategoryFilter = ref('');
@@ -543,6 +602,190 @@ const selectedExt = ref<Extension | null>(null);
 const extState = ref<ExtensionState>({ installed: [], enabled: [] });
 const extCategories = getCategories();
 const activeExtDisposers = new Map<string, () => void>();
+
+// ─── Terminal path ──────────────────────────────────
+const terminalInitialPath = computed(() => projectRoot.value || '/home');
+
+// ─── Files Picker helpers ───────────────────────────
+function openPickerDialog(
+  mode: 'file' | 'files' | 'directory' | 'save',
+  title: string,
+  extensions: ExtensionFilter[] = [],
+  defaultName = '',
+): Promise<PickerResult | null> {
+  return new Promise((resolve) => {
+    filePickerMode.value = mode;
+    filePickerTitle.value = title;
+    filePickerExtensions.value = extensions;
+    filePickerDefaultName.value = defaultName;
+    filePickerResolve = resolve;
+    showFilePicker.value = true;
+  });
+}
+
+function onPickerSelect(result: PickerResult) {
+  showFilePicker.value = false;
+  if (filePickerResolve) {
+    filePickerResolve(result);
+    filePickerResolve = null;
+  }
+}
+
+function onPickerCancel() {
+  showFilePicker.value = false;
+  if (filePickerResolve) {
+    filePickerResolve(null);
+    filePickerResolve = null;
+  }
+}
+
+// ─── Sidebar Resize ─────────────────────────────────
+function startResize(e: MouseEvent | TouchEvent) {
+  isResizing = true;
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  resizeStartX = clientX;
+  resizeStartWidth = sidebarWidth.value;
+  e.preventDefault();
+  document.addEventListener('mousemove', onResize);
+  document.addEventListener('mouseup', stopResize);
+  document.addEventListener('touchmove', onResize);
+  document.addEventListener('touchend', stopResize);
+}
+
+function onResize(e: MouseEvent | TouchEvent) {
+  if (!isResizing) return;
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const delta = clientX - resizeStartX;
+  sidebarWidth.value = Math.max(150, Math.min(600, resizeStartWidth + delta));
+}
+
+function stopResize() {
+  isResizing = false;
+  document.removeEventListener('mousemove', onResize);
+  document.removeEventListener('mouseup', stopResize);
+  document.removeEventListener('touchmove', onResize);
+  document.removeEventListener('touchend', stopResize);
+}
+
+// ─── Tree Operations ────────────────────────────────
+async function loadTree(rootPath: string): Promise<TreeNode[]> {
+  if (!fs) return [];
+  try {
+    const entries = await fs.readdirWithTypes(rootPath);
+    const nodes: TreeNode[] = [];
+    const parts = getPathParts(rootPath);
+    const depth = parts.length - (projectRoot.value ? getPathParts(projectRoot.value).length : 0);
+    for (const entry of entries) {
+      const childPath = normalizePath(rootPath + '/' + entry.name);
+      nodes.push({
+        name: entry.name,
+        path: childPath,
+        isDirectory: entry.isDirectory(),
+        expanded: false,
+        children: [],
+        depth,
+      });
+    }
+    nodes.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return nodes;
+  } catch {
+    return [];
+  }
+}
+
+async function refreshTree() {
+  if (!projectRoot.value) {
+    treeNodes.value = [];
+    return;
+  }
+  treeNodes.value = await loadTree(projectRoot.value);
+}
+
+async function toggleTreeNode(node: TreeNode) {
+  if (!node.isDirectory) return;
+  node.expanded = !node.expanded;
+  if (node.expanded && node.children.length === 0) {
+    node.children = await loadTree(node.path);
+  }
+}
+
+function flattenTree(nodes: TreeNode[]): TreeNode[] {
+  const result: TreeNode[] = [];
+  for (const node of nodes) {
+    result.push(node);
+    if (node.isDirectory && node.expanded) {
+      result.push(...flattenTree(node.children));
+    }
+  }
+  return result;
+}
+
+const flatTree = computed(() => flattenTree(treeNodes.value));
+
+// ─── OPFS File Operations ───────────────────────────
+async function opfsReadFile(path: string): Promise<string | null> {
+  if (!fs) return null;
+  try { return await fs.readFile(path); } catch { return null; }
+}
+
+async function opfsSaveFile(path: string, content: string): Promise<void> {
+  if (!fs) return;
+  // Ensure parent directories exist
+  const parts = getPathParts(path);
+  if (parts.length > 1) {
+    const dirParts = parts.slice(0, -1);
+    await fs.mkdir('/' + dirParts.join('/'), true);
+  }
+  await fs.writeFile(path, content);
+}
+
+async function opfsDeleteFile(path: string): Promise<boolean> {
+  if (!fs) return false;
+  try { await fs.unlink(path); return true; } catch { return false; }
+}
+
+async function opfsRenameFile(oldPath: string, newPath: string): Promise<boolean> {
+  if (!fs) return false;
+  try { await fs.rename(oldPath, newPath); return true; } catch { return false; }
+}
+
+async function searchInFiles(query: string): Promise<SearchResult[]> {
+  if (!query || !fs || !projectRoot.value) return [];
+  const results: SearchResult[] = [];
+  const lowerQuery = query.toLowerCase();
+
+  async function searchDir(dirPath: string) {
+    try {
+      const entries = await fs!.readdirWithTypes(dirPath);
+      for (const entry of entries) {
+        const childPath = normalizePath(dirPath + '/' + entry.name);
+        if (entry.isDirectory()) {
+          await searchDir(childPath);
+        } else {
+          try {
+            const content = await fs!.readFile(childPath);
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].toLowerCase().includes(lowerQuery)) {
+                // Show relative path from project root
+                const relPath = childPath.startsWith(projectRoot.value!)
+                  ? childPath.slice(projectRoot.value!.length + 1)
+                  : childPath;
+                results.push({ file: relPath, line: i + 1, text: lines[i] });
+              }
+            }
+          } catch { /* skip unreadable files */ }
+        }
+      }
+    } catch { /* skip unreadable dirs */ }
+  }
+
+  await searchDir(projectRoot.value);
+  return results;
+}
 
 // ─── Extension Computed & Functions ─────────────────
 const installedExtensions = computed(() =>
@@ -652,8 +895,11 @@ const saveStatusText = computed(() => {
 });
 
 const commandList = computed<PaletteItem[]>(() => [
+  { codicon: 'folder-opened', label: 'Open Folder...', action: openFolder },
+  { codicon: 'go-to-file', label: 'Open File...', shortcut: 'Ctrl+P', action: () => openFilePicker() },
   { codicon: 'new-file', label: 'New File', shortcut: 'Ctrl+N', action: createNewFile },
   { codicon: 'save', label: 'Save File', shortcut: 'Ctrl+S', action: saveCurrentFile },
+  { codicon: 'save-as', label: 'Save As...', action: saveAsFile },
   { codicon: 'search', label: 'Search in Files', shortcut: 'Ctrl+Shift+F', action: () => openSidebarSearch() },
   { codicon: 'go-to-file', label: 'Quick Open File', shortcut: 'Ctrl+P', action: () => openCommandPalette('files') },
   { codicon: 'close', label: 'Close Tab', shortcut: 'Ctrl+W', action: () => currentFile.value && closeTab(currentFile.value) },
@@ -676,12 +922,32 @@ const commandList = computed<PaletteItem[]>(() => [
 const filteredPaletteItems = computed<PaletteItem[]>(() => {
   if (paletteMode.value === 'files') {
     const q = paletteQuery.value.toLowerCase();
-    return files.value
-      .filter(f => f.toLowerCase().includes(q))
+    // Collect all files from the tree (recursive)
+    const allFiles: { name: string; path: string }[] = [];
+    function collectFiles(nodes: TreeNode[]) {
+      for (const node of nodes) {
+        if (!node.isDirectory) {
+          allFiles.push({ name: node.name, path: node.path });
+        }
+        if (node.isDirectory && node.expanded) {
+          collectFiles(node.children);
+        }
+      }
+    }
+    collectFiles(treeNodes.value);
+    // Also include open tabs that may not be in tree
+    for (const tab of openTabs.value) {
+      if (!allFiles.some(f => f.path === tab.path)) {
+        const parts = getPathParts(tab.path);
+        allFiles.push({ name: parts[parts.length - 1] || tab.name, path: tab.path });
+      }
+    }
+    return allFiles
+      .filter(f => f.name.toLowerCase().includes(q))
       .map(f => ({
-        codicon: getCodiconForFile(f),
-        label: f,
-        action: () => openFile(f),
+        codicon: getCodiconForFile(f.name),
+        label: f.name,
+        action: () => openFile(f.path),
       }));
   }
   const q = paletteQuery.value.toLowerCase();
@@ -759,38 +1025,40 @@ function editorAction(actionId: string) {
 }
 
 // ─── Tab Management ─────────────────────────────────
-function getOrCreateTab(filename: string): Tab {
-  let tab = openTabs.value.find(t => t.name === filename);
+function getOrCreateTab(path: string): Tab {
+  let tab = openTabs.value.find(t => t.path === path);
   if (!tab) {
-    tab = { name: filename, modified: false };
+    const parts = getPathParts(path);
+    const name = parts[parts.length - 1] || path;
+    tab = { name, path, modified: false };
     openTabs.value.push(tab);
   }
   return tab;
 }
 
-async function switchToTab(filename: string) {
-  if (currentFile.value === filename) return;
-  await openFile(filename);
+async function switchToTab(path: string) {
+  if (currentFile.value === path) return;
+  await openFile(path);
 }
 
-async function closeTab(filename: string) {
-  const idx = openTabs.value.findIndex(t => t.name === filename);
+async function closeTab(path: string) {
+  const idx = openTabs.value.findIndex(t => t.path === path);
   if (idx === -1) return;
 
   const tab = openTabs.value[idx];
-  if (tab.modified && editor && currentFile.value === filename) {
+  if (tab.modified && editor && currentFile.value === path) {
     await saveCurrentFile();
   }
 
-  const model = fileModels.get(filename);
-  if (model) { model.dispose(); fileModels.delete(filename); }
+  const model = fileModels.get(path);
+  if (model) { model.dispose(); fileModels.delete(path); }
 
   openTabs.value.splice(idx, 1);
 
-  if (currentFile.value === filename) {
+  if (currentFile.value === path) {
     if (openTabs.value.length > 0) {
       const nextIdx = Math.min(idx, openTabs.value.length - 1);
-      await openFile(openTabs.value[nextIdx].name);
+      await openFile(openTabs.value[nextIdx].path);
     } else {
       currentFile.value = null;
     }
@@ -798,47 +1066,101 @@ async function closeTab(filename: string) {
 }
 
 // ─── File Operations ────────────────────────────────
-async function refreshFiles() {
-  files.value = await listFiles();
+
+async function openFolder() {
+  const result = await openPickerDialog('directory', 'Open Folder');
+  if (!result) return;
+  projectRoot.value = result.paths[0];
+  await refreshTree();
+  // Close all open tabs from different project
+  for (const tab of [...openTabs.value]) {
+    await closeTab(tab.path);
+  }
+  currentFile.value = null;
+  notify(`Opened folder: ${projectRoot.value}`, 'success');
+}
+
+async function openFilePicker() {
+  const result = await openPickerDialog('file', 'Open File');
+  if (!result || result.paths.length === 0) return;
+  const filePath = result.paths[0];
+  // If no project is open, set project root to the file's directory
+  if (!projectRoot.value) {
+    const parts = getPathParts(filePath);
+    parts.pop();
+    projectRoot.value = '/' + parts.join('/');
+    await refreshTree();
+  }
+  await openFile(filePath);
 }
 
 async function createNewFile() {
   showCommandPalette.value = false;
-  const name = prompt('Enter file name:');
-  if (!name || !name.trim()) return;
-  const trimmed = name.trim();
-  await saveFile(trimmed, '');
-  await refreshFiles();
-  await openFile(trimmed);
-  notify(`Created ${trimmed}`, 'success');
+  const result = await openPickerDialog(
+    'save',
+    'New File',
+    [],
+    'untitled.txt',
+  );
+  if (!result || !result.fileName) return;
+  const fullPath = result.paths[0];
+  await opfsSaveFile(fullPath, '');
+  // If no project open, set project root
+  if (!projectRoot.value) {
+    projectRoot.value = result.directory;
+  }
+  await refreshTree();
+  await openFile(fullPath);
+  notify(`Created ${result.fileName}`, 'success');
 }
 
-async function openFile(filename: string) {
+async function saveAsFile() {
+  if (!currentFile.value || !editor) return;
+  const content = editor.getValue();
+  const currentName = openTabs.value.find(t => t.path === currentFile.value)?.name || 'file.txt';
+  const ext = currentName.includes('.') ? '.' + currentName.split('.').pop() : '.txt';
+  const result = await openPickerDialog(
+    'save',
+    'Save As',
+    [{ label: `${ext.toUpperCase().slice(1)} File`, extensions: [ext] }],
+    currentName,
+  );
+  if (!result || !result.fileName) return;
+  await opfsSaveFile(result.paths[0], content);
+  await refreshTree();
+  await openFile(result.paths[0]);
+  notify(`Saved as ${result.fileName}`, 'success');
+}
+
+async function openFile(path: string) {
   if (currentFile.value && editor) {
     await saveCurrentFile();
   }
 
-  getOrCreateTab(filename);
-  currentFile.value = filename;
+  getOrCreateTab(path);
+  currentFile.value = path;
   showCommandPalette.value = false;
 
-  let model = fileModels.get(filename);
+  const parts = getPathParts(path);
+  const filename = parts[parts.length - 1] || 'file';
+
+  let model = fileModels.get(path);
   if (!model) {
-    const content = await loadFile(filename) || '';
+    const content = await opfsReadFile(path) || '';
     await nextTick();
     if (!monacoModule) {
-      await initEditor(content, filename);
+      await initEditor(content, filename, path);
       return;
     }
-    const uri = monacoModule.Uri.parse(`file:///${filename}`);
+    const uri = monacoModule.Uri.parse(`file:///${path.replace(/^\//, '')}`);
     model = monacoModule.editor.createModel(content, getLanguage(filename), uri);
-    fileModels.set(filename, model);
+    fileModels.set(path, model);
   }
 
   await nextTick();
 
   if (!editor && monacoContainer.value) {
-    await initEditor('', filename);
+    await initEditor('', filename, path);
   }
 
   if (editor && model) {
@@ -850,7 +1172,7 @@ async function openFile(filename: string) {
   saveStatus.value = 'idle';
 }
 
-async function initEditor(content: string, filename: string) {
+async function initEditor(content: string, filename: string, path: string) {
   // Monaco Editor — the core editor component
   monacoModule = await import('monaco-editor');
 
@@ -858,11 +1180,11 @@ async function initEditor(content: string, filename: string) {
     getWorker() { return null as any; },
   };
 
-  let model = fileModels.get(filename);
+  let model = fileModels.get(path);
   if (!model) {
-    const uri = monacoModule.Uri.parse(`file:///${filename}`);
+    const uri = monacoModule.Uri.parse(`file:///${path.replace(/^\//, '')}`);
     model = monacoModule.editor.createModel(content, getLanguage(filename), uri);
-    fileModels.set(filename, model);
+    fileModels.set(path, model);
   }
 
   editor = monacoModule.editor.create(monacoContainer.value!, {
@@ -922,7 +1244,7 @@ async function initEditor(content: string, filename: string) {
 
   editor.onDidChangeModelContent(() => {
     if (isLoadingFile) return;
-    const tab = openTabs.value.find(t => t.name === currentFile.value);
+    const tab = openTabs.value.find(t => t.path === currentFile.value);
     if (tab) tab.modified = true;
     scheduleSave();
   });
@@ -946,9 +1268,9 @@ async function saveCurrentFile() {
   try {
     saveStatus.value = 'saving';
     const content = editor.getValue();
-    await saveFile(currentFile.value, content);
+    await opfsSaveFile(currentFile.value, content);
     saveStatus.value = 'saved';
-    const tab = openTabs.value.find(t => t.name === currentFile.value);
+    const tab = openTabs.value.find(t => t.path === currentFile.value);
     if (tab) tab.modified = false;
   } catch (e) {
     console.warn('Failed to save to OPFS:', e);
@@ -957,34 +1279,37 @@ async function saveCurrentFile() {
   }
 }
 
-async function removeFile(filename: string) {
+async function removeFile(path: string) {
   contextMenu.show = false;
-  if (!confirm(`Delete "${filename}"?`)) return;
-  await deleteFile(filename);
+  const parts = getPathParts(path);
+  const name = parts[parts.length - 1] || path;
+  if (!confirm(`Delete "${name}"?`)) return;
+  await opfsDeleteFile(path);
 
-  const tabIdx = openTabs.value.findIndex(t => t.name === filename);
+  const tabIdx = openTabs.value.findIndex(t => t.path === path);
   if (tabIdx !== -1) {
-    const model = fileModels.get(filename);
-    if (model) { model.dispose(); fileModels.delete(filename); }
+    const model = fileModels.get(path);
+    if (model) { model.dispose(); fileModels.delete(path); }
     openTabs.value.splice(tabIdx, 1);
   }
 
-  if (currentFile.value === filename) {
+  if (currentFile.value === path) {
     if (openTabs.value.length > 0) {
-      await openFile(openTabs.value[0].name);
+      await openFile(openTabs.value[0].path);
     } else {
       currentFile.value = null;
     }
   }
 
-  await refreshFiles();
-  notify(`Deleted ${filename}`, 'info');
+  await refreshTree();
+  notify(`Deleted ${name}`, 'info');
 }
 
 // ─── Rename ─────────────────────────────────────────
-function startRenaming(filename: string) {
-  renamingFile.value = filename;
-  renameValue.value = filename;
+function startRenaming(path: string) {
+  const parts = getPathParts(path);
+  renamingFile.value = path;
+  renameValue.value = parts[parts.length - 1] || '';
   nextTick(() => {
     const input = renameInput.value;
     if (Array.isArray(input) && input[0]) {
@@ -1002,27 +1327,35 @@ function cancelRename() {
 }
 
 async function finishRename() {
-  const oldName = renamingFile.value;
+  const oldPath = renamingFile.value;
   const newName = renameValue.value.trim();
   renamingFile.value = null;
-  if (!oldName || !newName || oldName === newName) return;
+  if (!oldPath || !newName) return;
+  const oldParts = getPathParts(oldPath);
+  const oldName = oldParts[oldParts.length - 1] || '';
+  if (oldName === newName) return;
 
-  const success = await renameFile(oldName, newName);
+  // Build new path
+  const dirParts = oldParts.slice(0, -1);
+  const newPath = '/' + [...dirParts, newName].join('/');
+
+  const success = await opfsRenameFile(oldPath, newPath);
   if (!success) { notify('Failed to rename file', 'error'); return; }
 
-  const tab = openTabs.value.find(t => t.name === oldName);
+  const tab = openTabs.value.find(t => t.path === oldPath);
   if (tab) {
+    tab.path = newPath;
     tab.name = newName;
-    const model = fileModels.get(oldName);
+    const model = fileModels.get(oldPath);
     if (model) {
-      fileModels.delete(oldName);
+      fileModels.delete(oldPath);
       const content = model.getValue();
       model.dispose();
       if (monacoModule) {
-        const uri = monacoModule.Uri.parse(`file:///${newName}`);
+        const uri = monacoModule.Uri.parse(`file:///${newPath.replace(/^\//, '')}`);
         const newModel = monacoModule.editor.createModel(content, getLanguage(newName), uri);
-        fileModels.set(newName, newModel);
-        if (currentFile.value === oldName && editor) {
+        fileModels.set(newPath, newModel);
+        if (currentFile.value === oldPath && editor) {
           isLoadingFile = true;
           editor.setModel(newModel);
           isLoadingFile = false;
@@ -1031,42 +1364,48 @@ async function finishRename() {
     }
   }
 
-  if (currentFile.value === oldName) currentFile.value = newName;
-  await refreshFiles();
+  if (currentFile.value === oldPath) currentFile.value = newPath;
+  await refreshTree();
   notify(`Renamed to ${newName}`, 'success');
 }
 
 // ─── Context Menu ───────────────────────────────────
-function showFileContextMenu(event: MouseEvent, filename: string) {
+function showFileContextMenu(event: MouseEvent, path: string) {
+  const parts = getPathParts(path);
   contextMenu.show = true;
   contextMenu.x = event.clientX;
   contextMenu.y = event.clientY;
-  contextMenu.file = filename;
+  contextMenu.file = parts[parts.length - 1] || '';
+  contextMenu.path = path;
 }
 
 function renameFileFromContext() {
-  const file = contextMenu.file;
+  const path = contextMenu.path;
   contextMenu.show = false;
-  startRenaming(file);
+  startRenaming(path);
 }
 
 async function duplicateFileFromContext() {
-  const file = contextMenu.file;
+  const path = contextMenu.path;
+  const name = contextMenu.file;
   contextMenu.show = false;
-  const content = await loadFile(file) || '';
-  const ext = file.includes('.') ? '.' + file.split('.').pop() : '';
-  const base = file.includes('.') ? file.slice(0, file.lastIndexOf('.')) : file;
+  const content = await opfsReadFile(path) || '';
+  const ext = name.includes('.') ? '.' + name.split('.').pop() : '';
+  const base = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
   const newName = `${base}-copy${ext}`;
-  await saveFile(newName, content);
-  await refreshFiles();
-  await openFile(newName);
+  const parts = getPathParts(path);
+  const dirParts = parts.slice(0, -1);
+  const newPath = '/' + [...dirParts, newName].join('/');
+  await opfsSaveFile(newPath, content);
+  await refreshTree();
+  await openFile(newPath);
   notify(`Duplicated as ${newName}`, 'success');
 }
 
 function deleteFileFromContext() {
-  const file = contextMenu.file;
+  const path = contextMenu.path;
   contextMenu.show = false;
-  removeFile(file);
+  removeFile(path);
 }
 
 // ─── Command Palette ────────────────────────────────
@@ -1108,7 +1447,11 @@ async function performSidebarSearch() {
 }
 
 async function openSearchResultFromSidebar(result: SearchResult) {
-  await openFile(result.file);
+  // result.file is relative to project root
+  const fullPath = projectRoot.value
+    ? normalizePath(projectRoot.value + '/' + result.file)
+    : result.file;
+  await openFile(fullPath);
   if (editor) {
     editor.revealLineInCenter(result.line);
     editor.setPosition({ lineNumber: result.line, column: 1 });
@@ -1144,197 +1487,18 @@ function togglePanel(panel: 'explorer' | 'search' | 'extensions') {
   }
 }
 
-// ─── Terminal (xterm.js integrated terminal) ─
-const TERM_PROMPT = '\r\n\x1b[1;34mjs\x1b[0m \x1b[1;32m>\x1b[0m ';
-
+// ─── Terminal (SharedTerminal component) ─
 function toggleTerminal() {
   terminalVisible.value = !terminalVisible.value;
   if (terminalVisible.value) {
-    nextTick(() => initTerminal());
+    nextTick(() => {
+      if (terminalRef.value) terminalRef.value.fit();
+    });
   }
-}
-
-function initTerminal() {
-  if (terminalInitialized || !terminalContainer.value) return;
-  terminalInitialized = true;
-
-  terminal = new Terminal({
-    theme: {
-      background: '#1e1e1e',
-      foreground: '#cccccc',
-      cursor: '#aeafad',
-      selectionBackground: '#264f78',
-      black: '#1e1e1e',
-      red: '#f44747',
-      green: '#6a9955',
-      yellow: '#dcdcaa',
-      blue: '#569cd6',
-      magenta: '#c586c0',
-      cyan: '#4ec9b0',
-      white: '#d4d4d4',
-      brightBlack: '#808080',
-      brightRed: '#f44747',
-      brightGreen: '#6a9955',
-      brightYellow: '#dcdcaa',
-      brightBlue: '#569cd6',
-      brightMagenta: '#c586c0',
-      brightCyan: '#4ec9b0',
-      brightWhite: '#ffffff',
-    },
-    fontFamily: "'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
-    fontSize: 13,
-    cursorBlink: true,
-    convertEol: true,
-  });
-
-  fitAddon = new FitAddon();
-  terminal.loadAddon(fitAddon);
-  terminal.open(terminalContainer.value);
-  fitAddon.fit();
-
-  terminal.writeln('\x1b[1;36m  Stark Code Terminal\x1b[0m \x1b[2m(powered by xterm.js)\x1b[0m');
-  terminal.writeln('  JavaScript REPL + OPFS file commands. Type \x1b[1;33mhelp\x1b[0m for commands.');
-  terminal.write(TERM_PROMPT);
-
-  terminal.onData((data) => handleTerminalInput(data));
-
-  const resizeObserver = new ResizeObserver(() => {
-    if (fitAddon) fitAddon.fit();
-  });
-  resizeObserver.observe(terminalContainer.value);
-}
-
-function handleTerminalInput(data: string) {
-  if (!terminal) return;
-  for (const ch of data) {
-    if (ch === '\r') {
-      terminal.write('\r\n');
-      executeTerminalCommand(terminalInputBuffer.trim());
-      terminalInputBuffer = '';
-    } else if (ch === '\x7f') {
-      if (terminalInputBuffer.length > 0) {
-        terminalInputBuffer = terminalInputBuffer.slice(0, -1);
-        terminal.write('\b \b');
-      }
-    } else if (ch === '\x03') {
-      terminalInputBuffer = '';
-      terminal.write('^C');
-      terminal.write(TERM_PROMPT);
-    } else if (ch >= '\x20') {
-      terminalInputBuffer += ch;
-      terminal.write(ch);
-    }
-  }
-}
-
-async function executeTerminalCommand(input: string) {
-  if (!terminal) return;
-  if (!input) { terminal.write(TERM_PROMPT); return; }
-
-  const parts = input.split(/\s+/);
-  const cmd = parts[0];
-  const args = parts.slice(1);
-
-  try {
-    switch (cmd) {
-      case 'help':
-        terminal.writeln('\x1b[1;33mAvailable commands:\x1b[0m');
-        terminal.writeln('  \x1b[1;32mls\x1b[0m              List files in OPFS');
-        terminal.writeln('  \x1b[1;32mcat\x1b[0m <file>       Show file contents');
-        terminal.writeln('  \x1b[1;32mtouch\x1b[0m <file>     Create an empty file');
-        terminal.writeln('  \x1b[1;32mrm\x1b[0m <file>        Delete a file');
-        terminal.writeln('  \x1b[1;32mecho\x1b[0m <text>      Print text');
-        terminal.writeln('  \x1b[1;32mwc\x1b[0m <file>        Word/line/char count');
-        terminal.writeln('  \x1b[1;32mhead\x1b[0m <file> [n]  Show first n lines');
-        terminal.writeln('  \x1b[1;32mclear\x1b[0m            Clear the terminal');
-        terminal.writeln('  \x1b[1;32mhelp\x1b[0m             Show this help');
-        terminal.writeln('  \x1b[1;36m<expr>\x1b[0m           Evaluate JavaScript');
-        break;
-
-      case 'ls': {
-        const allFiles = await listFiles();
-        if (allFiles.length === 0) {
-          terminal.writeln('\x1b[2m(no files)\x1b[0m');
-        } else {
-          for (const f of allFiles) terminal.writeln(`  \x1b[1;34m${f}\x1b[0m`);
-          terminal.writeln(`\x1b[2m${allFiles.length} file(s)\x1b[0m`);
-        }
-        break;
-      }
-
-      case 'cat': {
-        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: cat <filename>\x1b[0m'); break; }
-        const content = await loadFile(args[0]);
-        if (content === null) {
-          terminal.writeln(`\x1b[1;31mFile not found: ${args[0]}\x1b[0m`);
-        } else {
-          for (const line of content.split('\n')) terminal.writeln(line);
-        }
-        break;
-      }
-
-      case 'touch': {
-        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: touch <filename>\x1b[0m'); break; }
-        await saveFile(args[0], '');
-        await refreshFiles();
-        terminal.writeln(`\x1b[1;32mCreated ${args[0]}\x1b[0m`);
-        break;
-      }
-
-      case 'rm': {
-        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: rm <filename>\x1b[0m'); break; }
-        const ok = await deleteFile(args[0]);
-        await refreshFiles();
-        terminal.writeln(ok ? `\x1b[1;32mDeleted ${args[0]}\x1b[0m` : `\x1b[1;31mFailed: ${args[0]}\x1b[0m`);
-        break;
-      }
-
-      case 'echo':
-        terminal.writeln(args.join(' '));
-        break;
-
-      case 'wc': {
-        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: wc <filename>\x1b[0m'); break; }
-        const wc = await loadFile(args[0]);
-        if (wc === null) { terminal.writeln(`\x1b[1;31mFile not found: ${args[0]}\x1b[0m`); break; }
-        terminal.writeln(`  ${wc.split('\n').length} lines, ${wc.split(/\s+/).filter(Boolean).length} words, ${wc.length} chars`);
-        break;
-      }
-
-      case 'head': {
-        if (!args[0]) { terminal.writeln('\x1b[1;31mUsage: head <file> [n]\x1b[0m'); break; }
-        const hc = await loadFile(args[0]);
-        if (hc === null) { terminal.writeln(`\x1b[1;31mFile not found: ${args[0]}\x1b[0m`); break; }
-        for (const line of hc.split('\n').slice(0, parseInt(args[1]) || 10)) terminal.writeln(line);
-        break;
-      }
-
-      case 'clear':
-        terminal.clear();
-        break;
-
-      default: {
-        try {
-          const result = (0, eval)(input);
-          if (result !== undefined) {
-            const str = typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
-            for (const line of str.split('\n')) terminal.writeln(`\x1b[1;33m${line}\x1b[0m`);
-          }
-        } catch (e: any) {
-          terminal.writeln(`\x1b[1;31m${e.message || e}\x1b[0m`);
-        }
-        break;
-      }
-    }
-  } catch (e: any) {
-    terminal.writeln(`\x1b[1;31mError: ${e.message || e}\x1b[0m`);
-  }
-
-  terminal.write(TERM_PROMPT);
 }
 
 function clearTerminal() {
-  if (terminal) terminal.clear();
+  if (terminalRef.value) terminalRef.value.clear();
 }
 
 // ─── Keyboard Shortcuts ─────────────────────────────
@@ -1368,7 +1532,10 @@ function handleKeydown(e: KeyboardEvent) {
 
 // ─── Lifecycle ──────────────────────────────────────
 onMounted(async () => {
-  await refreshFiles();
+  opfsRoot = await getStarkOpfsRoot();
+  if (opfsRoot) {
+    fs = buildOpfsFS(opfsRoot);
+  }
   await refreshExtensionState();
   window.addEventListener('keydown', handleKeydown);
 });
@@ -1377,7 +1544,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
   if (saveTimeout) clearTimeout(saveTimeout);
   if (editor) editor.dispose();
-  if (terminal) terminal.dispose();
   for (const disposer of activeExtDisposers.values()) disposer();
   activeExtDisposers.clear();
   for (const model of fileModels.values()) model.dispose();
@@ -1436,12 +1602,33 @@ onBeforeUnmount(() => {
 /* ─── Sidebar ──────────────────────────────────── */
 .sidebar {
   width: 260px;
-  min-width: 260px;
+  min-width: 150px;
+  max-width: 600px;
   background: #252526;
   border-right: 1px solid #3c3c3c;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* ─── Sidebar Resize Handle ────────────────────── */
+.sidebar-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  z-index: 10;
+}
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
+  background: #007acc;
+}
+
+@media (pointer: coarse) {
+  .sidebar-resize-handle {
+    width: 8px;
+  }
 }
 
 .sidebar-header {
@@ -1491,6 +1678,20 @@ onBeforeUnmount(() => {
 
 .file-item:hover { background: #2a2d2e; }
 .file-item.active { background: #37373d; color: #ffffff; }
+
+.tree-toggle {
+  font-size: 12px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  color: #888;
+}
+.tree-toggle-spacer {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.folder-icon { color: #dcb67a !important; }
 
 .file-codicon {
   font-size: 14px;

@@ -11,9 +11,8 @@
  *
  * This page wraps the shared SharedTerminal component and provides
  * bundling. The initial path can be passed via __STARK_CONTEXT__.args[0].
+ * SharedTerminal is auto-imported from the shared Nuxt layer.
  */
-
-import SharedTerminal from '../../../examples/shared/components/SharedTerminal.vue';
 
 function getInitialPath(): string {
   try {

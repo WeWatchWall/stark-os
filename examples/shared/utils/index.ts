@@ -37,11 +37,11 @@ export {
   normalizePath as terminalNormalizePath,
   type TerminalFS,
   type CommandContext,
-} from './terminal-commands';
+} from './terminal/commands';
 
 export {
   parseCommandLine,
   executePlan,
   type ShellState,
   type ExecutionPlan,
-} from './terminal-shell';
+} from './terminal/shell';

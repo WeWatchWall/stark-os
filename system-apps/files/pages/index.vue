@@ -149,18 +149,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import {
-  getStarkOpfsRoot,
-  getPathParts,
-  normalizePath,
-  getDirectoryHandle,
-  readDirItems,
-  formatSize,
-  formatType,
-  getIconSvg,
-  getIconColor,
-  type FileItem,
-} from '../../../examples/shared/utils';
+// Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
+import type { FileItem } from '../../../examples/shared/utils';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';

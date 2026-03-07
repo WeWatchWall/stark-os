@@ -16,8 +16,8 @@
  */
 
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
-import { commands, normalizePath, type TerminalFS } from '../utils/terminal-commands';
-import { parseCommandLine, executePlan, type ShellState } from '../utils/terminal-shell';
+import { commands, normalizePath, type TerminalFS } from '../utils/terminal/commands';
+import { parseCommandLine, executePlan, type ShellState } from '../utils/terminal/shell';
 
 const props = withDefaults(defineProps<{
   initialPath?: string;

@@ -472,18 +472,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue';
-import SharedTerminal from '../../shared/components/SharedTerminal.vue';
-import FilesPicker from '../../shared/components/FilesPicker.vue';
+// Types need explicit imports; components and util functions are auto-imported by the shared Nuxt layer
 import type { PickerResult, ExtensionFilter } from '../../shared/components/FilesPicker.vue';
-import {
-  getStarkOpfsRoot,
-  buildOpfsFS,
-  normalizePath,
-  getPathParts,
-  getIconSvg,
-  getIconColor,
-  type ReadonlyFS,
-} from '../../shared/utils';
+import type { ReadonlyFS } from '../../shared/utils';
 import {
   extensionCatalog,
   loadExtensionState,

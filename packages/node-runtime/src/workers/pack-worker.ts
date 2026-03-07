@@ -14,7 +14,7 @@
 
 import http from 'http';
 import https from 'https';
-import os from 'os';
+import { homedir } from 'os';
 import { Script, createContext } from 'vm';
 import {
   formatLogArgs,
@@ -242,7 +242,7 @@ async function executePack(request: WorkerRequest): Promise<void> {
     const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
     const { join, dirname } = await import('node:path');
     // Volume data lives under ~/.stark/nodes/volumes
-    const baseDir = join(os.homedir(), '.stark', 'nodes', 'volumes');
+    const baseDir = join(homedir(), '.stark', 'nodes', 'volumes');
 
     (context as Record<string, unknown>).readFile = async (filePath: string): Promise<string> => {
       const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));

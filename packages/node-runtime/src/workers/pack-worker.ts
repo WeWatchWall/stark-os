@@ -14,6 +14,7 @@
 
 import http from 'http';
 import https from 'https';
+import os from 'os';
 import { Script, createContext } from 'vm';
 import {
   formatLogArgs,
@@ -240,8 +241,8 @@ async function executePack(request: WorkerRequest): Promise<void> {
   if (context.volumeMounts && context.volumeMounts.length > 0) {
     const { readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
     const { join, dirname } = await import('node:path');
-    // Volume data lives alongside the agent's working directory
-    const baseDir = join(process.cwd(), 'volumes');
+    // Volume data lives under ~/.stark/nodes/volumes
+    const baseDir = join(os.homedir(), '.stark', 'nodes', 'volumes');
 
     (context as Record<string, unknown>).readFile = async (filePath: string): Promise<string> => {
       const mount = context.volumeMounts!.find(m => filePath.startsWith(m.mountPath));

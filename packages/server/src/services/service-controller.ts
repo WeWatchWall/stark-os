@@ -31,7 +31,7 @@ const logger = createServiceLogger({
  * Service controller configuration
  */
 export interface ServiceControllerConfig {
-  /** Interval between reconciliation runs in milliseconds (default: 10000) */
+  /** Fallback interval between reconciliation runs in milliseconds (default: 60000). Primary reconciliation is reactive via triggerReconcile(). */
   reconcileInterval?: number;
   /** Whether to start the controller automatically (default: true) */
   autoStart?: boolean;
@@ -49,7 +49,7 @@ export interface ServiceControllerConfig {
  * Default controller configuration
  */
 const DEFAULT_CONFIG: Required<ServiceControllerConfig> = {
-  reconcileInterval: 10000,
+  reconcileInterval: 60_000,
   autoStart: true,
   maxConsecutiveFailures: 3,
   initialBackoffMs: 60000, // 1 minute

@@ -27,7 +27,7 @@ const logger = createServiceLogger({
  * Scheduler service configuration
  */
 export interface SchedulerServiceConfig {
-  /** Interval between scheduling runs in milliseconds (default: 5000) */
+  /** Fallback interval between scheduling runs in milliseconds (default: 30000). Primary scheduling is reactive via triggerSchedule(). */
   scheduleInterval?: number;
   /** Maximum pods to schedule per run (default: 10) */
   maxPodsPerRun?: number;
@@ -39,7 +39,7 @@ export interface SchedulerServiceConfig {
  * Default scheduler configuration
  */
 const DEFAULT_CONFIG: Required<SchedulerServiceConfig> = {
-  scheduleInterval: 5000,
+  scheduleInterval: 30_000,
   maxPodsPerRun: 10,
   autoStart: true,
 };

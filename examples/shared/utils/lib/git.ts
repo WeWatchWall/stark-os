@@ -779,9 +779,9 @@ export async function gitListBranches(
   // remote entries are plain branch names (e.g. 'main', 'dev')
   // Filter out HEAD pointer that isomorphic-git sometimes includes
   const localSet = new Set(local);
-  for (const r of remote) {
-    if (r !== 'HEAD' && !localSet.has(r)) {
-      local.push(r);
+  for (const branch of remote) {
+    if (branch !== 'HEAD' && !localSet.has(branch)) {
+      local.push(branch);
     }
   }
   return local;

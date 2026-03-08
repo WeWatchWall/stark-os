@@ -46,29 +46,39 @@
             <span class="node-icon">⎈</span>
             <span class="node-name">{{ data.nodeName }}</span>
             <Tag :value="data.nodeStatus" :severity="nodeStatusSeverity(data.nodeStatus)" class="node-tag" />
+            <Button
+              icon="pi pi-trash"
+              label="Delete Node"
+              severity="danger"
+              size="small"
+              text
+              :loading="deletingNodes.has(data.nodeId)"
+              @click="deleteNode(data.nodeId, data.nodeName)"
+              class="node-delete-btn"
+            />
           </div>
         </td>
       </template>
 
-      <Column field="shortId" header="ID">
+      <Column field="shortId" header="ID" sortable>
         <template #body="{ data }">
           <span class="mono">{{ data.shortId }}</span>
         </template>
       </Column>
-      <Column field="packName" header="Pack" />
-      <Column field="nodeName" header="Node" />
-      <Column field="status" header="Status">
+      <Column field="packName" header="Pack" sortable />
+      <Column field="nodeName" header="Node" sortable />
+      <Column field="status" header="Status" sortable>
         <template #body="{ data }">
           <Tag :value="data.status" :severity="podStatusSeverity(data.status)" />
         </template>
       </Column>
-      <Column field="packVersion" header="Version">
+      <Column field="packVersion" header="Version" sortable>
         <template #body="{ data }">
           <span class="mono">{{ data.packVersion }}</span>
         </template>
       </Column>
-      <Column field="namespace" header="Namespace" />
-      <Column field="age" header="Age" />
+      <Column field="namespace" header="Namespace" sortable />
+      <Column field="age" header="Age" sortable />
       <Column header="Actions">
         <template #body="{ data }">
           <Button
@@ -127,6 +137,7 @@ interface PodRow {
   namespace: string;
   age: string;
   nodeName: string;
+  nodeId: string;
   nodeStatus: string;
   machineIndex: number;
   groupKey: string;
@@ -139,6 +150,7 @@ const hasData = ref(false);
 const errorMsg = ref('');
 const allPods = ref<PodRow[]>([]);
 const stoppingPods = ref<Set<string>>(new Set());
+const deletingNodes = ref<Set<string>>(new Set());
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const api = useStarkApi();
@@ -244,6 +256,7 @@ async function refresh() {
         namespace: p.namespace,
         age: formatAge(p.startedAt ?? p.createdAt),
         nodeName,
+        nodeId: p.nodeId ?? '',
         nodeStatus,
         machineIndex,
         groupKey: `${machineIndex}-${nodeName}`,
@@ -270,6 +283,21 @@ async function stopPod(podId: string) {
     toast.add({ severity: 'error', summary: 'Stop Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
   } finally {
     stoppingPods.value.delete(podId);
+  }
+}
+
+async function deleteNode(nodeId: string, nodeName: string) {
+  if (!nodeId) return;
+  deletingNodes.value.add(nodeId);
+  try {
+    await api.node.delete(nodeId);
+    toast.add({ severity: 'success', summary: 'Node Deleted', detail: `Node "${nodeName}" has been removed`, life: 5000 });
+    await refresh();
+  } catch (err: unknown) {
+    console.error('Failed to delete node:', err);
+    toast.add({ severity: 'error', summary: 'Delete Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
+  } finally {
+    deletingNodes.value.delete(nodeId);
   }
 }
 
@@ -377,6 +405,11 @@ onBeforeUnmount(() => {
 
 .node-tag {
   font-size: 0.6rem;
+}
+
+.node-delete-btn {
+  margin-left: auto;
+  font-size: 0.7rem;
 }
 
 .mono {

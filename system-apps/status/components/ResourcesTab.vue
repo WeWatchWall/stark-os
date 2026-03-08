@@ -52,7 +52,7 @@
             <div class="stat-row">
               <Knob
                 :modelValue="resources.pods.running"
-                :max="Math.max(resources.pods.total, 1)"
+                :max="Math.max(resources.podCapacity.total, 1)"
                 :size="80"
                 :strokeWidth="6"
                 valueColor="#22c55e"
@@ -62,7 +62,7 @@
                 valueTemplate="{value}"
               />
               <div class="stat-details">
-                <div class="stat-line"><span class="stat-value">{{ resources.pods.total }}</span> total</div>
+                <div class="stat-line"><span class="stat-value">{{ resources.podCapacity.total }}</span> capacity</div>
                 <div class="stat-line success"><span class="stat-value">{{ resources.pods.running }}</span> running</div>
                 <div v-if="resources.pods.pending > 0" class="stat-line info"><span class="stat-value">{{ resources.pods.pending }}</span> pending</div>
                 <div v-if="resources.pods.failed > 0" class="stat-line danger"><span class="stat-value">{{ resources.pods.failed }}</span> failed</div>
@@ -73,26 +73,26 @@
         </Card>
       </div>
 
-      <!-- Resource graphs -->
+      <!-- Per-node resource graphs -->
       <div class="graphs-grid">
         <div class="graph-panel">
           <div class="graph-title"><span class="card-icon cpu-icon">⚡</span> CPU <span class="graph-subtitle">{{ formatCpu(resources.cpu.allocated) }} / {{ formatCpu(resources.cpu.total) }}</span></div>
-          <Chart type="line" :data="cpuChartData" :options="chartOptions" class="resource-chart" />
+          <Chart type="line" :data="cpuChartData" :options="perNodeChartOptions" class="resource-chart" />
         </div>
 
         <div class="graph-panel">
           <div class="graph-title"><span class="card-icon mem-icon">🧠</span> Memory <span class="graph-subtitle">{{ formatMemory(resources.memory.allocated) }} / {{ formatMemory(resources.memory.total) }}</span></div>
-          <Chart type="line" :data="memoryChartData" :options="chartOptions" class="resource-chart" />
+          <Chart type="line" :data="memoryChartData" :options="perNodeChartOptions" class="resource-chart" />
         </div>
 
         <div class="graph-panel">
           <div class="graph-title"><span class="card-icon storage-icon">💾</span> Storage <span class="graph-subtitle">{{ formatMemory(resources.storage.allocated) }} / {{ formatMemory(resources.storage.total) }}</span></div>
-          <Chart type="line" :data="storageChartData" :options="chartOptions" class="resource-chart" />
+          <Chart type="line" :data="storageChartData" :options="perNodeChartOptions" class="resource-chart" />
         </div>
 
         <div class="graph-panel">
           <div class="graph-title"><span class="card-icon cap-icon">📦</span> Pod Capacity <span class="graph-subtitle">{{ resources.podCapacity.allocated }} / {{ resources.podCapacity.total }}</span></div>
-          <Chart type="line" :data="podCapChartData" :options="chartOptions" class="resource-chart" />
+          <Chart type="line" :data="podCapChartData" :options="perNodeChartOptions" class="resource-chart" />
         </div>
       </div>
     </div>
@@ -129,9 +129,22 @@ interface ResourceState {
   podCapacity: { total: number; allocated: number; percent: number };
 }
 
+interface PerNodeHistory {
+  cpu: number[];
+  memory: number[];
+  storage: number[];
+  podCap: number[];
+}
+
 /* ── Constants ── */
 
 const MAX_HISTORY = 60; // keep last 60 samples (60 seconds at 1s interval)
+
+/** Distinct colors for per-node chart lines */
+const NODE_COLORS = [
+  '#f59e0b', '#a78bfa', '#6366f1', '#ec4899', '#22c55e',
+  '#3b82f6', '#ef4444', '#14b8a6', '#f97316', '#8b5cf6',
+];
 
 /* ── State ── */
 
@@ -149,11 +162,10 @@ const resources = reactive<ResourceState>({
   podCapacity: { total: 0, allocated: 0, percent: 0 },
 });
 
-// Rolling history for charts
-const cpuHistory = ref<number[]>([]);
-const memoryHistory = ref<number[]>([]);
-const storageHistory = ref<number[]>([]);
-const podCapHistory = ref<number[]>([]);
+// Per-node rolling history keyed by node name (stable across refreshes)
+const nodeHistories = ref<Map<string, PerNodeHistory>>(new Map());
+// Ordered list of node names for consistent chart rendering
+const nodeNames = ref<string[]>([]);
 const timeLabels = ref<string[]>([]);
 
 const api = useStarkApi();
@@ -182,20 +194,32 @@ function pushHistory(arr: number[], value: number) {
 
 /* ── Chart config ── */
 
-const chartOptions = {
+const perNodeChartOptions = {
   responsive: true,
   maintainAspectRatio: false,
   animation: { duration: 0 },
   interaction: { intersect: false, mode: 'index' as const },
   plugins: {
-    legend: { display: false },
+    legend: {
+      display: true,
+      position: 'bottom' as const,
+      labels: {
+        color: '#94a3b8',
+        boxWidth: 12,
+        padding: 8,
+        font: { size: 10 },
+      },
+    },
     tooltip: {
       backgroundColor: '#1e293b',
       titleColor: '#e2e8f0',
       bodyColor: '#94a3b8',
       borderColor: 'rgba(255,255,255,0.1)',
       borderWidth: 1,
-      callbacks: { label: (ctx: unknown) => `${(ctx as { parsed: { y: number } }).parsed.y}%` },
+      callbacks: { label: (ctx: unknown) => {
+        const c = ctx as { dataset: { label?: string }; parsed: { y: number } };
+        return `${c.dataset.label ?? ''}: ${c.parsed.y}%`;
+      }},
     },
   },
   scales: {
@@ -219,24 +243,30 @@ const chartOptions = {
   },
 };
 
-function makeChartData(history: number[], color: string, bgColor: string) {
-  // Spread-copy arrays to break Vue reactivity chain — Chart.js mutates
-  // these internally which would otherwise trigger an infinite reactive loop.
+function makePerNodeChartData(metric: 'cpu' | 'memory' | 'storage' | 'podCap') {
+  const names = nodeNames.value;
+  const datasets = names.map((name, idx) => {
+    const history = nodeHistories.value.get(name);
+    const data = history ? [...history[metric]] : [];
+    const color = NODE_COLORS[idx % NODE_COLORS.length];
+    return {
+      label: name,
+      data,
+      borderColor: color,
+      backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+      fill: false,
+    };
+  });
   return {
     labels: [...timeLabels.value],
-    datasets: [{
-      data: [...history],
-      borderColor: color,
-      backgroundColor: bgColor,
-      fill: true,
-    }],
+    datasets,
   };
 }
 
-const cpuChartData = computed(() => makeChartData(cpuHistory.value, '#f59e0b', 'rgba(245,158,11,0.1)'));
-const memoryChartData = computed(() => makeChartData(memoryHistory.value, '#a78bfa', 'rgba(167,139,250,0.1)'));
-const storageChartData = computed(() => makeChartData(storageHistory.value, '#6366f1', 'rgba(99,102,241,0.1)'));
-const podCapChartData = computed(() => makeChartData(podCapHistory.value, '#ec4899', 'rgba(236,72,153,0.1)'));
+const cpuChartData = computed(() => makePerNodeChartData('cpu'));
+const memoryChartData = computed(() => makePerNodeChartData('memory'));
+const storageChartData = computed(() => makePerNodeChartData('storage'));
+const podCapChartData = computed(() => makePerNodeChartData('podCap'));
 
 /* ── Data loading ── */
 
@@ -290,16 +320,35 @@ async function fetchResources() {
     resources.storage = { total: totalStorage, allocated: allocStorage, percent: pct(allocStorage, totalStorage) };
     resources.podCapacity = { total: totalPodCap, allocated: allocPodCap, percent: pct(allocPodCap, totalPodCap) };
 
-    // Update rolling history
+    // Update per-node rolling history
     const now = new Date();
     const label = `${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     timeLabels.value.push(label);
     if (timeLabels.value.length > MAX_HISTORY) timeLabels.value.shift();
 
-    pushHistory(cpuHistory.value, resources.cpu.percent);
-    pushHistory(memoryHistory.value, resources.memory.percent);
-    pushHistory(storageHistory.value, resources.storage.percent);
-    pushHistory(podCapHistory.value, resources.podCapacity.percent);
+    // Maintain stable ordering — add new nodes at end, keep existing order
+    const currentNames = new Set(nodeNames.value);
+    for (const n of nodes) {
+      if (!currentNames.has(n.name)) {
+        nodeNames.value.push(n.name);
+        currentNames.add(n.name);
+      }
+    }
+
+    // Push per-node data points
+    for (const n of nodes) {
+      let history = nodeHistories.value.get(n.name);
+      if (!history) {
+        history = { cpu: [], memory: [], storage: [], podCap: [] };
+        nodeHistories.value.set(n.name, history);
+      }
+      const alloc = n.allocatable ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
+      const used = n.allocated ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
+      pushHistory(history.cpu, pct(used.cpu, alloc.cpu));
+      pushHistory(history.memory, pct(used.memory, alloc.memory));
+      pushHistory(history.storage, pct(used.storage, alloc.storage));
+      pushHistory(history.podCap, pct(used.pods, alloc.pods));
+    }
 
     hasData.value = true;
     errorMsg.value = '';

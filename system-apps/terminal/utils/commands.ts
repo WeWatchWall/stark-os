@@ -1865,7 +1865,12 @@ commands['stark'] = async (ctx) => {
             }
             return out;
           }
-          default: return `Unknown node subcommand: ${action}\nAvailable: list, status, agent, logs\n`;
+          case 'delete': case 'rm': {
+            const n = positionals[0]; if (!n) return 'Usage: stark node delete <name>\n';
+            await api.node.delete(n);
+            return `✓ Node deleted: ${n}\n`;
+          }
+          default: return `Unknown node subcommand: ${action}\nAvailable: list, status, agent, logs, delete\n`;
         }
       }
       case 'pod': {

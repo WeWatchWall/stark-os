@@ -96,6 +96,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
       async list(options) { return base.node.list(options ?? { pageSize: DEFAULT_BROWSER_PAGE_SIZE }); },
       status: base.node.status.bind(base.node),
       logs: base.node.logs.bind(base.node),
+      delete: base.node.delete.bind(base.node),
     },
     pod: {
       async list(options) {

@@ -401,7 +401,7 @@
           </div>
         </div>
 
-        <template v-if="scmInitialized && !showGitSettings && !showCloneDialog">
+        <div v-if="scmInitialized && !showGitSettings && !showCloneDialog" class="scm-scroll-area">
           <!-- Commit message input -->
           <div class="scm-commit-area">
             <div class="scm-branch-row">
@@ -577,7 +577,7 @@
               </div>
             </template>
           </div>
-        </template>
+        </div>
       </template>
 
       <!-- Extensions panel -->
@@ -1112,6 +1112,7 @@ import {
   gitCommit,
   gitPush,
   gitPull,
+  gitFetch,
   gitCurrentBranch,
   gitLog,
   gitStatusMatrix,
@@ -3330,7 +3331,6 @@ function showDiffEditor(tab: Tab) {
       automaticLayout: true,
       readOnly: true,
       renderSideBySide: true,
-      theme: currentTheme.value,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
     });
@@ -3339,6 +3339,8 @@ function showDiffEditor(tab: Tab) {
   const originalModel = monacoModule.editor.createModel(oldContent, getLanguage(fileName));
   const modifiedModel = monacoModule.editor.createModel(newContent, getLanguage(fileName));
   diffEditorInstance.setModel({ original: originalModel, modified: modifiedModel });
+  // Re-apply the current theme globally so the diff editor inherits it
+  monacoModule.editor.setTheme(currentTheme.value);
 }
 
 /** Dispose the diff editor models when leaving a diff tab. */
@@ -3367,6 +3369,12 @@ async function toggleBranchPicker() {
 async function loadBranches() {
   if (!opfsRoot || !projectRoot.value) return;
   try {
+    // Fetch latest refs from remote so remote branches are up-to-date
+    try {
+      await gitFetch(opfsRoot, projectRoot.value, getGitAuth());
+    } catch {
+      // Fetch may fail if offline or no remote configured — still show local branches
+    }
     branchList.value = await gitListBranches(opfsRoot, projectRoot.value);
   } catch (err: any) {
     console.warn('Failed to list branches:', err);
@@ -3383,12 +3391,12 @@ async function switchBranch(name: string) {
   scmLoading.value = true;
   try {
     await gitCheckout(opfsRoot, projectRoot.value, name);
-    scmBranch.value = name;
+    scmBranch.value = await gitCurrentBranch(opfsRoot, projectRoot.value);
     showBranchPicker.value = false;
     await refreshScm();
     await refreshScmLog();
     await refreshTree();
-    notify(`Switched to branch: ${name}`, 'success');
+    notify(`Switched to branch: ${scmBranch.value}`, 'success');
   } catch (err: any) {
     notify('Failed to switch branch: ' + (err.message || err), 'error');
   } finally {
@@ -4317,7 +4325,7 @@ onBeforeUnmount(() => {
 
 /* ─── Editor ───────────────────────────────────── */
 #monaco-container { flex: 1; overflow: hidden; }
-#diff-container { flex: 1; overflow: hidden; }
+#diff-container { flex: 1; overflow: hidden; background: #1e1e1e; }
 
 /* ─── Terminal Panel (xterm.js) ────────────────── */
 .terminal-panel {
@@ -4980,6 +4988,12 @@ kbd {
 
 .scm-init-message {
   text-align: center;
+}
+
+.scm-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .scm-commit-area {

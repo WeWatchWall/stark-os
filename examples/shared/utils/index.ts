@@ -59,6 +59,7 @@ export {
   gitCommit,
   gitPush,
   gitPull,
+  gitFetch,
   gitCurrentBranch,
   gitLog,
   gitStatusMatrix,

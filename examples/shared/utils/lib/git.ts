@@ -87,10 +87,10 @@ export type GitStatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
 /**
  * CORS proxy URL for browser-based HTTP git operations.
- * GitHub supports CORS natively for authenticated requests (PAT/OAuth).
- * A proxy is only needed for unauthenticated clones of public repos.
- * The old `cors.isomorphic-git.org` proxy is unreliable — use a self-hosted
- * instance of https://github.com/nickvdyck/cors-proxy or similar if needed.
+ * GitHub supports CORS natively for authenticated requests (PAT/OAuth),
+ * so the proxy is ONLY needed for unauthenticated clones of public repos.
+ * When auth is provided, corsProxy is omitted so isomorphic-git talks
+ * directly to the remote (no 401/403 from the proxy).
  */
 const DEFAULT_CORS_PROXY = 'https://cors.isomorphic-git.org';
 
@@ -353,13 +353,16 @@ export async function gitClone(
   depth?: number,
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
+  // Skip CORS proxy when auth is provided — GitHub supports CORS natively
+  // for authenticated requests. The proxy causes 401/403 errors.
+  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
   await git.clone({
     fs,
     http,
     dir,
     url,
-    corsProxy: corsProxy || DEFAULT_CORS_PROXY,
-    singleBranch: true,
+    ...(proxy ? { corsProxy: proxy } : {}),
+    singleBranch: false,
     depth: depth ?? 20,
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
     onMessage: onProgress,
@@ -417,12 +420,13 @@ export async function gitPush(
   remote = 'origin',
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
+  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
   await git.push({
     fs,
     http,
     dir,
     remote,
-    corsProxy: corsProxy || DEFAULT_CORS_PROXY,
+    ...(proxy ? { corsProxy: proxy } : {}),
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
   });
 }
@@ -439,12 +443,13 @@ export async function gitPull(
   remote = 'origin',
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
+  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
   await git.pull({
     fs,
     http,
     dir,
     remote,
-    corsProxy: corsProxy || DEFAULT_CORS_PROXY,
+    ...(proxy ? { corsProxy: proxy } : {}),
     singleBranch: true,
     author: author || { name: 'User', email: 'user@example.com' },
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
@@ -754,14 +759,54 @@ export async function gitDiffWorkingFile(
 }
 
 /**
- * List all branches in the repository.
+ * List all branches in the repository (local + remote tracking).
+ * Remote branches are returned without the `remotes/origin/` prefix
+ * and de-duplicated against local branches.
  */
 export async function gitListBranches(
   rootHandle: FileSystemDirectoryHandle,
   dir: string,
 ): Promise<string[]> {
   const fs = buildGitFs(rootHandle);
-  return git.listBranches({ fs, dir });
+  const local = await git.listBranches({ fs, dir });
+  let remote: string[] = [];
+  try {
+    remote = await git.listBranches({ fs, dir, remote: 'origin' });
+  } catch {
+    // No remote configured or no remote refs yet
+  }
+  // Merge: local first, then remote names not already in local
+  // remote entries are plain branch names (e.g. 'main', 'dev')
+  // Filter out HEAD pointer that isomorphic-git sometimes includes
+  const localSet = new Set(local);
+  for (const r of remote) {
+    if (r !== 'HEAD' && !localSet.has(r)) {
+      local.push(r);
+    }
+  }
+  return local;
+}
+
+/**
+ * Fetch refs and objects from a remote.
+ */
+export async function gitFetch(
+  rootHandle: FileSystemDirectoryHandle,
+  dir: string,
+  auth?: GitAuth,
+  corsProxy?: string,
+  remote = 'origin',
+): Promise<void> {
+  const fs = buildGitFs(rootHandle);
+  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
+  await git.fetch({
+    fs,
+    http,
+    dir,
+    remote,
+    ...(proxy ? { corsProxy: proxy } : {}),
+    onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
+  });
 }
 
 /**

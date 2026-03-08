@@ -41,10 +41,17 @@
                   v-for="snap in snapOptions"
                   :key="snap.value"
                   class="snap-btn"
-                  :class="{ active: win.mobileSnap === snap.value }"
+                  :class="{ active: win.mobileSnap === snap.value && !win.minimized }"
                   @click.stop="setSnap(win.id, snap.value)"
                 >
                   {{ snap.icon }}
+                </button>
+                <button
+                  class="snap-btn minimize-btn"
+                  :class="{ active: win.minimized }"
+                  @click.stop="shell.minimizeWindow(win.id)"
+                >
+                  ─
                 </button>
               </div>
             </div>
@@ -58,16 +65,16 @@
 
           <!-- Workspace switcher at bottom -->
           <div class="workspace-bar">
-            <button
-              v-for="ws in shell.workspaces"
-              :key="ws.id"
-              class="ws-chip"
-              :class="{ active: ws.id === shell.activeWorkspaceId }"
-              @click="shell.switchWorkspace(ws.id)"
-            >
-              {{ ws.name }}
-            </button>
-            <button class="ws-chip ws-add" @click="shell.addWorkspace()" aria-label="Add workspace">＋</button>
+            <div class="ws-grid">
+              <button
+                v-for="ws in shell.workspaces"
+                :key="ws.id"
+                class="ws-cell"
+                :class="{ active: ws.id === shell.activeWorkspaceId }"
+                @click="shell.switchWorkspace(ws.id)"
+                :title="'Workspace ' + ws.name"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -339,33 +346,28 @@ function cardSwipeStyle(id: string) {
 /* ── Workspace bar ── */
 .workspace-bar {
   display: flex;
-  gap: 6px;
+  justify-content: center;
   padding: 10px 16px 14px;
   border-top: 1px solid rgba(255,255,255,0.06);
-  overflow-x: auto;
-  justify-content: center;
 }
-.ws-chip {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 16px;
-  color: #94a3b8;
-  font-size: 0.7rem;
-  padding: 5px 14px;
+.ws-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 18px);
+  grid-template-rows: repeat(2, 18px);
+  gap: 3px;
+}
+.ws-cell {
+  width: 18px;
+  height: 18px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 3px;
+  padding: 0;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.ws-chip:hover { background: rgba(255,255,255,0.1); color: #e2e8f0; }
-.ws-chip.active {
-  background: rgba(59,130,246,0.25);
-  border-color: rgba(59,130,246,0.4);
-  color: #fff;
-}
-.ws-chip.ws-add {
-  font-size: 0.85rem;
-  padding: 5px 10px;
-}
+.ws-cell:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); }
+.ws-cell.active { background: rgba(59,130,246,0.5); border-color: rgba(59,130,246,0.7); }
 
 /* ── Transition ── */
 .switcher-fade-enter-active,

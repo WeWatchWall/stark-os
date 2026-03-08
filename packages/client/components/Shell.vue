@@ -35,6 +35,12 @@
       <!-- Desktop grid surface (full-size background, behind windows) -->
       <div class="desktop-grid-surface">
         <div :id="shell.desktopContainerId" class="desktop-grid-inner" />
+        <!-- Focus overlay: prevents desktop iframe from capturing mouse when a window is focused -->
+        <div
+          v-if="shell.focusedWindowId !== null"
+          class="desktop-focus-overlay"
+          @mousedown="onDesktopOverlayClick"
+        />
       </div>
 
       <!-- Desktop watermark (always visible, behind windows) -->
@@ -80,6 +86,11 @@ function onDesktopClick(e: MouseEvent) {
   if ((e.target as HTMLElement).classList.contains('desktop')) {
     shell.clearFocus();
   }
+}
+
+function onDesktopOverlayClick() {
+  shell.clearFocus();
+  shell.hideStartMenu();
 }
 
 /** Hide start menu when signalled by the start-menu app (same-origin CustomEvent) */
@@ -166,6 +177,11 @@ onUnmounted(() => {
   border: none;
   display: block;
   background: transparent;
+}
+.desktop-focus-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
 }
 .watermark {
   width: 260px;

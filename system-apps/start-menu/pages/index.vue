@@ -403,6 +403,7 @@ onMounted(() => {
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
   text-align: left;
+  flex-shrink: 0;
 }
 .app-item:hover {
   background: rgba(59, 130, 246, 0.12);

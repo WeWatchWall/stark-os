@@ -27,18 +27,15 @@
 
       <!-- Desktop right controls -->
       <div class="taskbar-right">
-        <div class="ws-picker">
+        <div class="ws-grid">
           <button
             v-for="ws in shell.workspaces"
             :key="ws.id"
-            class="ws-btn"
+            class="ws-cell"
             :class="{ active: ws.id === shell.activeWorkspaceId }"
             @click="shell.switchWorkspace(ws.id)"
-            :title="ws.name"
-          >
-            {{ ws.name }}
-          </button>
-          <button class="ws-btn ws-add" @click="shell.addWorkspace()" title="Add workspace" aria-label="Add workspace">＋</button>
+            :title="'Workspace ' + ws.name"
+          />
         </div>
 
         <button class="icon-btn" :title="`Mode: ${shell.layoutMode}`" @click="toggleLayout">
@@ -48,7 +45,7 @@
         <button class="icon-btn sign-out" title="Sign Out" aria-label="Sign Out" @click="$emit('signout')">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1-2-2h4" />
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
             <polyline points="16 17 21 12 16 7" />
             <line x1="21" y1="12" x2="9" y2="12" />
           </svg>
@@ -249,24 +246,24 @@ function toggleLayout() {
   margin-left: auto;
 }
 
-.ws-picker {
-  display: flex;
-  gap: 3px;
+.ws-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 12px);
+  grid-template-rows: repeat(2, 12px);
+  gap: 2px;
 }
-.ws-btn {
-  background: rgba(255,255,255,0.06);
-  color: #94a3b8;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 4px;
-  padding: 3px 10px;
-  font-size: 0.7rem;
+.ws-cell {
+  width: 12px;
+  height: 12px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 2px;
+  padding: 0;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
 }
-.ws-btn:hover { background: rgba(255,255,255,0.12); color: #e2e8f0; }
-.ws-btn.active { background: rgba(59,130,246,0.3); color: #fff; border-color: rgba(59,130,246,0.5); }
-.ws-add { font-size: 0.85rem; padding: 3px 7px; }
+.ws-cell:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); }
+.ws-cell.active { background: rgba(59,130,246,0.5); border-color: rgba(59,130,246,0.7); }
 
 .icon-btn {
   background: rgba(255,255,255,0.06);

@@ -82,6 +82,45 @@ const DEFAULT_CORS_PROXY = 'https://cors.isomorphic-git.org';
 // ── OPFS → isomorphic-git filesystem adapter ─────────
 
 /**
+ * Normalize an error thrown by the OPFS API so that its `.code` property
+ * is always a string.  isomorphic-git relies on patterns like
+ *   `(err.code || '').includes('ENS')`
+ * which crash when `.code` is a number (e.g. `DOMException.code === 8`
+ * for `NotFoundError`), because `Number.prototype` has no `.includes`.
+ */
+function normalizeError(err: unknown, filepath: string): Error {
+  // Already a well-formed Node-style error with a string code — pass through
+  if (err instanceof Error && typeof (err as any).code === 'string') {
+    return err;
+  }
+
+  const name =
+    err instanceof DOMException ? err.name :
+    err instanceof Error ? err.name : '';
+
+  const message =
+    err instanceof Error ? err.message : String(err);
+
+  let code: string;
+  switch (name) {
+    case 'NotFoundError':
+    case 'NotAllowedError':
+      code = 'ENOENT';
+      break;
+    case 'TypeMismatchError':
+      code = 'ENOTDIR';
+      break;
+    default:
+      code = 'EIO';
+  }
+
+  return Object.assign(
+    new Error(`${code}: ${message}, path '${filepath}'`),
+    { code },
+  );
+}
+
+/**
  * Build a `{ promises: { … } }` filesystem object that isomorphic-git
  * can use directly, backed by an OPFS root directory handle.
  */
@@ -93,17 +132,21 @@ export function buildGitFs(rootHandle: FileSystemDirectoryHandle) {
         filepath: string,
         options?: { encoding?: string } | string,
       ): Promise<Uint8Array | string> {
-        const fh = await getFileHandle(rootHandle, filepath);
-        const file = await fh.getFile();
-        const encoding =
-          typeof options === 'string'
-            ? options
-            : options?.encoding;
-        if (encoding === 'utf8' || encoding === 'utf-8') {
-          return file.text();
+        try {
+          const fh = await getFileHandle(rootHandle, filepath);
+          const file = await fh.getFile();
+          const encoding =
+            typeof options === 'string'
+              ? options
+              : options?.encoding;
+          if (encoding === 'utf8' || encoding === 'utf-8') {
+            return file.text();
+          }
+          const buf = await file.arrayBuffer();
+          return new Uint8Array(buf);
+        } catch (err) {
+          throw normalizeError(err, filepath);
         }
-        const buf = await file.arrayBuffer();
-        return new Uint8Array(buf);
       },
 
       /** Write data to a file (creates parent dirs as needed). */
@@ -112,71 +155,99 @@ export function buildGitFs(rootHandle: FileSystemDirectoryHandle) {
         data: Uint8Array | string,
         _options?: any,
       ): Promise<void> {
-        const fh = await getFileHandle(rootHandle, filepath, true);
-        const writable = await fh.createWritable();
-        if (typeof data === 'string') {
-          await writable.write(new TextEncoder().encode(data));
-        } else {
-          await writable.write(data);
+        try {
+          const fh = await getFileHandle(rootHandle, filepath, true);
+          const writable = await fh.createWritable();
+          if (typeof data === 'string') {
+            await writable.write(new TextEncoder().encode(data));
+          } else {
+            await writable.write(data);
+          }
+          await writable.close();
+        } catch (err) {
+          throw normalizeError(err, filepath);
         }
-        await writable.close();
       },
 
       /** Unlink (delete) a file. */
       async unlink(filepath: string): Promise<void> {
-        const parts = getPathParts(filepath);
-        if (parts.length === 0) throw new Error('Cannot unlink root');
-        const name = parts.pop()!;
-        let parent = rootHandle;
-        for (const part of parts) {
-          parent = await parent.getDirectoryHandle(part);
+        try {
+          const parts = getPathParts(filepath);
+          if (parts.length === 0) throw new Error('Cannot unlink root');
+          const name = parts.pop()!;
+          let parent = rootHandle;
+          for (const part of parts) {
+            parent = await parent.getDirectoryHandle(part);
+          }
+          await parent.removeEntry(name);
+        } catch (err) {
+          throw normalizeError(err, filepath);
         }
-        await parent.removeEntry(name);
       },
 
       /** List directory entries. */
       async readdir(filepath: string): Promise<string[]> {
-        const dirHandle = await getDirectoryHandle(rootHandle, filepath);
-        const entries: string[] = [];
-        for await (const key of dirHandle.keys()) entries.push(key);
-        return entries;
+        try {
+          const dirHandle = await getDirectoryHandle(rootHandle, filepath);
+          const entries: string[] = [];
+          for await (const key of dirHandle.keys()) entries.push(key);
+          return entries;
+        } catch (err) {
+          throw normalizeError(err, filepath);
+        }
       },
 
       /** Create a directory (like mkdir -p). */
       async mkdir(filepath: string, _options?: any): Promise<void> {
-        await getDirectoryHandle(rootHandle, filepath, true);
+        try {
+          await getDirectoryHandle(rootHandle, filepath, true);
+        } catch (err) {
+          throw normalizeError(err, filepath);
+        }
       },
 
       /** Remove an empty directory. */
       async rmdir(filepath: string): Promise<void> {
-        const parts = getPathParts(filepath);
-        if (parts.length === 0) throw new Error('Cannot rmdir root');
-        const name = parts.pop()!;
-        let parent = rootHandle;
-        for (const part of parts) {
-          parent = await parent.getDirectoryHandle(part);
+        try {
+          const parts = getPathParts(filepath);
+          if (parts.length === 0) throw new Error('Cannot rmdir root');
+          const name = parts.pop()!;
+          let parent = rootHandle;
+          for (const part of parts) {
+            parent = await parent.getDirectoryHandle(part);
+          }
+          await parent.removeEntry(name, { recursive: true });
+        } catch (err) {
+          throw normalizeError(err, filepath);
         }
-        await parent.removeEntry(name, { recursive: true });
       },
 
       /** Stat a path (file or directory). */
       async stat(filepath: string): Promise<StatLike> {
-        return statPath(rootHandle, filepath);
+        try {
+          return await statPath(rootHandle, filepath);
+        } catch (err) {
+          throw normalizeError(err, filepath);
+        }
       },
 
       /** lstat — OPFS has no symlinks so this is the same as stat. */
       async lstat(filepath: string): Promise<StatLike> {
-        return statPath(rootHandle, filepath);
+        try {
+          return await statPath(rootHandle, filepath);
+        } catch (err) {
+          throw normalizeError(err, filepath);
+        }
       },
 
       /** readlink — not supported on OPFS. */
-      async readlink(_filepath: string): Promise<string> {
-        throw new Error('Symlinks not supported in OPFS');
+      async readlink(filepath: string): Promise<string> {
+        throw normalizeError(new Error('Symlinks not supported in OPFS'), filepath);
       },
 
       /** symlink — not supported on OPFS. */
-      async symlink(_target: string, _filepath: string): Promise<void> {
-        throw new Error('Symlinks not supported in OPFS');
+      async symlink(_target: string, filepath: string): Promise<void> {
+        throw normalizeError(new Error('Symlinks not supported in OPFS'), filepath);
       },
 
       /** chmod — no-op on OPFS. */

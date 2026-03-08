@@ -752,3 +752,69 @@ export async function gitDiffWorkingFile(
 
   return { path: filepath, status, patch, oldContent, newContent };
 }
+
+/**
+ * List all branches in the repository.
+ */
+export async function gitListBranches(
+  rootHandle: FileSystemDirectoryHandle,
+  dir: string,
+): Promise<string[]> {
+  const fs = buildGitFs(rootHandle);
+  return git.listBranches({ fs, dir });
+}
+
+/**
+ * Create a new branch.
+ */
+export async function gitCreateBranch(
+  rootHandle: FileSystemDirectoryHandle,
+  dir: string,
+  name: string,
+  checkout = true,
+): Promise<void> {
+  const fs = buildGitFs(rootHandle);
+  await git.branch({ fs, dir, ref: name, checkout });
+}
+
+/**
+ * Checkout a branch or commit.
+ */
+export async function gitCheckout(
+  rootHandle: FileSystemDirectoryHandle,
+  dir: string,
+  ref: string,
+): Promise<void> {
+  const fs = buildGitFs(rootHandle);
+  await git.checkout({ fs, dir, ref });
+}
+
+/**
+ * Delete a branch.
+ */
+export async function gitDeleteBranch(
+  rootHandle: FileSystemDirectoryHandle,
+  dir: string,
+  name: string,
+): Promise<void> {
+  const fs = buildGitFs(rootHandle);
+  await git.deleteBranch({ fs, dir, ref: name });
+}
+
+/**
+ * Merge a branch into the current branch.
+ */
+export async function gitMerge(
+  rootHandle: FileSystemDirectoryHandle,
+  dir: string,
+  theirs: string,
+  author: GitAuthor,
+): Promise<string> {
+  const fs = buildGitFs(rootHandle);
+  const ours = await git.currentBranch({ fs, dir });
+  if (!ours) {
+    throw new Error('Cannot merge: no current branch');
+  }
+  const result = await git.merge({ fs, dir, ours, theirs, author });
+  return result.oid;
+}

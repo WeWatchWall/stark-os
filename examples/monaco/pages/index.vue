@@ -406,8 +406,61 @@
           <div class="scm-commit-area">
             <div class="scm-branch-row">
               <i class="codicon codicon-git-branch"></i>
-              <span class="scm-branch-name">{{ scmBranch }}</span>
+              <span class="scm-branch-name clickable" @click="toggleBranchPicker" title="Switch Branch">{{ scmBranch }}</span>
               <span v-if="scmLoading" class="scm-loading"><i class="codicon codicon-loading codicon-modifier-spin"></i></span>
+            </div>
+
+            <!-- Branch picker dropdown -->
+            <div v-if="showBranchPicker" class="branch-picker">
+              <div class="branch-picker-header">
+                <span class="branch-picker-title">Branches</span>
+                <button class="icon-btn" @click="showBranchPicker = false" title="Close">
+                  <i class="codicon codicon-close"></i>
+                </button>
+              </div>
+              <div v-if="!showNewBranchInput" class="branch-picker-actions">
+                <button class="branch-picker-action" @click="showNewBranchInput = true">
+                  <i class="codicon codicon-add"></i> New Branch
+                </button>
+              </div>
+              <div v-if="showNewBranchInput" class="branch-picker-new">
+                <input
+                  v-model="newBranchName"
+                  class="scm-settings-input"
+                  placeholder="Branch name"
+                  @keydown.enter="createAndSwitchBranch"
+                  @keydown.escape="showNewBranchInput = false; newBranchName = '';"
+                  autofocus
+                />
+                <div style="display:flex; gap:4px; margin-top:4px;">
+                  <button class="branch-picker-action" style="flex:1;" @click="createAndSwitchBranch" :disabled="!newBranchName.trim()">
+                    <i class="codicon codicon-check"></i> Create
+                  </button>
+                  <button class="branch-picker-action" style="flex:0;" @click="showNewBranchInput = false; newBranchName = '';">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+              <div class="branch-picker-list">
+                <div
+                  v-for="branch in branchList"
+                  :key="branch"
+                  class="branch-picker-item"
+                  :class="{ active: branch === scmBranch }"
+                  @click="switchBranch(branch)"
+                >
+                  <i class="codicon" :class="branch === scmBranch ? 'codicon-check' : 'codicon-git-branch'"></i>
+                  <span class="branch-picker-name">{{ branch }}</span>
+                  <button
+                    v-if="branch !== scmBranch"
+                    class="icon-btn scm-action branch-delete-btn"
+                    title="Delete Branch"
+                    @click.stop="deleteBranch(branch)"
+                  >
+                    <i class="codicon codicon-trash"></i>
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="scm-input-wrapper">
               <textarea
@@ -441,7 +494,7 @@
               </button>
             </div>
             <template v-if="scmStagedExpanded">
-              <div v-for="file in scmStagedFiles" :key="'staged-'+file.path" class="scm-file-item" @click="openScmDiff(file)">
+              <div v-for="file in scmStagedFiles" :key="'staged-'+file.path" class="scm-file-item" @click="openScmDiff(file, true)">
                 <i :class="'codicon codicon-' + getCodiconForFile(file.name)" class="file-codicon"></i>
                 <span class="scm-file-name">{{ file.name }}</span>
                 <span class="scm-file-status" :class="file.status">{{ file.statusLabel }}</span>
@@ -518,17 +571,6 @@
                       <span class="scm-file-name">{{ file.path }}</span>
                       <span class="scm-file-status" :class="file.status">{{ file.status === 'added' ? 'A' : file.status === 'deleted' ? 'D' : 'M' }}</span>
                       <i v-if="commit.loadingDiff === file.path" class="codicon codicon-loading codicon-modifier-spin" style="margin-left:4px;"></i>
-                    </div>
-                    <!-- Inline diff viewer -->
-                    <div v-if="historyDiffContent && commit.expanded" class="scm-diff-viewer">
-                      <div class="scm-diff-header">
-                        <span class="scm-diff-filename">{{ historyDiffContent.path }}</span>
-                        <button class="icon-btn" @click="historyDiffContent = null" title="Close diff">
-                          <i class="codicon codicon-close"></i>
-                        </button>
-                      </div>
-                      <pre class="scm-diff-content"><template v-for="(line, li) in historyDiffContent.patch.split('\n')" :key="li"><span :class="diffLineClass(line)">{{ line }}
-</span></template></pre>
                     </div>
                   </template>
                 </template>
@@ -716,8 +758,9 @@
           @dragend="onTabDragEnd"
         >
           <i v-if="tab.pinned" class="codicon codicon-pinned tab-pin-icon"></i>
-          <i :class="'codicon codicon-' + getCodiconForFile(tab.name)" class="tab-codicon"></i>
-          <span v-if="!tab.pinned" class="tab-label">{{ tab.name }}</span>
+          <i v-if="tab.isDiff" class="codicon codicon-diff tab-codicon" style="color:#e8a838;"></i>
+          <i v-else :class="'codicon codicon-' + getCodiconForFile(tab.name)" class="tab-codicon"></i>
+          <span v-if="!tab.pinned" class="tab-label">{{ tab.diffTitle || tab.name }}</span>
           <span v-if="tab.modified && !tab.pinned" class="tab-dot"><i class="codicon codicon-circle-filled"></i></span>
           <button v-if="!tab.pinned" class="tab-close" @click.stop="closeTab(tab.path)"><i class="codicon codicon-close"></i></button>
         </div>
@@ -1077,6 +1120,11 @@ import {
   gitDiffFiles,
   gitDiffFileContent,
   gitDiffWorkingFile,
+  gitListBranches,
+  gitCreateBranch,
+  gitCheckout,
+  gitDeleteBranch,
+  gitMerge,
   gitSetConfig,
 } from '../../shared/utils';
 import {
@@ -1352,6 +1400,11 @@ const gitAuthorEmail = ref('');
 const showGitSettings = ref(false);
 // Inline diff viewer for commit history
 const historyDiffContent = ref<GitFileDiff | null>(null);
+// Branch management
+const showBranchPicker = ref(false);
+const branchList = ref<string[]>([]);
+const newBranchName = ref('');
+const showNewBranchInput = ref(false);
 
 // Editor internals
 let editor: any = null;
@@ -1378,6 +1431,13 @@ const sortedTabs = computed(() => {
     if (!a.pinned && b.pinned) return 1;
     return a.order - b.order;
   });
+});
+
+// ─── Is current tab a diff tab? ─────────────────────
+const currentTabIsDiff = computed(() => {
+  if (!currentFile.value) return false;
+  const tab = openTabs.value.find(t => t.path === currentFile.value);
+  return tab?.isDiff === true;
 });
 
 // ─── Breadcrumbs segments ───────────────────────────
@@ -1889,7 +1949,21 @@ function getOrCreateTab(path: string): Tab {
 
 async function switchToTab(path: string) {
   if (currentFile.value === path) return;
-  await openFile(path);
+  const tab = openTabs.value.find(t => t.path === path);
+  if (tab?.isDiff) {
+    // Switching to a diff tab
+    if (currentFile.value && editor && !currentTabIsDiff.value) {
+      await saveCurrentFile();
+    }
+    disposeDiffModels();
+    currentFile.value = path;
+    await nextTick();
+    showDiffEditor(tab);
+  } else {
+    // Switching to a regular file tab — clean up diff editor
+    disposeDiffModels();
+    await openFile(path);
+  }
 }
 
 async function closeTab(path: string) {
@@ -1897,12 +1971,16 @@ async function closeTab(path: string) {
   if (idx === -1) return;
 
   const tab = openTabs.value[idx];
-  if (tab.modified && editor && currentFile.value === path) {
-    await saveCurrentFile();
+  if (tab.isDiff) {
+    // Diff tab — just dispose models
+    if (currentFile.value === path) disposeDiffModels();
+  } else {
+    if (tab.modified && editor && currentFile.value === path) {
+      await saveCurrentFile();
+    }
+    const model = fileModels.get(path);
+    if (model) { model.dispose(); fileModels.delete(path); }
   }
-
-  const model = fileModels.get(path);
-  if (model) { model.dispose(); fileModels.delete(path); }
 
   openTabs.value.splice(idx, 1);
 
@@ -3116,11 +3194,21 @@ async function pullScm() {
   }
 }
 
-/** Open a file from the SCM panel (just opens the file in the editor). */
-async function openScmDiff(file: ScmFileEntry) {
-  if (!projectRoot.value || !monacoModule || !editor) return;
-  const fullPath = normalizePath(projectRoot.value + '/' + file.path);
-  await openFile(fullPath);
+/** Open a diff tab for a staged or unstaged SCM file. */
+async function openScmDiff(file: ScmFileEntry, staged = false) {
+  if (!projectRoot.value || !opfsRoot) return;
+  scmLoading.value = true;
+  try {
+    const diff = await gitDiffWorkingFile(opfsRoot, projectRoot.value, file.path, staged);
+    const label = staged ? 'Index' : 'Working Tree';
+    await openDiffTab(file.path, `${file.name} (${label})`, diff.oldContent, diff.newContent);
+  } catch (err: any) {
+    // Fallback: just open the file
+    const fullPath = normalizePath(projectRoot.value + '/' + file.path);
+    await openFile(fullPath);
+  } finally {
+    scmLoading.value = false;
+  }
 }
 
 /** Toggle expand/collapse of a commit in history to show its changed files. */
@@ -3148,21 +3236,22 @@ async function toggleCommitExpand(commit: ScmCommitEntry) {
   }
 }
 
-/** Load and display the diff for a specific file in a commit. */
+/** Load and display the diff for a specific file in a commit — opens in a full tab. */
 async function showCommitFileDiff(commit: ScmCommitEntry, filePath: string) {
-  // If already showing this diff, toggle it off
-  if (historyDiffContent.value && historyDiffContent.value.path === filePath
-    && commit.loadingDiff === null) {
-    historyDiffContent.value = null;
-    return;
-  }
   if (!opfsRoot || !projectRoot.value) return;
   commit.loadingDiff = filePath;
   try {
     const idx = scmCommits.value.findIndex(c => c.oid === commit.oid);
     const parentOid = idx < scmCommits.value.length - 1 ? scmCommits.value[idx + 1]?.oid : undefined;
     const diff = await gitDiffFileContent(opfsRoot, projectRoot.value, filePath, commit.oid, parentOid);
-    historyDiffContent.value = diff;
+    const shortOid = commit.oid.substring(0, 7);
+    const fileName = filePath.split('/').pop() || filePath;
+    await openDiffTab(
+      `commit:${commit.oid}:${filePath}`,
+      `${fileName} (${shortOid})`,
+      diff.oldContent,
+      diff.newContent,
+    );
   } catch (err: any) {
     notify('Failed to load diff: ' + (err.message || err), 'error');
   } finally {
@@ -3191,6 +3280,154 @@ function diffLineClass(line: string): string {
   if (line.startsWith('+')) return 'diff-add';
   if (line.startsWith('-')) return 'diff-del';
   return 'diff-ctx';
+}
+
+// ─── Diff Editor Tab Support ────────────────────────
+/**
+ * Open (or switch to) a diff tab. Creates a Monaco diff editor showing
+ * the old and new content side by side.
+ */
+async function openDiffTab(key: string, title: string, oldContent: string, newContent: string) {
+  const diffPath = `diff:${key}`;
+  let tab = openTabs.value.find(t => t.path === diffPath);
+  if (!tab) {
+    const name = title.split('/').pop() || title;
+    tab = {
+      name,
+      path: diffPath,
+      modified: false,
+      pinned: false,
+      order: tabOrderCounter++,
+      isDiff: true,
+      diffOld: oldContent,
+      diffNew: newContent,
+      diffTitle: title,
+    };
+    openTabs.value.push(tab);
+  } else {
+    tab.diffOld = oldContent;
+    tab.diffNew = newContent;
+    tab.diffTitle = title;
+  }
+  // Save current file before switching
+  if (currentFile.value && editor && !currentTabIsDiff.value) {
+    await saveCurrentFile();
+  }
+  currentFile.value = diffPath;
+  await nextTick();
+  showDiffEditor(tab);
+}
+
+/** Create / update the Monaco diff editor for the given diff tab. */
+function showDiffEditor(tab: Tab) {
+  if (!monacoModule || !diffEditorContainer.value) return;
+  const oldContent = tab.diffOld || '';
+  const newContent = tab.diffNew || '';
+  const fileName = tab.diffTitle || tab.name;
+
+  if (!diffEditorInstance) {
+    diffEditorInstance = monacoModule.editor.createDiffEditor(diffEditorContainer.value, {
+      automaticLayout: true,
+      readOnly: true,
+      renderSideBySide: true,
+      theme: currentTheme.value,
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+    });
+  }
+
+  const originalModel = monacoModule.editor.createModel(oldContent, getLanguage(fileName));
+  const modifiedModel = monacoModule.editor.createModel(newContent, getLanguage(fileName));
+  diffEditorInstance.setModel({ original: originalModel, modified: modifiedModel });
+}
+
+/** Dispose the diff editor models when leaving a diff tab. */
+function disposeDiffModels() {
+  if (diffEditorInstance) {
+    const model = diffEditorInstance.getModel();
+    if (model) {
+      model.original?.dispose();
+      model.modified?.dispose();
+    }
+  }
+}
+
+// ─── Branch Management ─────────────────────────────
+async function toggleBranchPicker() {
+  if (showBranchPicker.value) {
+    showBranchPicker.value = false;
+    return;
+  }
+  await loadBranches();
+  showBranchPicker.value = true;
+  showNewBranchInput.value = false;
+  newBranchName.value = '';
+}
+
+async function loadBranches() {
+  if (!opfsRoot || !projectRoot.value) return;
+  try {
+    branchList.value = await gitListBranches(opfsRoot, projectRoot.value);
+  } catch (err: any) {
+    console.warn('Failed to list branches:', err);
+    branchList.value = [scmBranch.value];
+  }
+}
+
+async function switchBranch(name: string) {
+  if (name === scmBranch.value) {
+    showBranchPicker.value = false;
+    return;
+  }
+  if (!opfsRoot || !projectRoot.value) return;
+  scmLoading.value = true;
+  try {
+    await gitCheckout(opfsRoot, projectRoot.value, name);
+    scmBranch.value = name;
+    showBranchPicker.value = false;
+    await refreshScm();
+    await refreshScmLog();
+    await refreshTree();
+    notify(`Switched to branch: ${name}`, 'success');
+  } catch (err: any) {
+    notify('Failed to switch branch: ' + (err.message || err), 'error');
+  } finally {
+    scmLoading.value = false;
+  }
+}
+
+async function createAndSwitchBranch() {
+  const name = newBranchName.value.trim();
+  if (!name || !opfsRoot || !projectRoot.value) return;
+  scmLoading.value = true;
+  try {
+    await gitCreateBranch(opfsRoot, projectRoot.value, name, true);
+    scmBranch.value = name;
+    showNewBranchInput.value = false;
+    newBranchName.value = '';
+    showBranchPicker.value = false;
+    await loadBranches();
+    notify(`Created and switched to branch: ${name}`, 'success');
+  } catch (err: any) {
+    notify('Failed to create branch: ' + (err.message || err), 'error');
+  } finally {
+    scmLoading.value = false;
+  }
+}
+
+async function deleteBranch(name: string) {
+  if (!confirm(`Delete branch "${name}"?`)) return;
+  if (!opfsRoot || !projectRoot.value) return;
+  scmLoading.value = true;
+  try {
+    await gitDeleteBranch(opfsRoot, projectRoot.value, name);
+    await loadBranches();
+    notify(`Deleted branch: ${name}`, 'success');
+  } catch (err: any) {
+    notify('Failed to delete branch: ' + (err.message || err), 'error');
+  } finally {
+    scmLoading.value = false;
+  }
 }
 
 // ─── Git File Decorations ───────────────────────────
@@ -4080,6 +4317,7 @@ onBeforeUnmount(() => {
 
 /* ─── Editor ───────────────────────────────────── */
 #monaco-container { flex: 1; overflow: hidden; }
+#diff-container { flex: 1; overflow: hidden; }
 
 /* ─── Terminal Panel (xterm.js) ────────────────── */
 .terminal-panel {
@@ -4942,6 +5180,79 @@ kbd {
   margin-left: auto;
   color: #888;
 }
+
+/* ─── Branch Picker ──────────────────────────────── */
+.scm-branch-name.clickable {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.scm-branch-name.clickable:hover {
+  background: #3c3c3c;
+}
+.branch-picker {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.branch-picker-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: #2d2d2d;
+  font-size: 11px;
+  font-weight: 600;
+  color: #cccccc;
+}
+.branch-picker-title { flex: 1; }
+.branch-picker-actions {
+  padding: 4px 8px;
+  border-bottom: 1px solid #3c3c3c;
+}
+.branch-picker-new {
+  padding: 4px 8px;
+  border-bottom: 1px solid #3c3c3c;
+}
+.branch-picker-action {
+  background: #3c3c3c;
+  color: #cccccc;
+  border: none;
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  justify-content: center;
+}
+.branch-picker-action:hover { background: #4c4c4c; }
+.branch-picker-action:disabled { opacity: 0.5; cursor: not-allowed; }
+.branch-picker-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.branch-picker-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  gap: 6px;
+  color: #cccccc;
+}
+.branch-picker-item:hover { background: #2a2d2e; }
+.branch-picker-item.active {
+  background: #094771;
+  color: #ffffff;
+}
+.branch-picker-item .codicon { font-size: 12px; flex-shrink: 0; }
+.branch-picker-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.branch-picker-item:hover .branch-delete-btn { opacity: 1; }
+.branch-delete-btn { opacity: 0; }
 
 /* ─── Commit History Expandable ──────────────────── */
 .scm-commit-group {

@@ -1,9 +1,8 @@
 <template>
   <div class="pods-tab">
-    <!-- Refreshing indicator — subtle top bar, keeps data visible -->
-    <div v-if="refreshing && hasData" class="refresh-bar">
-      <ProgressSpinner style="width: 14px; height: 14px" strokeWidth="5" />
-      <span>Updating…</span>
+    <!-- Refreshing indicator — subtle dot in top-right corner -->
+    <div v-if="refreshing && hasData" class="refresh-dot" title="Updating…">
+      <ProgressSpinner style="width: 12px; height: 12px" strokeWidth="6" />
     </div>
 
     <!-- Initial loading state (no data yet) -->
@@ -31,6 +30,8 @@
       groupRowsBy="groupKey"
       sortField="groupKey"
       :sortOrder="1"
+      expandableRowGroups
+      v-model:expandedRowGroups="expandedGroups"
       scrollable
       scrollHeight="flex"
       :rowHover="true"
@@ -46,29 +47,39 @@
             <span class="node-icon">⎈</span>
             <span class="node-name">{{ data.nodeName }}</span>
             <Tag :value="data.nodeStatus" :severity="nodeStatusSeverity(data.nodeStatus)" class="node-tag" />
+            <Button
+              icon="pi pi-trash"
+              label="Delete Node"
+              severity="danger"
+              size="small"
+              text
+              :loading="deletingNodes.has(data.nodeId)"
+              @click.stop="deleteNode(data.nodeId, data.nodeName)"
+              class="node-delete-btn"
+            />
           </div>
         </td>
       </template>
 
-      <Column field="shortId" header="ID">
+      <Column field="shortId" header="ID" sortable>
         <template #body="{ data }">
           <span class="mono">{{ data.shortId }}</span>
         </template>
       </Column>
-      <Column field="packName" header="Pack" />
-      <Column field="nodeName" header="Node" />
-      <Column field="status" header="Status">
+      <Column field="packName" header="Pack" sortable />
+      <Column field="nodeName" header="Node" sortable />
+      <Column field="status" header="Status" sortable>
         <template #body="{ data }">
           <Tag :value="data.status" :severity="podStatusSeverity(data.status)" />
         </template>
       </Column>
-      <Column field="packVersion" header="Version">
+      <Column field="packVersion" header="Version" sortable>
         <template #body="{ data }">
           <span class="mono">{{ data.packVersion }}</span>
         </template>
       </Column>
-      <Column field="namespace" header="Namespace" />
-      <Column field="age" header="Age" />
+      <Column field="namespace" header="Namespace" sortable />
+      <Column field="age" header="Age" sortable />
       <Column header="Actions">
         <template #body="{ data }">
           <Button
@@ -127,6 +138,7 @@ interface PodRow {
   namespace: string;
   age: string;
   nodeName: string;
+  nodeId: string;
   nodeStatus: string;
   machineIndex: number;
   groupKey: string;
@@ -138,7 +150,9 @@ const refreshing = ref(false);
 const hasData = ref(false);
 const errorMsg = ref('');
 const allPods = ref<PodRow[]>([]);
+const expandedGroups = ref<string[]>([]);
 const stoppingPods = ref<Set<string>>(new Set());
+const deletingNodes = ref<Set<string>>(new Set());
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const api = useStarkApi();
@@ -244,6 +258,7 @@ async function refresh() {
         namespace: p.namespace,
         age: formatAge(p.startedAt ?? p.createdAt),
         nodeName,
+        nodeId: p.nodeId ?? '',
         nodeStatus,
         machineIndex,
         groupKey: `${machineIndex}-${nodeName}`,
@@ -251,6 +266,20 @@ async function refresh() {
     });
 
     allPods.value = rows;
+
+    // Auto-expand new groups (keep user's collapsed state for existing ones)
+    const allGroupKeys = [...new Set(rows.map((r) => r.groupKey))];
+    const currentExpanded = new Set(expandedGroups.value);
+    for (const key of allGroupKeys) {
+      if (!currentExpanded.has(key) && !hasData.value) {
+        currentExpanded.add(key);
+      }
+    }
+    // On first load expand all groups
+    if (!hasData.value) {
+      expandedGroups.value = allGroupKeys;
+    }
+
     hasData.value = true;
   } catch (err: unknown) {
     console.error('Failed to load pods:', err);
@@ -270,6 +299,21 @@ async function stopPod(podId: string) {
     toast.add({ severity: 'error', summary: 'Stop Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
   } finally {
     stoppingPods.value.delete(podId);
+  }
+}
+
+async function deleteNode(nodeId: string, nodeName: string) {
+  if (!nodeId) return;
+  deletingNodes.value.add(nodeId);
+  try {
+    await api.node.delete(nodeId);
+    toast.add({ severity: 'success', summary: 'Node Deleted', detail: `Node "${nodeName}" has been removed`, life: 5000 });
+    await refresh();
+  } catch (err: unknown) {
+    console.error('Failed to delete node:', err);
+    toast.add({ severity: 'error', summary: 'Delete Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
+  } finally {
+    deletingNodes.value.delete(nodeId);
   }
 }
 
@@ -297,22 +341,12 @@ onBeforeUnmount(() => {
 }
 
 /* ── Refresh indicator ── */
-.refresh-bar {
+.refresh-dot {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 6px;
+  right: 10px;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 3px 0;
-  font-size: 0.7rem;
-  color: #64748b;
-  background: rgba(30, 30, 30, 0.85);
-  backdrop-filter: blur(4px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  opacity: 0.5;
 }
 
 .state-msg {
@@ -377,6 +411,11 @@ onBeforeUnmount(() => {
 
 .node-tag {
   font-size: 0.6rem;
+}
+
+.node-delete-btn {
+  margin-left: auto;
+  font-size: 0.7rem;
 }
 
 .mono {

@@ -49,6 +49,7 @@ export interface StarkAPI {
     list(options?: { pageSize?: number }): Promise<unknown>;
     status(nameOrId: string): Promise<unknown>;
     logs(nameOrId: string, options?: { tail?: number }): Promise<unknown>;
+    delete(nameOrId: string): Promise<void>;
   };
   pod: {
     list(options?: { namespace?: string; status?: string; pageSize?: number }): Promise<unknown>;
@@ -304,6 +305,10 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         if (options?.tail) params.set('tail', String(options.tail));
         const qs = params.toString();
         return handleResponse<unknown>(await apiGet(`/api/nodes/${nodeId}/logs${qs ? '?' + qs : ''}`));
+      },
+      async delete(nameOrId: string) {
+        const nodeId = await resolveNodeId(nameOrId, apiGet);
+        await handleDeleteResponse(await apiDelete(`/api/nodes/${nodeId}`));
       },
     },
     pod: {

@@ -1,9 +1,8 @@
 <template>
   <div class="pods-tab">
-    <!-- Refreshing indicator — subtle top bar, keeps data visible -->
-    <div v-if="refreshing && hasData" class="refresh-bar">
-      <ProgressSpinner style="width: 14px; height: 14px" strokeWidth="5" />
-      <span>Updating…</span>
+    <!-- Refreshing indicator — subtle dot in top-right corner -->
+    <div v-if="refreshing && hasData" class="refresh-dot" title="Updating…">
+      <ProgressSpinner style="width: 12px; height: 12px" strokeWidth="6" />
     </div>
 
     <!-- Initial loading state (no data yet) -->
@@ -342,22 +341,12 @@ onBeforeUnmount(() => {
 }
 
 /* ── Refresh indicator ── */
-.refresh-bar {
+.refresh-dot {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 6px;
+  right: 10px;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 3px 0;
-  font-size: 0.7rem;
-  color: #64748b;
-  background: rgba(30, 30, 30, 0.85);
-  backdrop-filter: blur(4px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  opacity: 0.5;
 }
 
 .state-msg {

@@ -10,6 +10,15 @@
  * terminal can share the same git backend.
  */
 
+// isomorphic-git requires a global `Buffer` (it checks `typeof Buffer`
+// at runtime and throws "Missing Buffer dependency" when absent).
+// In the browser, provide the polyfill from the `buffer` npm package
+// which is already a transitive dependency of isomorphic-git.
+import { Buffer } from 'buffer';
+if (typeof globalThis !== 'undefined' && typeof globalThis.Buffer === 'undefined') {
+  (globalThis as any).Buffer = Buffer;
+}
+
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import { createPatch } from 'diff';

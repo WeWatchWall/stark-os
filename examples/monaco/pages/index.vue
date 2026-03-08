@@ -4921,6 +4921,7 @@ kbd {
 }
 .scm-push-btn, .scm-pull-btn {
   flex: 0 0 auto !important;
+  width: auto !important;
   padding: 5px 8px !important;
   background: #2d5a2d !important;
 }

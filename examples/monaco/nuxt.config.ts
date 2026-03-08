@@ -222,11 +222,18 @@ export default defineNuxtConfig({
     // works as a drop-in replacement for monaco-editor
     resolve: {
       dedupe: ['monaco-editor'],
+      alias: {
+        // isomorphic-git references the Node.js `buffer` built-in, which Vite
+        // externalizes by default.  Point it at the npm `buffer` polyfill so
+        // `Buffer` is available in the browser.
+        buffer: 'buffer/',
+      },
     },
 
     // Optimize deps to include VS Code service packages
     optimizeDeps: {
       include: [
+        'buffer',
         '@codingame/monaco-vscode-api',
         '@codingame/monaco-vscode-theme-service-override',
         '@codingame/monaco-vscode-textmate-service-override',

@@ -111,6 +111,7 @@ export type BrowserAgentEvent =
   | 'error'
   | 'credentials_invalid'
   | 'stopped'
+  | 'node:renamed'
   | 'pod:deployed'
   | 'pod:started'
   | 'pod:stopped'
@@ -336,6 +337,56 @@ export class BrowserAgent {
    */
   isRegistered(): boolean {
     return this.state === 'registered';
+  }
+
+  /**
+   * Get the current node name
+   */
+  getNodeName(): string {
+    return this.config.nodeName;
+  }
+
+  /**
+   * Rename the node on the orchestrator and update local state/storage
+   * @param newName - The new name for the node
+   * @returns The updated node object from the orchestrator
+   */
+  async renameNode(newName: string): Promise<Node> {
+    if (!this.nodeId) {
+      throw new Error('Node is not registered');
+    }
+    if (this.state !== 'registered') {
+      throw new Error('Node must be registered to rename');
+    }
+
+    const oldName = this.config.nodeName;
+
+    const response = await this.sendRequest<{ node: Node }>('node:rename', {
+      nodeId: this.nodeId,
+      name: newName,
+    });
+
+    // Update the in-memory config
+    (this.config as { nodeName: string }).nodeName = newName;
+
+    // Update localStorage: remove old entry and save new one
+    if (this.config.persistState) {
+      this.stateStore.removeNode(oldName);
+      const registeredNode: RegisteredBrowserNode = {
+        nodeId: this.nodeId,
+        name: newName,
+        orchestratorUrl: this.config.orchestratorUrl,
+        registeredAt: new Date().toISOString(),
+        registeredBy: response.node.registeredBy!,
+        lastStarted: new Date().toISOString(),
+      };
+      this.stateStore.saveNode(registeredNode);
+      this.logger.info('Updated persisted node name', { oldName, newName, nodeId: this.nodeId });
+    }
+
+    this.emit('node:renamed', { oldName, newName, node: response.node });
+
+    return response.node;
   }
 
   /**

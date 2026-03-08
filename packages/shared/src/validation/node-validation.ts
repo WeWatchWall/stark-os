@@ -538,6 +538,12 @@ export function validateUpdateNodeInput(input: unknown): ValidationResult {
 
   const data = input as Record<string, unknown>;
 
+  // Validate optional name field (same rules as registration but optional)
+  if (data.name !== undefined) {
+    const nameError = validateNodeName(data.name);
+    if (nameError) errors.push(nameError);
+  }
+
   // All fields are optional for update
   const capabilitiesError = validateNodeCapabilities(data.capabilities);
   if (capabilitiesError) errors.push(capabilitiesError);

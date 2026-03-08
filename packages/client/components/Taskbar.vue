@@ -10,8 +10,24 @@
 
     <!-- Desktop: brand title + connection dot + window tabs -->
     <template v-if="!isMobile">
-      <span class="taskbar-title">StarkOS</span>
-      <span class="conn-dot" :class="connectionState" :title="connectionState" />
+      <div class="node-name-group" @click="openRenameDropdown">
+        <span class="taskbar-title">{{ nodeName }}</span>
+        <span class="conn-dot" :class="connectionState" :title="connectionState" />
+      </div>
+
+      <!-- Rename dropdown -->
+      <div v-if="renameOpen" class="rename-dropdown" @click.stop>
+        <input
+          ref="renameInputRef"
+          v-model="renameValue"
+          class="rename-input"
+          placeholder="Node name"
+          @keydown.enter="submitRename"
+          @keydown.escape="renameOpen = false"
+        />
+        <button class="rename-ok-btn" @click="submitRename">OK</button>
+      </div>
+      <div v-if="renameOpen" class="rename-backdrop" @click="renameOpen = false" />
 
       <div class="taskbar-center">
         <button
@@ -99,21 +115,43 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
-defineProps<{ connectionState: string }>();
-defineEmits<{ signout: []; 'toggle-status': [] }>();
+const props = defineProps<{ connectionState: string; nodeName: string }>();
+const emit = defineEmits<{ signout: []; 'toggle-status': []; 'rename-node': [name: string] }>();
 
 const shell = useShellStore();
 
 const isMobile = computed(() => shell.layoutMode === 'mobile');
 
 const currentWindowTitle = computed(() => {
-  if (!shell.focusedWindowId) return 'StarkOS';
+  if (!shell.focusedWindowId) return props.nodeName;
   const win = shell.activeWindows.find(w => w.id === shell.focusedWindowId);
-  return win?.title ?? 'StarkOS';
+  return win?.title ?? props.nodeName;
 });
+
+/* ── Rename dropdown state ── */
+const renameOpen = ref(false);
+const renameValue = ref('');
+const renameInputRef = ref<HTMLInputElement | null>(null);
+
+function openRenameDropdown() {
+  renameValue.value = props.nodeName;
+  renameOpen.value = true;
+  nextTick(() => {
+    renameInputRef.value?.focus();
+    renameInputRef.value?.select();
+  });
+}
+
+function submitRename() {
+  const trimmed = renameValue.value.trim();
+  if (trimmed && trimmed !== props.nodeName) {
+    emit('rename-node', trimmed);
+  }
+  renameOpen.value = false;
+}
 
 function toggleLayout() {
   if (shell.manualOverride) {
@@ -189,6 +227,70 @@ function toggleLayout() {
   font-weight: 600;
   letter-spacing: 0.04em;
   flex-shrink: 0;
+}
+
+/* ── Node name group (clickable for rename) ── */
+.node-name-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.node-name-group:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+/* ── Rename dropdown ── */
+.rename-dropdown {
+  position: fixed;
+  top: 48px;
+  left: 60px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 6px 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 100002;
+}
+.rename-input {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  padding: 5px 8px;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.rename-input:focus {
+  border-color: rgba(59,130,246,0.5);
+}
+.rename-ok-btn {
+  background: rgba(59,130,246,0.25);
+  border: 1px solid rgba(59,130,246,0.4);
+  border-radius: 4px;
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.rename-ok-btn:hover {
+  background: rgba(59,130,246,0.4);
+}
+.rename-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100001;
 }
 
 /* ── Connection dot ── */

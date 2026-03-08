@@ -129,7 +129,7 @@
     </div>
 
     <!-- Shell (after login) -->
-    <Shell v-else :connectionState="connectionState" @signout="handleLogout" />
+    <Shell v-else :connectionState="connectionState" :nodeName="nodeName" @signout="handleLogout" @rename-node="handleRenameNode" />
   </div>
 </template>
 
@@ -142,13 +142,37 @@ import {
   clearBrowserCredentials,
   saveApiCredentials,
   clearApiCredentials,
+  getRegisteredBrowserNodesForOrchestrator,
   type BrowserAgent,
   type ConnectionState,
   type BrowserNodeCredentials,
 } from '@stark-o/browser-runtime';
 import { useShellStore } from '~/stores/shell';
 
+/**
+ * Resolve the node name from stored state or generate a default.
+ * Reads the most recently started node for this orchestrator from localStorage.
+ */
+function resolveInitialNodeName(): string {
+  try {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const stored = getRegisteredBrowserNodesForOrchestrator(wsUrl);
+    if (stored.length > 0) {
+      // Pick the most recently started node
+      const sorted = [...stored].sort((a, b) =>
+        (b.lastStarted ?? b.registeredAt).localeCompare(a.lastStarted ?? a.registeredAt),
+      );
+      return sorted[0].name;
+    }
+  } catch {
+    // Fall through to default
+  }
+  return `browser-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 const connectionState = ref<ConnectionState>('disconnected');
+const nodeName = ref(resolveInitialNodeName());
 const isAuthenticated = ref(false);
 const authMode = ref<'login' | 'register'>('login');
 const email = ref('');
@@ -389,7 +413,7 @@ async function startAgent(authToken: string): Promise<void> {
 
   agent = createBrowserAgent({
     orchestratorUrl: wsUrl,
-    nodeName: 'production-browser-1',
+    nodeName: nodeName.value,
     runtimeType: 'browser',
     debug: true,
     workerScriptUrl: '/_nuxt/pack-worker.js',
@@ -440,6 +464,7 @@ async function startAgent(authToken: string): Promise<void> {
     else if (event === 'authenticated') connectionState.value = 'authenticated';
     else if (event === 'registered') {
       connectionState.value = 'registered';
+      if (agent) nodeName.value = agent.getNodeName();
     }
     else if (event === 'disconnected') connectionState.value = 'disconnected';
     else if (event === 'reconnecting') connectionState.value = 'connecting';
@@ -454,6 +479,19 @@ async function startAgent(authToken: string): Promise<void> {
     await agent.start();
   } catch (error) {
     console.error('Failed to start browser agent:', error);
+  }
+}
+
+/**
+ * Handle node rename from the UI
+ */
+async function handleRenameNode(newName: string): Promise<void> {
+  if (!agent) return;
+  try {
+    await agent.renameNode(newName);
+    nodeName.value = newName;
+  } catch (error) {
+    console.error('Failed to rename node:', error);
   }
 }
 

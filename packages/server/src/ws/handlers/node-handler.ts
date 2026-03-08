@@ -6,7 +6,7 @@
  */
 
 import type { RegisterNodeInput, NodeHeartbeat, UserRole } from '@stark-o/shared';
-import { validateRegisterNodeInput, createServiceLogger, getServiceRegistry, getUserNamespace } from '@stark-o/shared';
+import { validateRegisterNodeInput, validateNodeName, createServiceLogger, getServiceRegistry, getUserNamespace } from '@stark-o/shared';
 import { getNodeQueries } from '../../supabase/nodes.js';
 import { getUserById } from '../../supabase/auth.js';
 import { getPodQueriesAdmin } from '../../supabase/pods.js';
@@ -56,6 +56,9 @@ export type WsNodeMessageType =
   | 'node:heartbeat'
   | 'node:heartbeat:ack'
   | 'node:heartbeat:error'
+  | 'node:rename'
+  | 'node:rename:ack'
+  | 'node:rename:error'
   | 'node:disconnect';
 
 /**
@@ -573,6 +576,157 @@ export async function handleNodeReconnect(
     ws,
     'node:reconnect:ack',
     { node: reconnectResult.data },
+    correlationId,
+  );
+}
+
+/**
+ * Rename node payload
+ */
+export interface RenameNodePayload {
+  nodeId: string;
+  name: string;
+}
+
+/**
+ * Handle node rename via WebSocket
+ * Allows a connected node to change its name
+ */
+export async function handleNodeRename(
+  ws: WsConnection,
+  message: WsMessage<RenameNodePayload>,
+): Promise<void> {
+  const { payload, correlationId } = message;
+
+  // Check authentication
+  if (!ws.userId) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'UNAUTHORIZED', message: 'Authentication required' },
+      correlationId,
+    );
+    return;
+  }
+
+  // Validate nodeId is present
+  if (!payload.nodeId) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'VALIDATION_ERROR', message: 'nodeId is required' },
+      correlationId,
+    );
+    return;
+  }
+
+  // Validate nodeId format
+  if (!UUID_REGEX.test(payload.nodeId)) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'VALIDATION_ERROR', message: 'Invalid node ID format' },
+      correlationId,
+    );
+    return;
+  }
+
+  // Validate new name
+  const nameError = validateNodeName(payload.name);
+  if (nameError) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      {
+        code: 'VALIDATION_ERROR',
+        message: nameError.message,
+        details: { [nameError.field]: nameError },
+      },
+      correlationId,
+    );
+    return;
+  }
+
+  const nodeQueries = getNodeQueries();
+
+  // Get the node to verify it exists and belongs to this user
+  const nodeResult = await nodeQueries.getNodeById(payload.nodeId);
+  if (nodeResult.error || !nodeResult.data) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'NOT_FOUND', message: 'Node not found' },
+      correlationId,
+    );
+    return;
+  }
+
+  // Verify the node was registered by this user
+  if (nodeResult.data.registeredBy !== ws.userId) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'FORBIDDEN', message: 'Node does not belong to this user' },
+      correlationId,
+    );
+    return;
+  }
+
+  // Verify connection owns the node
+  if (nodeResult.data.connectionId !== ws.id) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'FORBIDDEN', message: 'Connection does not own this node' },
+      correlationId,
+    );
+    return;
+  }
+
+  // Check if the new name is already taken in the same namespace
+  const existsResult = await nodeQueries.nodeExists(payload.name, nodeResult.data.namespace);
+  if (existsResult.error) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'INTERNAL_ERROR', message: 'Failed to check node name availability' },
+      correlationId,
+    );
+    return;
+  }
+
+  if (existsResult.data) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'CONFLICT', message: `Node name ${payload.name} already exists in namespace ${nodeResult.data.namespace}` },
+      correlationId,
+    );
+    return;
+  }
+
+  // Perform the rename
+  const updateResult = await nodeQueries.updateNode(payload.nodeId, { name: payload.name });
+  if (updateResult.error || !updateResult.data) {
+    sendResponse(
+      ws,
+      'node:rename:error',
+      { code: 'INTERNAL_ERROR', message: 'Failed to rename node' },
+      correlationId,
+    );
+    return;
+  }
+
+  logger.info('Node renamed successfully', {
+    nodeId: payload.nodeId,
+    oldName: nodeResult.data.name,
+    newName: payload.name,
+  });
+
+  sendResponse(
+    ws,
+    'node:rename:ack',
+    { node: updateResult.data },
     correlationId,
   );
 }

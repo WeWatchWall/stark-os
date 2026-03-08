@@ -311,6 +311,10 @@ export class NodeQueries {
   async updateNode(id: string, input: UpdateNodeInput): Promise<NodeResult<Node>> {
     const updates: Record<string, unknown> = {};
 
+    if (input.name !== undefined) {
+      updates.name = input.name;
+    }
+
     if (input.status !== undefined) {
       updates.status = input.status;
     }

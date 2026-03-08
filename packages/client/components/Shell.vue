@@ -3,8 +3,10 @@
     <!-- Taskbar -->
     <Taskbar
       :connectionState="connectionState"
+      :nodeName="nodeName"
       @signout="$emit('signout')"
       @toggle-status="statusPanelOpen = !statusPanelOpen"
+      @rename-node="(name: string) => $emit('rename-node', name)"
     />
 
     <!-- Desktop area -->
@@ -65,8 +67,10 @@
     <StatusPanel
       :visible="statusPanelOpen"
       :connectionState="connectionState"
+      :nodeName="nodeName"
       @close="statusPanelOpen = false"
       @signout="statusPanelOpen = false; $emit('signout')"
+      @rename-node="(name: string) => $emit('rename-node', name)"
     />
   </div>
 </template>
@@ -75,8 +79,8 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
-defineProps<{ connectionState: string }>();
-defineEmits<{ signout: [] }>();
+defineProps<{ connectionState: string; nodeName: string }>();
+defineEmits<{ signout: []; 'rename-node': [name: string] }>();
 
 const shell = useShellStore();
 const statusPanelOpen = ref(false);

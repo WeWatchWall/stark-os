@@ -14,9 +14,11 @@ import {
   handleNodeRegister,
   handleNodeHeartbeat,
   handleNodeReconnect,
+  handleNodeRename,
   handleNodeDisconnect,
   type WsConnection,
   type ReconnectNodePayload,
+  type RenameNodePayload,
 } from './handlers/node-handler.js';
 import { routePodMessage } from './handlers/pod-handler.js';
 import { routeMetricsMessage } from './handlers/metrics-handler.js';
@@ -512,6 +514,19 @@ export class ConnectionManager {
           return;
         }
         await handleNodeHeartbeat(wsConnection, message as WsMessage<NodeHeartbeat>);
+        break;
+
+      case 'node:rename':
+        // Require authentication for node rename (agents only, not pod connections)
+        if (this.options.requireAuth && (!conn.isAuthenticated || conn.connectionType === 'pod')) {
+          this.sendMessage(conn.ws, {
+            type: 'node:rename:error',
+            payload: { code: 'UNAUTHORIZED', message: 'Authentication required' },
+            correlationId: message.correlationId,
+          });
+          return;
+        }
+        await handleNodeRename(wsConnection, message as WsMessage<RenameNodePayload>);
         break;
 
       default:

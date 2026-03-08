@@ -62,10 +62,14 @@
       class="context-menu"
       :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
     >
-      <div class="context-item" @click="renameFileFromContext"><i class="codicon codicon-edit"></i> Rename</div>
-      <div class="context-item" @click="duplicateFileFromContext"><i class="codicon codicon-copy"></i> Duplicate</div>
+      <div class="context-item" @click="newFileFromContext"><i class="codicon codicon-new-file"></i> New File</div>
+      <div class="context-item" @click="newFolderFromContext"><i class="codicon codicon-new-folder"></i> New Folder</div>
       <div class="context-separator"></div>
-      <div class="context-item danger" @click="deleteFileFromContext"><i class="codicon codicon-trash"></i> Delete</div>
+      <div v-if="!contextMenu.isDirectory" class="context-item" @click="renameFileFromContext"><i class="codicon codicon-edit"></i> Rename</div>
+      <div v-if="contextMenu.isDirectory" class="context-item" @click="renameFolderFromContext"><i class="codicon codicon-edit"></i> Rename</div>
+      <div v-if="!contextMenu.isDirectory" class="context-item" @click="duplicateFileFromContext"><i class="codicon codicon-copy"></i> Duplicate</div>
+      <div class="context-separator"></div>
+      <div class="context-item danger" @click="deleteFromContext"><i class="codicon codicon-trash"></i> Delete</div>
     </div>
 
     <!-- Activity bar -->
@@ -85,6 +89,15 @@
         @click="togglePanel('search')"
       >
         <i class="codicon codicon-search"></i>
+      </button>
+      <button
+        class="activity-btn"
+        :class="{ active: activePanel === 'scm' && sidebarVisible }"
+        title="Source Control (Ctrl+Shift+G)"
+        @click="togglePanel('scm')"
+      >
+        <i class="codicon codicon-source-control"></i>
+        <span v-if="scmChangedFiles.length > 0" class="activity-badge">{{ scmChangedFiles.length }}</span>
       </button>
       <button
         class="activity-btn"
@@ -111,57 +124,91 @@
         <div class="sidebar-header">
           <span class="sidebar-title">EXPLORER</span>
           <div class="sidebar-actions">
-            <button class="icon-btn" title="Open Folder" @click="openFolder">
-              <i class="codicon codicon-folder-opened"></i>
-            </button>
-            <button class="icon-btn" title="New File (Ctrl+N)" @click="createNewFile">
+            <button class="icon-btn" title="New File" @click="startInlineCreate('file')">
               <i class="codicon codicon-new-file"></i>
             </button>
-            <button class="icon-btn" title="Collapse Sidebar" @click="sidebarVisible = false">
-              <i class="codicon codicon-panel-left"></i>
+            <button class="icon-btn" title="New Folder" @click="startInlineCreate('directory')">
+              <i class="codicon codicon-new-folder"></i>
+            </button>
+            <button class="icon-btn" title="Refresh Explorer" @click="refreshTree">
+              <i class="codicon codicon-refresh"></i>
+            </button>
+            <button class="icon-btn" title="Collapse All" @click="collapseAll">
+              <i class="codicon codicon-collapse-all"></i>
             </button>
           </div>
         </div>
         <div class="file-list">
           <template v-if="projectRoot">
-            <div
-              v-for="node in flatTree"
-              :key="node.path"
-              class="file-item"
-              :class="{ active: currentFile === node.path }"
-              :style="{ paddingLeft: (12 + node.depth * 16) + 'px' }"
-              @click="node.isDirectory ? toggleTreeNode(node) : openFile(node.path)"
-              @dblclick="!node.isDirectory && startRenaming(node.path)"
-              @contextmenu.prevent="!node.isDirectory && showFileContextMenu($event, node.path)"
-            >
-              <i v-if="node.isDirectory" :class="'codicon codicon-' + (node.expanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
-              <span v-else class="tree-toggle-spacer"></span>
-              <i v-if="node.isDirectory" class="codicon codicon-folder file-codicon folder-icon"></i>
-              <i v-else :class="'codicon codicon-' + getCodiconForFile(node.name)" class="file-codicon"></i>
+            <!-- Inline create input at root level -->
+            <div v-if="inlineCreate.active && !inlineCreate.parentPath" class="file-item" :style="{ paddingLeft: '12px' }">
+              <i v-if="inlineCreate.type === 'directory'" class="codicon codicon-folder file-codicon folder-icon"></i>
+              <i v-else class="codicon codicon-file file-codicon"></i>
               <input
-                v-if="renamingFile === node.path"
-                ref="renameInput"
-                v-model="renameValue"
+                ref="inlineCreateInput"
+                v-model="inlineCreate.name"
                 class="rename-input"
-                @blur="finishRename"
-                @keydown.enter="finishRename"
-                @keydown.escape="cancelRename"
+                :placeholder="inlineCreate.type === 'directory' ? 'Folder name' : 'File name'"
+                @blur="finishInlineCreate"
+                @keydown.enter="finishInlineCreate"
+                @keydown.escape="cancelInlineCreate"
                 @click.stop
               />
-              <span v-else class="file-name">{{ node.name }}</span>
-              <button
-                v-if="!node.isDirectory"
-                class="delete-btn"
-                title="Delete"
-                @click.stop="removeFile(node.path)"
-              ><i class="codicon codicon-close"></i></button>
             </div>
+            <template v-for="node in flatTree" :key="node.path">
+              <div
+                class="file-item"
+                :class="{ active: currentFile === node.path }"
+                :style="{ paddingLeft: (12 + node.depth * 16) + 'px' }"
+                @click="node.isDirectory ? toggleTreeNode(node) : openFile(node.path)"
+                @dblclick="!node.isDirectory && startRenaming(node.path)"
+                @contextmenu.prevent="showFileContextMenu($event, node)"
+              >
+                <i v-if="node.isDirectory" :class="'codicon codicon-' + (node.expanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+                <span v-else class="tree-toggle-spacer"></span>
+                <i v-if="node.isDirectory" class="codicon codicon-folder file-codicon folder-icon"></i>
+                <i v-else :class="'codicon codicon-' + getCodiconForFile(node.name)" class="file-codicon"></i>
+                <input
+                  v-if="renamingFile === node.path"
+                  ref="renameInput"
+                  v-model="renameValue"
+                  class="rename-input"
+                  @blur="finishRename"
+                  @keydown.enter="finishRename"
+                  @keydown.escape="cancelRename"
+                  @click.stop
+                />
+                <span v-else class="file-name">{{ node.name }}</span>
+                <button
+                  v-if="!node.isDirectory"
+                  class="delete-btn"
+                  title="Delete"
+                  @click.stop="removeFile(node.path)"
+                ><i class="codicon codicon-close"></i></button>
+              </div>
+              <!-- Inline create input inside an expanded directory -->
+              <div v-if="inlineCreate.active && inlineCreate.parentPath === node.path && node.isDirectory && node.expanded" class="file-item" :style="{ paddingLeft: (12 + (node.depth + 1) * 16) + 'px' }">
+                <span class="tree-toggle-spacer"></span>
+                <i v-if="inlineCreate.type === 'directory'" class="codicon codicon-folder file-codicon folder-icon"></i>
+                <i v-else class="codicon codicon-file file-codicon"></i>
+                <input
+                  ref="inlineCreateInput"
+                  v-model="inlineCreate.name"
+                  class="rename-input"
+                  :placeholder="inlineCreate.type === 'directory' ? 'Folder name' : 'File name'"
+                  @blur="finishInlineCreate"
+                  @keydown.enter="finishInlineCreate"
+                  @keydown.escape="cancelInlineCreate"
+                  @click.stop
+                />
+              </div>
+            </template>
           </template>
           <div v-if="!projectRoot" class="empty-hint">
             <i class="codicon codicon-folder-opened"></i><br/>
             No folder open.<br />Click <kbd>Open Folder</kbd> or press <kbd>Ctrl+N</kbd> to start.
           </div>
-          <div v-else-if="flatTree.length === 0" class="empty-hint">
+          <div v-else-if="flatTree.length === 0 && !inlineCreate.active" class="empty-hint">
             <i class="codicon codicon-new-file"></i><br/>
             This folder is empty.<br />Press <kbd>Ctrl+N</kbd> to create a file.
           </div>
@@ -203,6 +250,117 @@
             </div>
           </div>
         </div>
+      </template>
+
+      <!-- Source Control panel -->
+      <template v-if="activePanel === 'scm'">
+        <div class="sidebar-header">
+          <span class="sidebar-title">SOURCE CONTROL</span>
+          <div class="sidebar-actions">
+            <button class="icon-btn" title="Refresh" @click="refreshScm">
+              <i class="codicon codicon-refresh"></i>
+            </button>
+          </div>
+        </div>
+        <div v-if="!scmInitialized" class="scm-init-panel">
+          <div class="scm-init-message">
+            <i class="codicon codicon-source-control" style="font-size: 48px; color: #555; display: block; margin-bottom: 12px;"></i>
+            <p style="color: #888; font-size: 12px; margin-bottom: 12px;">No source control provider registered.</p>
+            <button class="ext-btn install" @click="initScm" style="margin: 0 auto;">
+              <i class="codicon codicon-add"></i> Initialize Repository
+            </button>
+          </div>
+        </div>
+        <template v-else>
+          <!-- Commit message input -->
+          <div class="scm-commit-area">
+            <div class="scm-branch-row">
+              <i class="codicon codicon-git-branch"></i>
+              <span class="scm-branch-name">{{ scmBranch }}</span>
+            </div>
+            <div class="scm-input-wrapper">
+              <textarea
+                v-model="scmCommitMessage"
+                class="scm-commit-input"
+                placeholder="Message (press Ctrl+Enter to commit)"
+                rows="3"
+                @keydown.ctrl.enter="commitScm"
+              ></textarea>
+            </div>
+            <button class="scm-commit-btn" :disabled="!scmCommitMessage.trim() || scmStagedFiles.length === 0" @click="commitScm">
+              <i class="codicon codicon-check"></i> Commit
+            </button>
+          </div>
+          <!-- Staged changes -->
+          <div v-if="scmStagedFiles.length > 0" class="scm-section">
+            <div class="scm-section-header" @click="scmStagedExpanded = !scmStagedExpanded">
+              <i :class="'codicon codicon-' + (scmStagedExpanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+              <span class="scm-section-title">Staged Changes</span>
+              <span class="scm-section-count">{{ scmStagedFiles.length }}</span>
+              <button class="icon-btn" title="Unstage All" @click.stop="unstageAllScm" style="margin-left:auto;">
+                <i class="codicon codicon-remove"></i>
+              </button>
+            </div>
+            <template v-if="scmStagedExpanded">
+              <div v-for="file in scmStagedFiles" :key="'staged-'+file.path" class="scm-file-item" @click="openScmDiff(file)">
+                <i :class="'codicon codicon-' + getCodiconForFile(file.name)" class="file-codicon"></i>
+                <span class="scm-file-name">{{ file.name }}</span>
+                <span class="scm-file-status" :class="file.status">{{ file.statusLabel }}</span>
+                <button class="icon-btn scm-action" title="Unstage" @click.stop="unstageScmFile(file.path)">
+                  <i class="codicon codicon-remove"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+          <!-- Changes (unstaged) -->
+          <div v-if="scmChangedFiles.length > 0" class="scm-section">
+            <div class="scm-section-header" @click="scmChangesExpanded = !scmChangesExpanded">
+              <i :class="'codicon codicon-' + (scmChangesExpanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+              <span class="scm-section-title">Changes</span>
+              <span class="scm-section-count">{{ scmChangedFiles.length }}</span>
+              <button class="icon-btn" title="Stage All" @click.stop="stageAllScm" style="margin-left:auto;">
+                <i class="codicon codicon-add"></i>
+              </button>
+              <button class="icon-btn" title="Discard All" @click.stop="discardAllScm">
+                <i class="codicon codicon-discard"></i>
+              </button>
+            </div>
+            <template v-if="scmChangesExpanded">
+              <div v-for="file in scmChangedFiles" :key="'changed-'+file.path" class="scm-file-item" @click="openScmDiff(file)">
+                <i :class="'codicon codicon-' + getCodiconForFile(file.name)" class="file-codicon"></i>
+                <span class="scm-file-name">{{ file.name }}</span>
+                <span class="scm-file-status" :class="file.status">{{ file.statusLabel }}</span>
+                <button class="icon-btn scm-action" title="Stage" @click.stop="stageScmFile(file.path)">
+                  <i class="codicon codicon-add"></i>
+                </button>
+                <button class="icon-btn scm-action" title="Discard" @click.stop="discardScmFile(file.path)">
+                  <i class="codicon codicon-discard"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+          <div v-if="scmChangedFiles.length === 0 && scmStagedFiles.length === 0" class="scm-clean-msg">
+            <i class="codicon codicon-check" style="color: #22c55e;"></i>
+            <span>No changes detected</span>
+          </div>
+          <!-- Commit history -->
+          <div v-if="scmCommits.length > 0" class="scm-section">
+            <div class="scm-section-header" @click="scmHistoryExpanded = !scmHistoryExpanded">
+              <i :class="'codicon codicon-' + (scmHistoryExpanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+              <span class="scm-section-title">Commit History</span>
+              <span class="scm-section-count">{{ scmCommits.length }}</span>
+            </div>
+            <template v-if="scmHistoryExpanded">
+              <div v-for="commit in scmCommits.slice(0, 50)" :key="commit.hash" class="scm-commit-entry">
+                <i class="codicon codicon-git-commit"></i>
+                <div class="scm-commit-info">
+                  <div class="scm-commit-msg">{{ commit.message }}</div>
+                  <div class="scm-commit-meta">{{ commit.hash.substring(0,7) }} · {{ formatCommitTime(commit.timestamp) }}</div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
       </template>
 
       <!-- Extensions panel -->
@@ -335,30 +493,55 @@
     <!-- Main area -->
     <div class="main">
       <!-- Tab bar -->
-      <div class="tab-bar" v-if="openTabs.length > 0">
+      <div class="tab-bar" v-if="sortedTabs.length > 0">
         <div
-          v-for="tab in openTabs"
+          v-for="tab in sortedTabs"
           :key="tab.path"
           class="tab"
-          :class="{ active: tab.path === currentFile, modified: tab.modified }"
+          :class="{ active: tab.path === currentFile, modified: tab.modified, pinned: tab.pinned, 'drag-over': dragOverTab === tab.path }"
+          draggable="true"
           @click="switchToTab(tab.path)"
           @auxclick.middle.prevent="closeTab(tab.path)"
+          @contextmenu.prevent="showTabContextMenu($event, tab)"
+          @dragstart="onTabDragStart($event, tab)"
+          @dragover.prevent="onTabDragOver($event, tab)"
+          @dragleave="onTabDragLeave"
+          @drop="onTabDrop($event, tab)"
+          @dragend="onTabDragEnd"
         >
+          <i v-if="tab.pinned" class="codicon codicon-pinned tab-pin-icon"></i>
           <i :class="'codicon codicon-' + getCodiconForFile(tab.name)" class="tab-codicon"></i>
-          <span class="tab-label">{{ tab.name }}</span>
-          <span v-if="tab.modified" class="tab-dot"><i class="codicon codicon-circle-filled"></i></span>
-          <button class="tab-close" @click.stop="closeTab(tab.path)"><i class="codicon codicon-close"></i></button>
+          <span v-if="!tab.pinned" class="tab-label">{{ tab.name }}</span>
+          <span v-if="tab.modified && !tab.pinned" class="tab-dot"><i class="codicon codicon-circle-filled"></i></span>
+          <button v-if="!tab.pinned" class="tab-close" @click.stop="closeTab(tab.path)"><i class="codicon codicon-close"></i></button>
         </div>
       </div>
+
+      <!-- Tab context menu -->
+      <div
+        v-if="tabContextMenu.show"
+        class="context-menu"
+        :style="{ top: tabContextMenu.y + 'px', left: tabContextMenu.x + 'px' }"
+      >
+        <div v-if="!tabContextMenu.pinned" class="context-item" @click="pinTab(tabContextMenu.path)"><i class="codicon codicon-pin"></i> Pin Tab</div>
+        <div v-else class="context-item" @click="unpinTab(tabContextMenu.path)"><i class="codicon codicon-pinned"></i> Unpin Tab</div>
+        <div class="context-separator"></div>
+        <div class="context-item" @click="closeTab(tabContextMenu.path); tabContextMenu.show = false"><i class="codicon codicon-close"></i> Close</div>
+        <div class="context-item" @click="closeOtherTabs(tabContextMenu.path)"><i class="codicon codicon-close-all"></i> Close Others</div>
+        <div class="context-item" @click="closeAllTabs"><i class="codicon codicon-close-all"></i> Close All</div>
+      </div>
+      <div v-if="tabContextMenu.show" class="click-blocker" @click="tabContextMenu.show = false" @contextmenu.prevent="tabContextMenu.show = false"></div>
 
       <!-- Breadcrumbs -->
       <div v-if="currentFile" class="breadcrumbs">
         <i class="codicon codicon-home breadcrumb-home" @click="togglePanel('explorer')"></i>
+        <template v-for="(seg, idx) in currentFileBreadcrumbs" :key="idx">
+          <i class="codicon codicon-chevron-right breadcrumb-sep"></i>
+          <i v-if="idx === currentFileBreadcrumbs.length - 1" :class="'codicon codicon-' + getCodiconForFile(seg)" class="breadcrumb-icon"></i>
+          <span class="breadcrumb-item" :class="{ 'breadcrumb-last': idx === currentFileBreadcrumbs.length - 1 }">{{ seg }}</span>
+        </template>
         <i class="codicon codicon-chevron-right breadcrumb-sep"></i>
-        <i :class="'codicon codicon-' + getCodiconForFile(openTabs.find(t => t.path === currentFile)?.name || '')" class="breadcrumb-icon"></i>
-        <span class="breadcrumb-item">{{ openTabs.find(t => t.path === currentFile)?.name || '' }}</span>
-        <i class="codicon codicon-chevron-right breadcrumb-sep"></i>
-        <span class="breadcrumb-lang">{{ getLanguageLabel(openTabs.find(t => t.path === currentFile)?.name || '') }}</span>
+        <span class="breadcrumb-lang">{{ getLanguageLabel(sortedTabs.find(t => t.path === currentFile)?.name || '') }}</span>
       </div>
 
       <!-- Editor -->
@@ -399,6 +582,8 @@
               <div class="shortcut-row"><kbd>Ctrl+S</kbd> <span>Save File</span></div>
               <div class="shortcut-row"><kbd>Ctrl+W</kbd> <span>Close Tab</span></div>
               <div class="shortcut-row"><kbd>Ctrl+Shift+F</kbd> <span>Search in Files</span></div>
+              <div class="shortcut-row"><kbd>Ctrl+Shift+G</kbd> <span>Source Control</span></div>
+              <div class="shortcut-row"><kbd>Ctrl+Shift+E</kbd> <span>Explorer</span></div>
               <div class="shortcut-row"><kbd>Ctrl+B</kbd> <span>Toggle Sidebar</span></div>
               <div class="shortcut-row"><kbd>Ctrl+`</kbd> <span>Toggle Terminal</span></div>
               <div class="shortcut-row"><kbd>F2</kbd> <span>Rename File</span></div>
@@ -417,10 +602,31 @@
       </div>
 
       <!-- Terminal panel (SharedTerminal component) -->
-      <div v-if="terminalVisible" class="terminal-panel">
+      <div v-if="terminalVisible" class="terminal-panel" :style="{ height: terminalHeight + 'px' }">
+        <!-- Terminal resize handle -->
+        <div
+          class="terminal-resize-handle"
+          @mousedown="startTerminalResize"
+          @touchstart="startTerminalResize"
+        ></div>
         <div class="terminal-header">
           <div class="terminal-tabs">
-            <div class="terminal-tab active"><i class="codicon codicon-terminal"></i> Terminal</div>
+            <div
+              v-for="(t, idx) in terminals"
+              :key="t.id"
+              class="terminal-tab"
+              :class="{ active: activeTerminalId === t.id }"
+              @click="switchTerminal(t.id)"
+            >
+              <i class="codicon codicon-terminal"></i>
+              <span>{{ t.label }}</span>
+              <button v-if="terminals.length > 1" class="terminal-tab-close" @click.stop="removeTerminal(t.id)">
+                <i class="codicon codicon-close"></i>
+              </button>
+            </div>
+            <button class="terminal-action-btn" title="New Terminal" @click="addTerminal">
+              <i class="codicon codicon-add"></i>
+            </button>
           </div>
           <div class="terminal-actions">
             <button class="terminal-action-btn" title="Clear" @click="clearTerminal">
@@ -432,13 +638,18 @@
           </div>
         </div>
         <div class="terminal-body">
-          <SharedTerminal ref="terminalRef" :initial-path="terminalInitialPath" />
+          <div v-for="t in terminals" :key="t.id" v-show="activeTerminalId === t.id" class="terminal-instance">
+            <SharedTerminal :ref="(el: any) => setTerminalRef(t.id, el)" :initial-path="terminalInitialPath" />
+          </div>
         </div>
       </div>
 
       <!-- Status bar -->
       <div class="status-bar">
         <div class="status-left">
+          <span v-if="scmInitialized" class="status-item clickable" title="Switch Branch" @click="togglePanel('scm')">
+            <i class="codicon codicon-git-branch"></i> {{ scmBranch }}
+          </span>
           <span v-if="currentFile" class="status-item">
             <i class="codicon codicon-text-size"></i> Ln {{ cursorLine }}, Col {{ cursorColumn }}
           </span>
@@ -492,6 +703,8 @@ interface Tab {
   name: string;
   path: string;  // full OPFS path
   modified: boolean;
+  pinned: boolean;
+  order: number;
 }
 interface SearchResult {
   file: string;
@@ -516,9 +729,34 @@ interface TreeNode {
   children: TreeNode[];
   depth: number;
 }
+interface ScmFileEntry {
+  path: string;
+  name: string;
+  status: 'modified' | 'added' | 'deleted';
+  statusLabel: string;
+}
+interface ScmCommitEntry {
+  hash: string;
+  message: string;
+  timestamp: number;
+  files: string[];
+}
+interface ScmState {
+  initialized: boolean;
+  branch: string;
+  commits: ScmCommitEntry[];
+  staged: string[];
+  snapshot: Record<string, string>;  // path → content hash (simplified: we store content)
+}
+interface TerminalInstance {
+  id: number;
+  label: string;
+}
 
 // ─── Constants ──────────────────────────────────────
 const SAVE_DELAY = 1000;
+const SCM_STORAGE_KEY = '.stark-code/scm.json';
+const SCM_SNAPSHOT_DIR = '.stark-code/scm-snapshots';
 
 // ─── Shared OPFS FS ────────────────────────────────
 let opfsRoot: FileSystemDirectoryHandle | null = null;
@@ -526,24 +764,26 @@ let fs: ReadonlyFS | null = null;
 
 // ─── State ──────────────────────────────────────────
 const monacoContainer = ref<HTMLElement | null>(null);
-const terminalRef = ref<InstanceType<typeof SharedTerminal> | null>(null);
 const paletteInput = ref<HTMLInputElement | null>(null);
 const sidebarSearchInput = ref<HTMLInputElement | null>(null);
 const renameInput = ref<HTMLInputElement | null>(null);
+const inlineCreateInput = ref<HTMLInputElement | null>(null);
 
 const projectRoot = ref<string | null>(null);  // null = no project open
 const treeNodes = ref<TreeNode[]>([]);
 const currentFile = ref<string | null>(null);
 const saveStatus = ref<'saved' | 'saving' | 'idle'>('idle');
 const openTabs = ref<Tab[]>([]);
+let tabOrderCounter = 0;
 const sidebarVisible = ref(true);
 const sidebarWidth = ref(260);
-const activePanel = ref<'explorer' | 'search' | 'extensions'>('explorer');
+const activePanel = ref<'explorer' | 'search' | 'scm' | 'extensions'>('explorer');
 const cursorLine = ref(1);
 const cursorColumn = ref(1);
 const editorTabSize = ref(2);
 const wordWrapEnabled = ref(true);
 const terminalVisible = ref(false);
+const terminalHeight = ref(250);
 
 // Files-picker state
 const showFilePicker = ref(false);
@@ -574,10 +814,43 @@ const renamingFile = ref<string | null>(null);
 const renameValue = ref('');
 
 // Context menu
-const contextMenu = reactive({ show: false, x: 0, y: 0, file: '', path: '' });
+const contextMenu = reactive({ show: false, x: 0, y: 0, file: '', path: '', isDirectory: false });
+
+// Tab context menu
+const tabContextMenu = reactive({ show: false, x: 0, y: 0, path: '', pinned: false });
+
+// Tab drag state
+const dragOverTab = ref<string | null>(null);
+let draggedTab: Tab | null = null;
+
+// Inline create state
+const inlineCreate = reactive({ active: false, type: 'file' as 'file' | 'directory', parentPath: '' as string | null, name: '' });
 
 // Notifications
 const toasts = ref<ToastMsg[]>([]);
+
+// Terminal multi-instance state
+let terminalIdCounter = 1;
+const terminals = ref<TerminalInstance[]>([{ id: 1, label: 'Terminal 1' }]);
+const activeTerminalId = ref(1);
+const terminalRefs = new Map<number, any>();
+
+// Terminal resize state
+let isTerminalResizing = false;
+let terminalResizeStartY = 0;
+let terminalResizeStartHeight = 0;
+
+// SCM (Source Control) state
+const scmInitialized = ref(false);
+const scmBranch = ref('main');
+const scmCommitMessage = ref('');
+const scmChangedFiles = ref<ScmFileEntry[]>([]);
+const scmStagedFiles = ref<ScmFileEntry[]>([]);
+const scmCommits = ref<ScmCommitEntry[]>([]);
+const scmStagedExpanded = ref(true);
+const scmChangesExpanded = ref(true);
+const scmHistoryExpanded = ref(false);
+let scmSnapshot: Record<string, string> = {};  // path → content at last commit
 
 // Editor internals
 let editor: any = null;
@@ -596,6 +869,24 @@ const activeExtDisposers = new Map<string, () => void>();
 
 // ─── Terminal path ──────────────────────────────────
 const terminalInitialPath = computed(() => projectRoot.value || '/home');
+
+// ─── Sorted tabs (pinned first, then by order) ─────
+const sortedTabs = computed(() => {
+  return [...openTabs.value].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return a.order - b.order;
+  });
+});
+
+// ─── Breadcrumbs segments ───────────────────────────
+const currentFileBreadcrumbs = computed(() => {
+  if (!currentFile.value || !projectRoot.value) return [];
+  const rel = currentFile.value.startsWith(projectRoot.value)
+    ? currentFile.value.slice(projectRoot.value.length + 1)
+    : currentFile.value;
+  return rel.split('/').filter(Boolean);
+});
 
 // ─── Files Picker helpers ───────────────────────────
 function openPickerDialog(
@@ -893,14 +1184,19 @@ const saveStatusText = computed(() => {
 const commandList = computed<PaletteItem[]>(() => [
   { codicon: 'folder-opened', label: 'Open Folder...', action: openFolder },
   { codicon: 'go-to-file', label: 'Open File...', shortcut: 'Ctrl+P', action: () => openFilePicker() },
-  { codicon: 'new-file', label: 'New File', shortcut: 'Ctrl+N', action: createNewFile },
+  { codicon: 'new-file', label: 'New File', shortcut: 'Ctrl+N', action: () => startInlineCreate('file') },
+  { codicon: 'new-folder', label: 'New Folder', action: () => startInlineCreate('directory') },
   { codicon: 'save', label: 'Save File', shortcut: 'Ctrl+S', action: saveCurrentFile },
   { codicon: 'save-as', label: 'Save As...', action: saveAsFile },
   { codicon: 'search', label: 'Search in Files', shortcut: 'Ctrl+Shift+F', action: () => openSidebarSearch() },
   { codicon: 'go-to-file', label: 'Quick Open File', shortcut: 'Ctrl+P', action: () => openCommandPalette('files') },
   { codicon: 'close', label: 'Close Tab', shortcut: 'Ctrl+W', action: () => currentFile.value && closeTab(currentFile.value) },
+  { codicon: 'close-all', label: 'Close All Tabs', action: closeAllTabs },
   { codicon: 'layout-sidebar-left', label: 'Toggle Sidebar', shortcut: 'Ctrl+B', action: () => { sidebarVisible.value = !sidebarVisible.value } },
   { codicon: 'terminal', label: 'Toggle Terminal', shortcut: "Ctrl+`", action: () => toggleTerminal() },
+  { codicon: 'terminal', label: 'New Terminal', action: () => { terminalVisible.value = true; addTerminal(); } },
+  { codicon: 'source-control', label: 'Source Control', shortcut: 'Ctrl+Shift+G', action: () => togglePanel('scm') },
+  { codicon: 'files', label: 'Explorer', shortcut: 'Ctrl+Shift+E', action: () => togglePanel('explorer') },
   { codicon: 'word-wrap', label: 'Toggle Word Wrap', action: toggleWordWrap },
   { codicon: 'layout-sidebar-right', label: 'Toggle Minimap', action: toggleMinimap },
   { codicon: 'indent', label: 'Indent Using Spaces: 2', action: () => setTabSize(2) },
@@ -911,6 +1207,8 @@ const commandList = computed<PaletteItem[]>(() => [
   { codicon: 'replace', label: 'Find and Replace', shortcut: 'Ctrl+H', action: () => editorAction('editor.action.startFindReplaceAction') },
   { codicon: 'go-to-file', label: 'Go to Line', shortcut: 'Ctrl+G', action: () => editorAction('editor.action.gotoLine') },
   { codicon: 'symbol-method', label: 'Format Document', shortcut: 'Shift+Alt+F', action: () => editorAction('editor.action.formatDocument') },
+  { codicon: 'collapse-all', label: 'Collapse All in Explorer', action: collapseAll },
+  { codicon: 'refresh', label: 'Refresh Explorer', action: refreshTree },
   { codicon: 'extensions', label: 'Show Extensions', shortcut: 'Ctrl+Shift+X', action: () => togglePanel('extensions') },
   { codicon: 'extensions', label: 'Install Extension...', action: () => { togglePanel('extensions'); extSearchQuery.value = ''; } },
 ]);
@@ -1026,7 +1324,7 @@ function getOrCreateTab(path: string): Tab {
   if (!tab) {
     const parts = getPathParts(path);
     const name = parts[parts.length - 1] || path;
-    tab = { name, path, modified: false };
+    tab = { name, path, modified: false, pinned: false, order: tabOrderCounter++ };
     openTabs.value.push(tab);
   }
   return tab;
@@ -1366,16 +1664,52 @@ async function finishRename() {
 }
 
 // ─── Context Menu ───────────────────────────────────
-function showFileContextMenu(event: MouseEvent, path: string) {
-  const parts = getPathParts(path);
+function showFileContextMenu(event: MouseEvent, node: TreeNode) {
+  const parts = getPathParts(node.path);
   contextMenu.show = true;
   contextMenu.x = event.clientX;
   contextMenu.y = event.clientY;
   contextMenu.file = parts[parts.length - 1] || '';
-  contextMenu.path = path;
+  contextMenu.path = node.path;
+  contextMenu.isDirectory = node.isDirectory;
+}
+
+function newFileFromContext() {
+  const path = contextMenu.path;
+  const isDir = contextMenu.isDirectory;
+  contextMenu.show = false;
+  if (isDir) {
+    startInlineCreate('file', path);
+  } else {
+    // Create in parent directory
+    const parts = getPathParts(path);
+    parts.pop();
+    const parentPath = '/' + parts.join('/');
+    startInlineCreate('file', parentPath === projectRoot.value ? undefined : parentPath);
+  }
+}
+
+function newFolderFromContext() {
+  const path = contextMenu.path;
+  const isDir = contextMenu.isDirectory;
+  contextMenu.show = false;
+  if (isDir) {
+    startInlineCreate('directory', path);
+  } else {
+    const parts = getPathParts(path);
+    parts.pop();
+    const parentPath = '/' + parts.join('/');
+    startInlineCreate('directory', parentPath === projectRoot.value ? undefined : parentPath);
+  }
 }
 
 function renameFileFromContext() {
+  const path = contextMenu.path;
+  contextMenu.show = false;
+  startRenaming(path);
+}
+
+function renameFolderFromContext() {
   const path = contextMenu.path;
   contextMenu.show = false;
   startRenaming(path);
@@ -1398,10 +1732,47 @@ async function duplicateFileFromContext() {
   notify(`Duplicated as ${newName}`, 'success');
 }
 
-function deleteFileFromContext() {
+async function deleteFromContext() {
   const path = contextMenu.path;
+  const isDir = contextMenu.isDirectory;
   contextMenu.show = false;
-  removeFile(path);
+  if (isDir) {
+    await removeDirectory(path);
+  } else {
+    removeFile(path);
+  }
+}
+
+async function removeDirectory(path: string) {
+  const parts = getPathParts(path);
+  const name = parts[parts.length - 1] || path;
+  if (!confirm(`Delete folder "${name}" and all its contents?`)) return;
+  if (!fs) return;
+  try {
+    // Recursively delete using fs.rmdir if available, else manual
+    const entries = await fs.readdirWithTypes(path);
+    for (const entry of entries) {
+      const childPath = normalizePath(path + '/' + entry.name);
+      if (entry.isDirectory()) {
+        await removeDirectory(childPath);
+      } else {
+        await opfsDeleteFile(childPath);
+        // Close tab if open
+        const tabIdx = openTabs.value.findIndex(t => t.path === childPath);
+        if (tabIdx !== -1) {
+          const model = fileModels.get(childPath);
+          if (model) { model.dispose(); fileModels.delete(childPath); }
+          openTabs.value.splice(tabIdx, 1);
+        }
+      }
+    }
+    // Delete the directory itself using unlink (it should be empty now)
+    try { await fs.unlink(path); } catch { /* some FS impls need different approach */ }
+    await refreshTree();
+    notify(`Deleted folder: ${name}`, 'info');
+  } catch (e) {
+    notify(`Failed to delete folder: ${name}`, 'error');
+  }
 }
 
 // ─── Command Palette ────────────────────────────────
@@ -1473,28 +1844,553 @@ function setTabSize(size: number) {
   if (editor) editor.getModel()?.updateOptions({ tabSize: size });
 }
 
-function togglePanel(panel: 'explorer' | 'search' | 'extensions') {
+function togglePanel(panel: 'explorer' | 'search' | 'scm' | 'extensions') {
   if (activePanel.value === panel && sidebarVisible.value) {
     sidebarVisible.value = false;
   } else {
     activePanel.value = panel;
     sidebarVisible.value = true;
     if (panel === 'search') nextTick(() => sidebarSearchInput.value?.focus());
+    if (panel === 'scm' && scmInitialized.value) nextTick(() => refreshScm());
   }
 }
 
-// ─── Terminal (SharedTerminal component) ─
+// ─── Terminal (multi-instance) ───────────────────────
+function setTerminalRef(id: number, el: any) {
+  if (el) {
+    terminalRefs.set(id, el);
+  } else {
+    terminalRefs.delete(id);
+  }
+}
+
 function toggleTerminal() {
   terminalVisible.value = !terminalVisible.value;
   if (terminalVisible.value) {
     nextTick(() => {
-      if (terminalRef.value) terminalRef.value.fit();
+      const ref = terminalRefs.get(activeTerminalId.value);
+      if (ref) ref.fit();
     });
   }
 }
 
 function clearTerminal() {
-  if (terminalRef.value) terminalRef.value.clear();
+  const ref = terminalRefs.get(activeTerminalId.value);
+  if (ref) ref.clear();
+}
+
+function addTerminal() {
+  terminalIdCounter++;
+  const inst: TerminalInstance = { id: terminalIdCounter, label: `Terminal ${terminalIdCounter}` };
+  terminals.value.push(inst);
+  activeTerminalId.value = inst.id;
+  nextTick(() => {
+    const ref = terminalRefs.get(inst.id);
+    if (ref) ref.fit();
+  });
+}
+
+function removeTerminal(id: number) {
+  const idx = terminals.value.findIndex(t => t.id === id);
+  if (idx === -1 || terminals.value.length <= 1) return;
+  terminalRefs.delete(id);
+  terminals.value.splice(idx, 1);
+  if (activeTerminalId.value === id) {
+    activeTerminalId.value = terminals.value[Math.min(idx, terminals.value.length - 1)].id;
+    nextTick(() => {
+      const ref = terminalRefs.get(activeTerminalId.value);
+      if (ref) ref.fit();
+    });
+  }
+}
+
+function switchTerminal(id: number) {
+  activeTerminalId.value = id;
+  nextTick(() => {
+    const ref = terminalRefs.get(id);
+    if (ref) { ref.fit(); ref.focus(); }
+  });
+}
+
+// ─── Terminal Resize ────────────────────────────────
+function startTerminalResize(e: MouseEvent | TouchEvent) {
+  isTerminalResizing = true;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  terminalResizeStartY = clientY;
+  terminalResizeStartHeight = terminalHeight.value;
+  e.preventDefault();
+  document.addEventListener('mousemove', onTerminalResize);
+  document.addEventListener('mouseup', stopTerminalResize);
+  document.addEventListener('touchmove', onTerminalResize);
+  document.addEventListener('touchend', stopTerminalResize);
+}
+
+function onTerminalResize(e: MouseEvent | TouchEvent) {
+  if (!isTerminalResizing) return;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  const delta = terminalResizeStartY - clientY;
+  terminalHeight.value = Math.max(100, Math.min(600, terminalResizeStartHeight + delta));
+}
+
+function stopTerminalResize() {
+  isTerminalResizing = false;
+  document.removeEventListener('mousemove', onTerminalResize);
+  document.removeEventListener('mouseup', stopTerminalResize);
+  document.removeEventListener('touchmove', onTerminalResize);
+  document.removeEventListener('touchend', stopTerminalResize);
+  // Refit active terminal after resize
+  nextTick(() => {
+    const ref = terminalRefs.get(activeTerminalId.value);
+    if (ref) ref.fit();
+  });
+}
+
+// ─── Inline Create (in explorer) ────────────────────
+function startInlineCreate(type: 'file' | 'directory', parentPath?: string) {
+  if (!projectRoot.value) {
+    // If no project open, open folder first
+    openFolder();
+    return;
+  }
+  inlineCreate.active = true;
+  inlineCreate.type = type;
+  inlineCreate.parentPath = parentPath || null;
+  inlineCreate.name = '';
+
+  // If parent is a directory node, expand it
+  if (parentPath) {
+    const node = findTreeNode(treeNodes.value, parentPath);
+    if (node && !node.expanded) {
+      toggleTreeNode(node);
+    }
+  }
+
+  nextTick(() => {
+    const input = inlineCreateInput.value;
+    if (Array.isArray(input) && input[0]) {
+      input[0].focus();
+    } else if (input && !Array.isArray(input)) {
+      (input as HTMLInputElement).focus();
+    }
+  });
+}
+
+function cancelInlineCreate() {
+  inlineCreate.active = false;
+  inlineCreate.name = '';
+}
+
+async function finishInlineCreate() {
+  const name = inlineCreate.name.trim();
+  if (!name || !projectRoot.value) {
+    cancelInlineCreate();
+    return;
+  }
+
+  const basePath = inlineCreate.parentPath || projectRoot.value;
+  const fullPath = normalizePath(basePath + '/' + name);
+
+  try {
+    if (inlineCreate.type === 'directory') {
+      await fs!.mkdir(fullPath, true);
+      notify(`Created folder: ${name}`, 'success');
+    } else {
+      await opfsSaveFile(fullPath, '');
+      notify(`Created file: ${name}`, 'success');
+    }
+    await refreshTree();
+    if (inlineCreate.type === 'file') {
+      await openFile(fullPath);
+    }
+  } catch (e) {
+    notify(`Failed to create ${inlineCreate.type}: ${name}`, 'error');
+  }
+
+  cancelInlineCreate();
+}
+
+function findTreeNode(nodes: TreeNode[], path: string): TreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.isDirectory && node.children.length > 0) {
+      const found = findTreeNode(node.children, path);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function collapseAll() {
+  function collapseNodes(nodes: TreeNode[]) {
+    for (const node of nodes) {
+      if (node.isDirectory) {
+        node.expanded = false;
+        collapseNodes(node.children);
+      }
+    }
+  }
+  collapseNodes(treeNodes.value);
+}
+
+// ─── Tab Drag & Drop (reorder) ──────────────────────
+function onTabDragStart(e: DragEvent, tab: Tab) {
+  draggedTab = tab;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tab.path);
+  }
+}
+
+function onTabDragOver(e: DragEvent, tab: Tab) {
+  if (!draggedTab || draggedTab.path === tab.path) return;
+  dragOverTab.value = tab.path;
+}
+
+function onTabDragLeave() {
+  dragOverTab.value = null;
+}
+
+function onTabDrop(e: DragEvent, targetTab: Tab) {
+  dragOverTab.value = null;
+  if (!draggedTab || draggedTab.path === targetTab.path) return;
+  // Can only reorder within same group (pinned with pinned, unpinned with unpinned)
+  if (draggedTab.pinned !== targetTab.pinned) return;
+  // Swap order values
+  const tempOrder = draggedTab.order;
+  draggedTab.order = targetTab.order;
+  targetTab.order = tempOrder;
+  draggedTab = null;
+}
+
+function onTabDragEnd() {
+  draggedTab = null;
+  dragOverTab.value = null;
+}
+
+// ─── Tab Pin/Unpin ──────────────────────────────────
+function pinTab(path: string) {
+  tabContextMenu.show = false;
+  const tab = openTabs.value.find(t => t.path === path);
+  if (tab) tab.pinned = true;
+}
+
+function unpinTab(path: string) {
+  tabContextMenu.show = false;
+  const tab = openTabs.value.find(t => t.path === path);
+  if (tab) tab.pinned = false;
+}
+
+function showTabContextMenu(e: MouseEvent, tab: Tab) {
+  tabContextMenu.show = true;
+  tabContextMenu.x = e.clientX;
+  tabContextMenu.y = e.clientY;
+  tabContextMenu.path = tab.path;
+  tabContextMenu.pinned = tab.pinned;
+}
+
+async function closeOtherTabs(keepPath: string) {
+  tabContextMenu.show = false;
+  const toClose = openTabs.value.filter(t => t.path !== keepPath && !t.pinned);
+  for (const tab of toClose) {
+    await closeTab(tab.path);
+  }
+}
+
+async function closeAllTabs() {
+  tabContextMenu.show = false;
+  const toClose = openTabs.value.filter(t => !t.pinned);
+  for (const tab of toClose) {
+    await closeTab(tab.path);
+  }
+}
+
+// ─── Source Control (SCM) ───────────────────────────
+async function loadScmState(): Promise<ScmState | null> {
+  if (!fs) return null;
+  try {
+    const raw = await fs.readFile(SCM_STORAGE_KEY);
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function saveScmState() {
+  if (!fs) return;
+  const state: ScmState = {
+    initialized: scmInitialized.value,
+    branch: scmBranch.value,
+    commits: scmCommits.value,
+    staged: scmStagedFiles.value.map(f => f.path),
+    snapshot: scmSnapshot,
+  };
+  try {
+    await fs.mkdir('.stark-code', true);
+    await fs.writeFile(SCM_STORAGE_KEY, JSON.stringify(state));
+  } catch { /* ignore */ }
+}
+
+async function initScm() {
+  if (!projectRoot.value || !fs) {
+    notify('Open a folder first to initialize a repository', 'error');
+    return;
+  }
+  scmInitialized.value = true;
+  scmBranch.value = 'main';
+  scmCommits.value = [];
+  scmSnapshot = {};
+
+  // Take initial snapshot of all files
+  await takeSnapshot();
+  // Create initial commit
+  const files = Object.keys(scmSnapshot);
+  const commit: ScmCommitEntry = {
+    hash: generateHash(),
+    message: 'Initial commit',
+    timestamp: Date.now(),
+    files,
+  };
+  scmCommits.value.unshift(commit);
+  await saveScmState();
+  notify('Initialized repository on branch: main', 'success');
+}
+
+async function takeSnapshot() {
+  if (!fs || !projectRoot.value) return;
+  scmSnapshot = {};
+  await snapshotDir(projectRoot.value);
+}
+
+async function snapshotDir(dirPath: string) {
+  if (!fs) return;
+  try {
+    const entries = await fs.readdirWithTypes(dirPath);
+    for (const entry of entries) {
+      const childPath = normalizePath(dirPath + '/' + entry.name);
+      // Skip .stark-code internal directory
+      if (entry.name === '.stark-code') continue;
+      if (entry.isDirectory()) {
+        await snapshotDir(childPath);
+      } else {
+        try {
+          const content = await fs.readFile(childPath);
+          const relPath = childPath.startsWith(projectRoot.value!)
+            ? childPath.slice(projectRoot.value!.length + 1)
+            : childPath;
+          scmSnapshot[relPath] = content;
+        } catch { /* skip unreadable */ }
+      }
+    }
+  } catch { /* skip */ }
+}
+
+async function refreshScm() {
+  if (!scmInitialized.value || !fs || !projectRoot.value) return;
+
+  // Collect current files
+  const currentFiles: Record<string, string> = {};
+  await collectCurrentFiles(projectRoot.value, currentFiles);
+
+  const changed: ScmFileEntry[] = [];
+  const stagedPaths = new Set(scmStagedFiles.value.map(f => f.path));
+
+  // Check for modified and added files
+  for (const [relPath, content] of Object.entries(currentFiles)) {
+    if (relPath.startsWith('.stark-code/')) continue;
+    if (!(relPath in scmSnapshot)) {
+      const entry: ScmFileEntry = {
+        path: relPath,
+        name: relPath.split('/').pop() || relPath,
+        status: 'added',
+        statusLabel: 'A',
+      };
+      if (!stagedPaths.has(relPath)) {
+        changed.push(entry);
+      }
+    } else if (content !== scmSnapshot[relPath]) {
+      const entry: ScmFileEntry = {
+        path: relPath,
+        name: relPath.split('/').pop() || relPath,
+        status: 'modified',
+        statusLabel: 'M',
+      };
+      if (!stagedPaths.has(relPath)) {
+        changed.push(entry);
+      }
+    }
+  }
+
+  // Check for deleted files
+  for (const relPath of Object.keys(scmSnapshot)) {
+    if (!(relPath in currentFiles)) {
+      const entry: ScmFileEntry = {
+        path: relPath,
+        name: relPath.split('/').pop() || relPath,
+        status: 'deleted',
+        statusLabel: 'D',
+      };
+      if (!stagedPaths.has(relPath)) {
+        changed.push(entry);
+      }
+    }
+  }
+
+  // Update staged files - remove ones that are no longer changed
+  const updatedStaged: ScmFileEntry[] = [];
+  for (const staged of scmStagedFiles.value) {
+    if (staged.path.startsWith('.stark-code/')) continue;
+    const currentContent = currentFiles[staged.path];
+    const snapshotContent = scmSnapshot[staged.path];
+    if (staged.status === 'deleted' && !(staged.path in currentFiles)) {
+      updatedStaged.push(staged);
+    } else if (staged.status === 'added' && !(staged.path in scmSnapshot) && currentContent !== undefined) {
+      updatedStaged.push(staged);
+    } else if (staged.status === 'modified' && currentContent !== snapshotContent) {
+      updatedStaged.push(staged);
+    }
+  }
+
+  scmChangedFiles.value = changed;
+  scmStagedFiles.value = updatedStaged;
+}
+
+async function collectCurrentFiles(dirPath: string, result: Record<string, string>) {
+  if (!fs) return;
+  try {
+    const entries = await fs.readdirWithTypes(dirPath);
+    for (const entry of entries) {
+      const childPath = normalizePath(dirPath + '/' + entry.name);
+      if (entry.name === '.stark-code') continue;
+      if (entry.isDirectory()) {
+        await collectCurrentFiles(childPath, result);
+      } else {
+        try {
+          const content = await fs.readFile(childPath);
+          const relPath = childPath.startsWith(projectRoot.value!)
+            ? childPath.slice(projectRoot.value!.length + 1)
+            : childPath;
+          result[relPath] = content;
+        } catch { /* skip */ }
+      }
+    }
+  } catch { /* skip */ }
+}
+
+function stageScmFile(path: string) {
+  const idx = scmChangedFiles.value.findIndex(f => f.path === path);
+  if (idx === -1) return;
+  const file = scmChangedFiles.value.splice(idx, 1)[0];
+  scmStagedFiles.value.push(file);
+}
+
+function unstageScmFile(path: string) {
+  const idx = scmStagedFiles.value.findIndex(f => f.path === path);
+  if (idx === -1) return;
+  const file = scmStagedFiles.value.splice(idx, 1)[0];
+  scmChangedFiles.value.push(file);
+}
+
+function stageAllScm() {
+  scmStagedFiles.value.push(...scmChangedFiles.value);
+  scmChangedFiles.value = [];
+}
+
+function unstageAllScm() {
+  scmChangedFiles.value.push(...scmStagedFiles.value);
+  scmStagedFiles.value = [];
+}
+
+async function discardScmFile(path: string) {
+  if (!fs || !projectRoot.value) return;
+  const fullPath = normalizePath(projectRoot.value + '/' + path);
+  if (path in scmSnapshot) {
+    await opfsSaveFile(fullPath, scmSnapshot[path]);
+  } else {
+    await opfsDeleteFile(fullPath);
+  }
+  await refreshTree();
+  // Remove from changed list
+  const idx = scmChangedFiles.value.findIndex(f => f.path === path);
+  if (idx !== -1) scmChangedFiles.value.splice(idx, 1);
+  // Reload the file if it's open
+  if (currentFile.value === fullPath) {
+    const content = await opfsReadFile(fullPath);
+    if (editor && content !== null) {
+      isLoadingFile = true;
+      editor.setValue(content);
+      isLoadingFile = false;
+    }
+  }
+  notify(`Discarded changes: ${path.split('/').pop()}`, 'info');
+}
+
+async function discardAllScm() {
+  if (!confirm('Discard ALL changes? This cannot be undone.')) return;
+  for (const file of [...scmChangedFiles.value]) {
+    await discardScmFile(file.path);
+  }
+}
+
+async function commitScm() {
+  if (!scmCommitMessage.value.trim() || scmStagedFiles.value.length === 0) return;
+
+  const commit: ScmCommitEntry = {
+    hash: generateHash(),
+    message: scmCommitMessage.value.trim(),
+    timestamp: Date.now(),
+    files: scmStagedFiles.value.map(f => f.path),
+  };
+
+  scmCommits.value.unshift(commit);
+
+  // Update snapshot with staged changes
+  for (const file of scmStagedFiles.value) {
+    if (file.status === 'deleted') {
+      delete scmSnapshot[file.path];
+    } else if (fs && projectRoot.value) {
+      const fullPath = normalizePath(projectRoot.value + '/' + file.path);
+      try {
+        const content = await fs.readFile(fullPath);
+        scmSnapshot[file.path] = content;
+      } catch { /* skip */ }
+    }
+  }
+
+  const fileCount = scmStagedFiles.value.length;
+  scmStagedFiles.value = [];
+  scmCommitMessage.value = '';
+  await saveScmState();
+  notify(`Committed ${fileCount} file${fileCount !== 1 ? 's' : ''}: ${commit.message}`, 'success');
+}
+
+async function openScmDiff(file: ScmFileEntry) {
+  if (!projectRoot.value || !monacoModule || !editor) return;
+  const fullPath = normalizePath(projectRoot.value + '/' + file.path);
+  // For now, just open the file
+  await openFile(fullPath);
+}
+
+function generateHash(): string {
+  const chars = '0123456789abcdef';
+  let hash = '';
+  for (let i = 0; i < 40; i++) {
+    hash += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return hash;
+}
+
+function formatCommitTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 }
 
 // ─── Keyboard Shortcuts ─────────────────────────────
@@ -1507,7 +2403,7 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (ctrl && !shift && e.key === 'p') {
     e.preventDefault(); openCommandPalette('files');
   } else if (ctrl && e.key === 'n') {
-    e.preventDefault(); createNewFile();
+    e.preventDefault(); startInlineCreate('file');
   } else if (ctrl && e.key === 's') {
     e.preventDefault(); saveCurrentFile();
   } else if (ctrl && e.key === 'w') {
@@ -1515,6 +2411,10 @@ function handleKeydown(e: KeyboardEvent) {
     if (currentFile.value) closeTab(currentFile.value);
   } else if (ctrl && shift && e.key === 'F') {
     e.preventDefault(); openSidebarSearch();
+  } else if (ctrl && shift && e.key === 'G') {
+    e.preventDefault(); togglePanel('scm');
+  } else if (ctrl && shift && e.key === 'E') {
+    e.preventDefault(); togglePanel('explorer');
   } else if (ctrl && shift && e.key === 'X') {
     e.preventDefault(); togglePanel('extensions');
   } else if (ctrl && e.key === 'b') {
@@ -1533,6 +2433,14 @@ onMounted(async () => {
     fs = buildOpfsFS(opfsRoot);
   }
   await refreshExtensionState();
+  // Load SCM state
+  const savedScm = await loadScmState();
+  if (savedScm && savedScm.initialized) {
+    scmInitialized.value = true;
+    scmBranch.value = savedScm.branch || 'main';
+    scmCommits.value = savedScm.commits || [];
+    scmSnapshot = savedScm.snapshot || {};
+  }
   window.addEventListener('keydown', handleKeydown);
 });
 
@@ -1544,6 +2452,7 @@ onBeforeUnmount(() => {
   activeExtDisposers.clear();
   for (const model of fileModels.values()) model.dispose();
   fileModels.clear();
+  terminalRefs.clear();
 });
 </script>
 
@@ -1896,6 +2805,17 @@ onBeforeUnmount(() => {
 .tab:hover .tab-close { color: #969696; }
 .tab-close:hover { background: #3c3c3c; color: #ffffff; }
 
+/* ─── Tab Pinning ─────────────────────────────── */
+.tab.pinned {
+  padding: 0 8px;
+  min-width: 36px;
+  justify-content: center;
+  border-right: 1px solid #3c3c3c;
+}
+.tab-pin-icon { font-size: 12px; color: #888; flex-shrink: 0; }
+.tab.pinned.active .tab-pin-icon { color: #cccccc; }
+.tab.drag-over { border-left: 2px solid #007acc; }
+
 /* ─── Breadcrumbs ──────────────────────────────── */
 .breadcrumbs {
   display: flex;
@@ -1915,6 +2835,7 @@ onBeforeUnmount(() => {
 .breadcrumb-sep { font-size: 12px; color: #555; }
 .breadcrumb-icon { font-size: 12px; color: #75beff; }
 .breadcrumb-item { cursor: default; }
+.breadcrumb-item.breadcrumb-last { color: #cccccc; }
 .breadcrumb-lang { color: #777; }
 
 /* ─── Editor ───────────────────────────────────── */
@@ -1925,9 +2846,33 @@ onBeforeUnmount(() => {
   border-top: 1px solid #3c3c3c;
   display: flex;
   flex-direction: column;
-  height: 250px;
-  min-height: 120px;
+  min-height: 100px;
+  max-height: 600px;
   background: #1e1e1e;
+  position: relative;
+}
+
+.terminal-resize-handle {
+  height: 4px;
+  cursor: ns-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+.terminal-resize-handle:hover,
+.terminal-resize-handle:active {
+  background: #007acc;
+}
+
+@media (pointer: coarse) {
+  .terminal-resize-handle {
+    height: 8px;
+  }
 }
 
 .terminal-header {
@@ -1941,22 +2886,48 @@ onBeforeUnmount(() => {
   padding: 0 8px;
 }
 
-.terminal-tabs { display: flex; align-items: center; gap: 4px; }
+.terminal-tabs { display: flex; align-items: center; gap: 0; overflow-x: auto; flex: 1; }
 
 .terminal-tab {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #cccccc;
+  color: #888;
   padding: 0 8px;
   height: 35px;
-  border-bottom: 1px solid #cccccc;
+  border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
 }
 
+.terminal-tab:hover { color: #cccccc; background: #2a2d2e; }
+.terminal-tab.active { color: #cccccc; border-bottom-color: #cccccc; }
+
 .terminal-tab .codicon { font-size: 14px; }
-.terminal-actions { display: flex; gap: 2px; }
+.terminal-tab span { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+
+.terminal-tab-close {
+  background: none;
+  border: none;
+  color: transparent;
+  cursor: pointer;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.terminal-tab-close .codicon { font-size: 12px; }
+.terminal-tab:hover .terminal-tab-close { color: #888; }
+.terminal-tab-close:hover { background: #3c3c3c; color: #cccccc; }
+
+.terminal-actions { display: flex; gap: 2px; flex-shrink: 0; }
 
 .terminal-action-btn {
   background: none;
@@ -1977,6 +2948,11 @@ onBeforeUnmount(() => {
   flex: 1;
   padding: 4px 0 4px 8px;
   overflow: hidden;
+}
+
+.terminal-instance {
+  width: 100%;
+  height: 100%;
 }
 
 /* ─── Status Bar ───────────────────────────────── */
@@ -2444,4 +3420,189 @@ kbd {
 .ext-btn.disable:hover { background: #555; }
 .ext-btn.uninstall { background: #3c3c3c; color: #e06c75; }
 .ext-btn.uninstall:hover { background: #5a1d1d; }
+
+/* ─── Activity Badge ──────────────────────────── */
+.activity-btn {
+  position: relative;
+}
+.activity-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: #007acc;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  line-height: 1;
+}
+
+/* ─── Source Control Panel ─────────────────────── */
+.scm-init-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.scm-init-message {
+  text-align: center;
+}
+
+.scm-commit-area {
+  padding: 8px 12px;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.scm-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 6px;
+}
+
+.scm-branch-row .codicon { font-size: 14px; }
+.scm-branch-name { font-weight: 500; color: #cccccc; }
+
+.scm-input-wrapper { position: relative; margin-bottom: 6px; }
+
+.scm-commit-input {
+  width: 100%;
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #3c3c3c;
+  outline: none;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 2px;
+  resize: vertical;
+  min-height: 32px;
+}
+
+.scm-commit-input:focus { border-color: #007acc; }
+
+.scm-commit-btn {
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #007acc;
+  color: #fff;
+}
+
+.scm-commit-btn:hover { background: #006bb3; }
+.scm-commit-btn:disabled { background: #3c3c3c; color: #666; cursor: not-allowed; }
+
+.scm-section {
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.scm-section-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #bbbbbb;
+  cursor: pointer;
+  gap: 4px;
+}
+
+.scm-section-header:hover { background: #2a2d2e; }
+.scm-section-title { flex: 1; }
+.scm-section-count {
+  background: #3c3c3c;
+  color: #cccccc;
+  font-size: 10px;
+  min-width: 18px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.scm-file-item {
+  display: flex;
+  align-items: center;
+  padding: 2px 12px 2px 28px;
+  font-size: 12px;
+  cursor: pointer;
+  gap: 6px;
+}
+
+.scm-file-item:hover { background: #2a2d2e; }
+.scm-file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cccccc; }
+
+.scm-file-status {
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.scm-file-status.modified { color: #e8a838; }
+.scm-file-status.added { color: #22c55e; }
+.scm-file-status.deleted { color: #e06c75; }
+
+.scm-action {
+  opacity: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.scm-file-item:hover .scm-action { opacity: 1; }
+
+.scm-clean-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px 12px;
+  font-size: 12px;
+  color: #888;
+}
+
+.scm-commit-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 12px 4px 28px;
+  font-size: 12px;
+}
+
+.scm-commit-entry .codicon { font-size: 14px; color: #888; flex-shrink: 0; margin-top: 2px; }
+
+.scm-commit-info { flex: 1; min-width: 0; }
+
+.scm-commit-msg {
+  color: #cccccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scm-commit-meta {
+  color: #666;
+  font-size: 11px;
+}
 </style>

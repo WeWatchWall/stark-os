@@ -52,6 +52,7 @@ async function doInitialize(): Promise<void> {
   // is "about:srcdoc" which is not a valid URL base, causing:
   //   TypeError: Failed to construct 'URL': Invalid URL
   // The tokenizer falls back to synchronous mode, so this is safe to ignore.
+  // The handler is installed only during initialization and restored after.
   const prevHandler = self.onunhandledrejection;
   self.onunhandledrejection = (event: PromiseRejectionEvent) => {
     if (event.reason instanceof TypeError &&
@@ -59,7 +60,7 @@ async function doInitialize(): Promise<void> {
       event.preventDefault();
       return;
     }
-    if (prevHandler) prevHandler.call(self, event);
+    if (prevHandler) return prevHandler.call(self, event);
   };
 
   // Dynamic imports — only loaded on first call
@@ -117,6 +118,12 @@ async function doInitialize(): Promise<void> {
     import('@codingame/monaco-vscode-css-default-extension'),
     import('@codingame/monaco-vscode-markdown-basics-default-extension'),
   ]);
+
+  // Restore previous handler — the Invalid URL errors from background
+  // tokenizer worker creation are fired asynchronously after init, so
+  // keep the handler installed to catch them.
+  // Note: We intentionally leave the handler because the TextMate service
+  // may attempt worker creation lazily when files are opened.
 }
 
 /**

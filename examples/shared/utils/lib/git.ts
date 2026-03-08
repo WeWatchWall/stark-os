@@ -100,7 +100,7 @@ const DEFAULT_CORS_PROXY = 'https://cors.isomorphic-git.org';
 /**
  * Resolve the CORS proxy value to pass to isomorphic-git.
  *
- * - If `explicit` is provided by the caller, honour it.
+ * - If `explicit` is provided by the caller, use it.
  * - Otherwise return the default public proxy.
  *
  * Always returns a defined value so isomorphic-git never falls back to

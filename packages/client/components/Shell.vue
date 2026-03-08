@@ -20,6 +20,14 @@
         v-show="win.workspaceId === shell.activeWorkspaceId"
       />
 
+      <!-- Dismiss overlay: catches clicks outside the start menu (including over iframes) -->
+      <div
+        v-if="shell.startMenuVisible"
+        class="start-menu-dismiss-overlay"
+        @mousedown="shell.hideStartMenu()"
+        @touchstart.passive="shell.hideStartMenu()"
+      />
+
       <!-- Start Menu surface (no window chrome) -->
       <div
         class="start-menu-panel"
@@ -28,6 +36,7 @@
           'mobile-start': shell.layoutMode === 'mobile',
         }"
         @mousedown.stop
+        @touchstart.stop
       >
         <div :id="shell.startMenuContainerId" class="start-menu-surface" />
       </div>
@@ -186,6 +195,13 @@ onUnmounted(() => {
 .watermark {
   width: 260px;
   height: auto;
+}
+
+/* ── Start Menu dismiss overlay (catches clicks over iframes) ── */
+.start-menu-dismiss-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 99997;
 }
 
 /* ── Start Menu panel (no window chrome) ── */

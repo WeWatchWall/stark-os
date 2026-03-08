@@ -208,6 +208,21 @@ function cardSwipeStyle(id: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.card-grid::-webkit-scrollbar {
+  width: 6px;
+}
+.card-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+.card-grid::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+.card-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
 }
 
 /* ── Window Card ── */

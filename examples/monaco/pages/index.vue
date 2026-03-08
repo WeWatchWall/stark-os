@@ -2151,7 +2151,6 @@ async function initEditor(content: string, filename: string, path: string) {
 
   editor = monacoModule.editor.create(monacoContainer.value!, {
     model,
-    theme: currentTheme.value,
     automaticLayout: true,
     // Editor settings — use persisted values (loaded from OPFS on mount)
     minimap: { enabled: minimapEnabled.value },
@@ -2255,14 +2254,14 @@ async function saveCurrentFile() {
   if (!currentFile.value || !editor) return;
   // Never save diff tabs — they are read-only views, not real files
   if (currentFile.value.startsWith('diff:') || currentFile.value.startsWith('commit:')) return;
+  // Guard: skip if the editor has no model (e.g. model was disposed during closeTab)
+  const model = editor.getModel();
+  if (!model) return;
   // Guard: only save when the editor's model matches the current file to
   // prevent writing stale content to the wrong path during tab switches
-  const model = editor.getModel();
-  if (model) {
-    const modelPath = model.uri.path;
-    if (modelPath && modelPath !== '/' && modelPath !== currentFile.value) {
-      return;
-    }
+  const modelPath = model.uri.path;
+  if (modelPath && modelPath !== '/' && modelPath !== currentFile.value) {
+    return;
   }
   try {
     saveStatus.value = 'saving';

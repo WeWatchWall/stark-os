@@ -87,7 +87,7 @@ export type GitStatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
 // No CORS proxy — GitHub supports CORS natively for both
 // authenticated AND unauthenticated requests.  The old
-// cors.isomorphic-git.org proxy is unreliable and causes 401/403 errors.
+// cors.isomorphic-git.org proxy is no longer needed.
 
 // ── OPFS → isomorphic-git filesystem adapter ─────────
 

@@ -31,7 +31,7 @@
             ref="paletteInput"
             v-model="paletteQuery"
             class="palette-input"
-            :placeholder="paletteMode === 'commands' ? '> Type a command...' : 'Type to search files...'"
+            :placeholder="paletteMode === 'commands' ? '> Type a command...' : paletteMode === 'symbols' ? '@ Type to search symbols...' : 'Type to search files...'"
             @keydown.escape="showCommandPalette = false"
             @keydown.enter="executePaletteSelection"
             @keydown.down.prevent="paletteIndex = Math.min(paletteIndex + 1, filteredPaletteItems.length - 1)"
@@ -138,8 +138,36 @@
             </button>
           </div>
         </div>
+        <!-- Open Editors section -->
+        <div class="explorer-section" v-if="openTabs.length > 0">
+          <div class="explorer-section-header" @click="openEditorsExpanded = !openEditorsExpanded">
+            <i :class="'codicon codicon-' + (openEditorsExpanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+            <span class="explorer-section-title">OPEN EDITORS</span>
+            <span class="scm-section-count" style="margin-left:auto;">{{ openTabs.length }}</span>
+          </div>
+          <div v-if="openEditorsExpanded" class="explorer-section-content">
+            <div
+              v-for="tab in openTabs"
+              :key="'oe-'+tab.path"
+              class="file-item"
+              :class="{ active: currentFile === tab.path }"
+              :style="{ paddingLeft: '24px' }"
+              @click="switchToTab(tab.path)"
+            >
+              <i :class="'codicon codicon-' + getCodiconForFile(tab.name)" class="file-codicon"></i>
+              <span class="file-name">{{ tab.name }}</span>
+              <span v-if="tab.modified" class="tab-dot" style="margin-left:4px;"><i class="codicon codicon-circle-filled"></i></span>
+              <button class="delete-btn" title="Close" @click.stop="closeTab(tab.path)"><i class="codicon codicon-close"></i></button>
+            </div>
+          </div>
+        </div>
         <div class="file-list">
-          <template v-if="projectRoot">
+          <!-- File tree section header -->
+          <div v-if="projectRoot" class="explorer-section-header" @click="fileTreeExpanded = !fileTreeExpanded" style="padding-left:12px;">
+            <i :class="'codicon codicon-' + (fileTreeExpanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+            <span class="explorer-section-title">{{ projectRootName }}</span>
+          </div>
+          <template v-if="projectRoot && fileTreeExpanded">
             <!-- Inline create input at root level -->
             <div v-if="inlineCreate.active && !inlineCreate.parentPath" class="file-item" :style="{ paddingLeft: '12px' }">
               <i v-if="inlineCreate.type === 'directory'" class="codicon codicon-folder file-codicon folder-icon"></i>
@@ -158,11 +186,17 @@
             <template v-for="node in flatTree" :key="node.path">
               <div
                 class="file-item"
-                :class="{ active: currentFile === node.path }"
+                :class="{ active: currentFile === node.path, 'drag-over-dir': dragOverExplorerNode === node.path }"
                 :style="{ paddingLeft: (12 + node.depth * 16) + 'px' }"
+                :draggable="!node.isDirectory"
                 @click="node.isDirectory ? toggleTreeNode(node) : openFile(node.path)"
                 @dblclick="!node.isDirectory && startRenaming(node.path)"
                 @contextmenu.prevent="showFileContextMenu($event, node)"
+                @dragstart="!node.isDirectory && onExplorerDragStart($event, node)"
+                @dragover="node.isDirectory && onExplorerDragOver($event, node)"
+                @dragleave="onExplorerDragLeave"
+                @drop="node.isDirectory && onExplorerDrop($event, node)"
+                @dragend="onExplorerDragEnd"
               >
                 <i v-if="node.isDirectory" :class="'codicon codicon-' + (node.expanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
                 <span v-else class="tree-toggle-spacer"></span>
@@ -178,7 +212,8 @@
                   @keydown.escape="cancelRename"
                   @click.stop
                 />
-                <span v-else class="file-name">{{ node.name }}</span>
+                <span v-else class="file-name" :class="getFileDecoration(node)">{{ node.name }}</span>
+                <span v-if="!node.isDirectory && getFileDecorationLabel(node)" class="file-decoration-badge" :class="getFileDecoration(node)">{{ getFileDecorationLabel(node) }}</span>
                 <button
                   v-if="!node.isDirectory"
                   class="delete-btn"
@@ -213,12 +248,40 @@
             This folder is empty.<br />Press <kbd>Ctrl+N</kbd> to create a file.
           </div>
         </div>
+        <!-- Outline section -->
+        <div class="explorer-section" v-if="currentFile">
+          <div class="explorer-section-header" @click="outlineExpanded = !outlineExpanded">
+            <i :class="'codicon codicon-' + (outlineExpanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
+            <span class="explorer-section-title">OUTLINE</span>
+          </div>
+          <div v-if="outlineExpanded" class="explorer-section-content">
+            <div v-if="outlineSymbols.length === 0" class="empty-hint" style="padding:8px 12px;">
+              <span style="font-size:11px;color:#666;">No symbols found in this file.</span>
+            </div>
+            <div
+              v-for="(sym, idx) in outlineSymbols"
+              :key="idx"
+              class="file-item outline-item"
+              :style="{ paddingLeft: (24 + sym.depth * 12) + 'px' }"
+              @click="goToSymbol(sym)"
+            >
+              <i :class="'codicon codicon-' + sym.icon" class="file-codicon" :style="{ color: sym.color }"></i>
+              <span class="file-name">{{ sym.name }}</span>
+              <span class="outline-detail">{{ sym.detail }}</span>
+            </div>
+          </div>
+        </div>
       </template>
 
       <!-- Search panel -->
       <template v-if="activePanel === 'search'">
         <div class="sidebar-header">
           <span class="sidebar-title">SEARCH</span>
+          <div class="sidebar-actions">
+            <button class="icon-btn" :title="searchReplaceVisible ? 'Hide Replace' : 'Show Replace'" @click="searchReplaceVisible = !searchReplaceVisible">
+              <i :class="'codicon codicon-' + (searchReplaceVisible ? 'chevron-down' : 'chevron-right')"></i>
+            </button>
+          </div>
         </div>
         <div class="sidebar-search">
           <div class="search-input-wrapper">
@@ -231,6 +294,29 @@
               @keydown.enter="performSidebarSearch"
               @keydown.escape="sidebarSearchQuery = ''; sidebarSearchResults = []"
             />
+          </div>
+          <div v-if="searchReplaceVisible" class="search-input-wrapper" style="margin-top:4px;">
+            <i class="codicon codicon-replace search-icon"></i>
+            <input
+              v-model="sidebarReplaceQuery"
+              class="sidebar-search-field"
+              placeholder="Replace"
+              @keydown.enter="replaceAllInFiles"
+            />
+            <button class="search-replace-btn" title="Replace All" @click="replaceAllInFiles" :disabled="!sidebarSearchQuery || sidebarSearchResults.length === 0">
+              <i class="codicon codicon-replace-all"></i>
+            </button>
+          </div>
+          <div class="search-options-row">
+            <button class="search-option-btn" :class="{ active: searchCaseSensitive }" title="Match Case" @click="searchCaseSensitive = !searchCaseSensitive">
+              <i class="codicon codicon-case-sensitive"></i>
+            </button>
+            <button class="search-option-btn" :class="{ active: searchWholeWord }" title="Match Whole Word" @click="searchWholeWord = !searchWholeWord">
+              <i class="codicon codicon-whole-word"></i>
+            </button>
+            <button class="search-option-btn" :class="{ active: searchRegex }" title="Use Regular Expression" @click="searchRegex = !searchRegex">
+              <i class="codicon codicon-regex"></i>
+            </button>
           </div>
           <div class="search-results-list">
             <template v-if="sidebarSearchResults.length > 0">
@@ -601,18 +687,32 @@
         </div>
       </div>
 
-      <!-- Terminal panel (SharedTerminal component) -->
-      <div v-if="terminalVisible" class="terminal-panel" :style="{ height: terminalHeight + 'px' }">
-        <!-- Terminal resize handle -->
+      <!-- Bottom Panel (Terminal, Problems, Output) -->
+      <div v-if="bottomPanelVisible" class="terminal-panel" :style="{ height: terminalHeight + 'px' }">
+        <!-- Panel resize handle -->
         <div
           class="terminal-resize-handle"
           @mousedown="startTerminalResize"
           @touchstart="startTerminalResize"
         ></div>
         <div class="terminal-header">
-          <div class="terminal-tabs">
+          <!-- Panel type tabs -->
+          <div class="panel-type-tabs">
+            <div class="panel-type-tab" :class="{ active: bottomPanelTab === 'terminal' }" @click="bottomPanelTab = 'terminal'">
+              <i class="codicon codicon-terminal"></i> Terminal
+            </div>
+            <div class="panel-type-tab" :class="{ active: bottomPanelTab === 'problems' }" @click="bottomPanelTab = 'problems'">
+              <i class="codicon codicon-warning"></i> Problems
+              <span v-if="editorProblems.length > 0" class="panel-badge">{{ editorProblems.length }}</span>
+            </div>
+            <div class="panel-type-tab" :class="{ active: bottomPanelTab === 'output' }" @click="bottomPanelTab = 'output'">
+              <i class="codicon codicon-output"></i> Output
+            </div>
+          </div>
+          <!-- Terminal instance tabs (only show when terminal tab is active) -->
+          <div v-if="bottomPanelTab === 'terminal'" class="terminal-tabs">
             <div
-              v-for="(t, idx) in terminals"
+              v-for="t in terminals"
               :key="t.id"
               class="terminal-tab"
               :class="{ active: activeTerminalId === t.id }"
@@ -628,46 +728,95 @@
               <i class="codicon codicon-add"></i>
             </button>
           </div>
+          <div v-else class="terminal-tabs"></div>
           <div class="terminal-actions">
-            <button class="terminal-action-btn" title="Clear" @click="clearTerminal">
+            <button v-if="bottomPanelTab === 'terminal'" class="terminal-action-btn" title="Clear" @click="clearTerminal">
               <i class="codicon codicon-clear-all"></i>
             </button>
-            <button class="terminal-action-btn" title="Close Panel" @click="terminalVisible = false">
+            <button v-if="bottomPanelTab === 'output'" class="terminal-action-btn" title="Clear Output" @click="outputLines = []">
+              <i class="codicon codicon-clear-all"></i>
+            </button>
+            <button class="terminal-action-btn" title="Close Panel" @click="bottomPanelVisible = false">
               <i class="codicon codicon-close"></i>
             </button>
           </div>
         </div>
-        <div class="terminal-body">
+        <!-- Terminal content -->
+        <div v-show="bottomPanelTab === 'terminal'" class="terminal-body">
           <div v-for="t in terminals" :key="t.id" v-show="activeTerminalId === t.id" class="terminal-instance">
             <SharedTerminal :ref="(el: any) => setTerminalRef(t.id, el)" :initial-path="terminalInitialPath" />
+          </div>
+        </div>
+        <!-- Problems content -->
+        <div v-show="bottomPanelTab === 'problems'" class="panel-content">
+          <div v-if="editorProblems.length === 0" class="panel-empty">
+            <i class="codicon codicon-check"></i> No problems detected in workspace.
+          </div>
+          <div v-for="(problem, idx) in editorProblems" :key="idx" class="problem-item" @click="goToProblem(problem)">
+            <i :class="'codicon codicon-' + (problem.severity === 'error' ? 'error' : 'warning')" :style="{ color: problem.severity === 'error' ? '#f44747' : '#e8a838' }"></i>
+            <span class="problem-message">{{ problem.message }}</span>
+            <span class="problem-source">{{ problem.source }}</span>
+            <span class="problem-location">[Ln {{ problem.line }}, Col {{ problem.col }}]</span>
+          </div>
+        </div>
+        <!-- Output content -->
+        <div v-show="bottomPanelTab === 'output'" class="panel-content output-content">
+          <div v-if="outputLines.length === 0" class="panel-empty">
+            <i class="codicon codicon-output"></i> No output yet.
+          </div>
+          <div v-for="(line, idx) in outputLines" :key="idx" class="output-line" :class="line.type">
+            <span class="output-time">{{ line.time }}</span>
+            <span>{{ line.text }}</span>
           </div>
         </div>
       </div>
 
       <!-- Status bar -->
-      <div class="status-bar">
+      <div class="status-bar" :class="{ 'zen-status': zenMode }">
         <div class="status-left">
-          <span v-if="scmInitialized" class="status-item clickable" title="Switch Branch" @click="togglePanel('scm')">
+          <span v-if="scmInitialized" class="status-item clickable" title="Source Control" @click="togglePanel('scm')">
             <i class="codicon codicon-git-branch"></i> {{ scmBranch }}
+          </span>
+          <span v-if="scmInitialized && (scmChangedFiles.length + scmStagedFiles.length) > 0" class="status-item">
+            <i class="codicon codicon-git-commit"></i> {{ scmChangedFiles.length + scmStagedFiles.length }}
+          </span>
+          <span v-if="editorProblems.length > 0" class="status-item clickable" title="Problems" @click="bottomPanelVisible = true; bottomPanelTab = 'problems'">
+            <i class="codicon codicon-error" style="color:#f44747"></i> {{ editorProblems.filter(p => p.severity === 'error').length }}
+            <i class="codicon codicon-warning" style="color:#e8a838"></i> {{ editorProblems.filter(p => p.severity === 'warning').length }}
           </span>
           <span v-if="currentFile" class="status-item">
             <i class="codicon codicon-text-size"></i> Ln {{ cursorLine }}, Col {{ cursorColumn }}
           </span>
-          <span v-if="currentFile" class="status-item">
-            Spaces: {{ editorTabSize }}
+          <span v-if="selectionCount > 0" class="status-item">
+            ({{ selectionCount }} selected)
           </span>
         </div>
         <div class="status-right">
-          <span class="status-item clickable" @click="terminalVisible = !terminalVisible" title="Toggle Terminal">
+          <span class="status-item clickable" title="Notifications" @click="showNotificationCenter = !showNotificationCenter">
+            <i class="codicon codicon-bell"></i>
+            <span v-if="notificationHistory.length > 0" class="status-badge">{{ notificationHistory.length }}</span>
+          </span>
+          <span class="status-item clickable" @click="bottomPanelVisible = !bottomPanelVisible" title="Toggle Panel">
             <i class="codicon codicon-terminal"></i>
           </span>
-          <span class="status-item clickable" @click="toggleWordWrap">
+          <span v-if="currentFile" class="status-item clickable" title="Change Indentation" @click="cycleTabSize">
+            {{ useTabsIndent ? 'Tab Size' : 'Spaces' }}: {{ editorTabSize }}
+          </span>
+          <span v-if="currentFile" class="status-item clickable" @click="toggleWordWrap">
             {{ wordWrapEnabled ? 'Word Wrap' : 'No Wrap' }}
           </span>
-          <span v-if="currentFile" class="status-item">
+          <span v-if="currentFile" class="status-item clickable" title="Select Language Mode" @click="openCommandPalette('commands')">
             {{ getLanguageLabel(currentFile) }}
           </span>
-          <span class="status-item">UTF-8</span>
+          <span v-if="currentFile" class="status-item clickable" title="Select End of Line Sequence" @click="toggleEol">
+            {{ eolMode }}
+          </span>
+          <span class="status-item clickable" title="Select Encoding" @click="toggleEncoding">
+            {{ encoding }}
+          </span>
+          <span class="status-item clickable" title="Settings" @click="showSettings = true">
+            <i class="codicon codicon-settings-gear"></i>
+          </span>
           <span class="status-item save-indicator" :class="saveStatus">
             <i v-if="saveStatus !== 'idle'" :class="'codicon codicon-' + (saveStatus === 'saved' ? 'check' : 'sync')"></i>
             {{ saveStatusText }}
@@ -676,8 +825,111 @@
       </div>
     </div>
 
+    <!-- Notifications Center -->
+    <div v-if="showNotificationCenter" class="notification-center">
+      <div class="notification-center-header">
+        <span>Notifications</span>
+        <button class="icon-btn" title="Clear All" @click="notificationHistory = []; showNotificationCenter = false">
+          <i class="codicon codicon-clear-all"></i>
+        </button>
+      </div>
+      <div class="notification-center-list">
+        <div v-if="notificationHistory.length === 0" class="notification-empty">No notifications</div>
+        <div v-for="(n, idx) in notificationHistory" :key="idx" class="notification-item" :class="n.type">
+          <i :class="'codicon codicon-' + (n.type === 'error' ? 'error' : n.type === 'success' ? 'check' : 'info')"></i>
+          <span class="notification-text">{{ n.message }}</span>
+          <span class="notification-time">{{ n.time }}</span>
+          <button class="icon-btn" @click="notificationHistory.splice(idx, 1)"><i class="codicon codicon-close"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Panel Overlay -->
+    <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
+      <div class="settings-panel">
+        <div class="settings-header">
+          <i class="codicon codicon-settings-gear"></i>
+          <span>Settings</span>
+          <button class="icon-btn" @click="showSettings = false" style="margin-left:auto;"><i class="codicon codicon-close"></i></button>
+        </div>
+        <div class="settings-body">
+          <div class="settings-group">
+            <h4>Editor</h4>
+            <div class="settings-row">
+              <label>Font Size</label>
+              <input type="number" v-model.number="settingsFontSize" min="8" max="32" class="settings-input" @change="applySettings" />
+            </div>
+            <div class="settings-row">
+              <label>Tab Size</label>
+              <select v-model.number="editorTabSize" class="settings-input" @change="applySettings">
+                <option :value="2">2</option>
+                <option :value="4">4</option>
+                <option :value="8">8</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label>Word Wrap</label>
+              <select v-model="wordWrapEnabled" class="settings-input" @change="applySettings">
+                <option :value="true">On</option>
+                <option :value="false">Off</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label>Minimap</label>
+              <select v-model="minimapEnabled" class="settings-input" @change="applySettings">
+                <option :value="true">Visible</option>
+                <option :value="false">Hidden</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label>Render Whitespace</label>
+              <select v-model="renderWhitespace" class="settings-input" @change="applySettings">
+                <option value="none">None</option>
+                <option value="boundary">Boundary</option>
+                <option value="selection">Selection</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label>Cursor Style</label>
+              <select v-model="cursorStyle" class="settings-input" @change="applySettings">
+                <option value="line">Line</option>
+                <option value="block">Block</option>
+                <option value="underline">Underline</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label>Line Numbers</label>
+              <select v-model="lineNumbers" class="settings-input" @change="applySettings">
+                <option value="on">On</option>
+                <option value="off">Off</option>
+                <option value="relative">Relative</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label>Auto Save</label>
+              <select v-model="autoSaveEnabled" class="settings-input">
+                <option :value="true">After Delay (1s)</option>
+                <option :value="false">Off</option>
+              </select>
+            </div>
+          </div>
+          <div class="settings-group">
+            <h4>Theme</h4>
+            <div class="settings-row">
+              <label>Color Theme</label>
+              <select v-model="currentTheme" class="settings-input" @change="applyTheme">
+                <option v-for="t in availableThemes" :key="t.id" :value="t.id">{{ t.label }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Click blocker for context menu -->
     <div v-if="contextMenu.show" class="click-blocker" @click="contextMenu.show = false" @contextmenu.prevent="contextMenu.show = false"></div>
+    <div v-if="showNotificationCenter" class="click-blocker" style="z-index:2999;" @click="showNotificationCenter = false"></div>
   </div>
 </template>
 
@@ -785,6 +1037,92 @@ const wordWrapEnabled = ref(true);
 const terminalVisible = ref(false);
 const terminalHeight = ref(250);
 
+// Bottom panel state
+const bottomPanelVisible = ref(false);
+const bottomPanelTab = ref<'terminal' | 'problems' | 'output'>('terminal');
+
+// Problems panel
+interface EditorProblem {
+  severity: 'error' | 'warning';
+  message: string;
+  source: string;
+  line: number;
+  col: number;
+  file: string;
+}
+const editorProblems = ref<EditorProblem[]>([]);
+
+// Output panel
+interface OutputLine {
+  text: string;
+  type: 'info' | 'error' | 'warning';
+  time: string;
+}
+const outputLines = ref<OutputLine[]>([]);
+
+// Status bar extra state
+const selectionCount = ref(0);
+const eolMode = ref('LF');
+const encoding = ref('UTF-8');
+const useTabsIndent = ref(false);
+
+// Settings UI
+const showSettings = ref(false);
+const settingsFontSize = ref(14);
+const minimapEnabled = ref(true);
+const renderWhitespace = ref('selection');
+const cursorStyle = ref('line');
+const lineNumbers = ref('on');
+const autoSaveEnabled = ref(true);
+const currentTheme = ref('vs-dark');
+const availableThemes = [
+  { id: 'vs-dark', label: 'Dark+ (default)' },
+  { id: 'vs', label: 'Light+' },
+  { id: 'hc-black', label: 'High Contrast Dark' },
+  { id: 'hc-light', label: 'High Contrast Light' },
+  { id: 'monokai', label: 'Monokai' },
+  { id: 'solarized-dark', label: 'Solarized Dark' },
+  { id: 'github-dark', label: 'GitHub Dark' },
+];
+
+// Zen mode
+const zenMode = ref(false);
+let zenModePreviousState: { sidebar: boolean; panel: boolean } | null = null;
+
+// Notifications center
+const showNotificationCenter = ref(false);
+interface NotificationEntry {
+  message: string;
+  type: 'info' | 'success' | 'error';
+  time: string;
+}
+const notificationHistory = ref<NotificationEntry[]>([]);
+
+// Search replace
+const searchReplaceVisible = ref(false);
+const sidebarReplaceQuery = ref('');
+const searchCaseSensitive = ref(false);
+const searchWholeWord = ref(false);
+const searchRegex = ref(false);
+
+// Explorer sections
+const openEditorsExpanded = ref(true);
+const fileTreeExpanded = ref(true);
+const outlineExpanded = ref(false);
+interface OutlineSymbol {
+  name: string;
+  icon: string;
+  color: string;
+  detail: string;
+  line: number;
+  depth: number;
+}
+const outlineSymbols = ref<OutlineSymbol[]>([]);
+
+// Drag file in explorer
+const draggedExplorerNode = ref<TreeNode | null>(null);
+const dragOverExplorerNode = ref<string | null>(null);
+
 // Files-picker state
 const showFilePicker = ref(false);
 const filePickerMode = ref<'file' | 'files' | 'directory' | 'save'>('file');
@@ -802,7 +1140,7 @@ let resizeStartWidth = 0;
 const showCommandPalette = ref(false);
 const paletteQuery = ref('');
 const paletteIndex = ref(0);
-const paletteMode = ref<'commands' | 'files'>('commands');
+const paletteMode = ref<'commands' | 'files' | 'symbols'>('commands');
 
 // Search
 const sidebarSearchQuery = ref('');
@@ -886,6 +1224,13 @@ const currentFileBreadcrumbs = computed(() => {
     ? currentFile.value.slice(projectRoot.value.length + 1)
     : currentFile.value;
   return rel.split('/').filter(Boolean);
+});
+
+// ─── Project root name ──────────────────────────────
+const projectRootName = computed(() => {
+  if (!projectRoot.value) return '';
+  const parts = getPathParts(projectRoot.value);
+  return parts[parts.length - 1]?.toUpperCase() || 'WORKSPACE';
 });
 
 // ─── Files Picker helpers ───────────────────────────
@@ -1194,7 +1539,7 @@ const commandList = computed<PaletteItem[]>(() => [
   { codicon: 'close-all', label: 'Close All Tabs', action: closeAllTabs },
   { codicon: 'layout-sidebar-left', label: 'Toggle Sidebar', shortcut: 'Ctrl+B', action: () => { sidebarVisible.value = !sidebarVisible.value } },
   { codicon: 'terminal', label: 'Toggle Terminal', shortcut: "Ctrl+`", action: () => toggleTerminal() },
-  { codicon: 'terminal', label: 'New Terminal', action: () => { terminalVisible.value = true; addTerminal(); } },
+  { codicon: 'terminal', label: 'New Terminal', action: () => { bottomPanelVisible.value = true; bottomPanelTab.value = 'terminal'; addTerminal(); } },
   { codicon: 'source-control', label: 'Source Control', shortcut: 'Ctrl+Shift+G', action: () => togglePanel('scm') },
   { codicon: 'files', label: 'Explorer', shortcut: 'Ctrl+Shift+E', action: () => togglePanel('explorer') },
   { codicon: 'word-wrap', label: 'Toggle Word Wrap', action: toggleWordWrap },
@@ -1209,6 +1554,14 @@ const commandList = computed<PaletteItem[]>(() => [
   { codicon: 'symbol-method', label: 'Format Document', shortcut: 'Shift+Alt+F', action: () => editorAction('editor.action.formatDocument') },
   { codicon: 'collapse-all', label: 'Collapse All in Explorer', action: collapseAll },
   { codicon: 'refresh', label: 'Refresh Explorer', action: refreshTree },
+  { codicon: 'color-mode', label: 'Color Theme', shortcut: 'Ctrl+K Ctrl+T', action: openThemePicker },
+  { codicon: 'settings-gear', label: 'Open Settings', shortcut: 'Ctrl+,', action: () => { showSettings.value = true; } },
+  { codicon: 'eye', label: 'Toggle Zen Mode', shortcut: 'Ctrl+K Z', action: toggleZenMode },
+  { codicon: 'symbol-method', label: 'Go to Symbol in Editor', shortcut: 'Ctrl+Shift+O', action: () => openCommandPalette('symbols') },
+  { codicon: 'layout-panel', label: 'Toggle Panel', shortcut: 'Ctrl+J', action: () => { bottomPanelVisible.value = !bottomPanelVisible.value; } },
+  { codicon: 'warning', label: 'Show Problems', action: () => { bottomPanelVisible.value = true; bottomPanelTab.value = 'problems'; } },
+  { codicon: 'output', label: 'Show Output', action: () => { bottomPanelVisible.value = true; bottomPanelTab.value = 'output'; } },
+  { codicon: 'replace-all', label: 'Search and Replace in Files', shortcut: 'Ctrl+Shift+H', action: () => { openSidebarSearch(); searchReplaceVisible.value = true; } },
   { codicon: 'extensions', label: 'Show Extensions', shortcut: 'Ctrl+Shift+X', action: () => togglePanel('extensions') },
   { codicon: 'extensions', label: 'Install Extension...', action: () => { togglePanel('extensions'); extSearchQuery.value = ''; } },
 ]);
@@ -1242,6 +1595,17 @@ const filteredPaletteItems = computed<PaletteItem[]>(() => {
         codicon: getCodiconForFile(f.name),
         label: f.name,
         action: () => openFile(f.path),
+      }));
+  }
+  if (paletteMode.value === 'symbols') {
+    const q = paletteQuery.value.toLowerCase();
+    return outlineSymbols.value
+      .filter(s => s.name.toLowerCase().includes(q))
+      .map(s => ({
+        codicon: s.icon,
+        label: s.name,
+        shortcut: s.detail,
+        action: () => goToSymbol(s),
       }));
   }
   const q = paletteQuery.value.toLowerCase();
@@ -1309,6 +1673,17 @@ function notify(message: string, type: ToastMsg['type'] = 'info') {
     const idx = toasts.value.indexOf(toast);
     if (idx !== -1) toasts.value.splice(idx, 1);
   }, 3000);
+  // Add to notification history
+  const now = new Date();
+  notificationHistory.value.unshift({
+    message,
+    type,
+    time: now.toLocaleTimeString(),
+  });
+  // Keep last 50 notifications
+  if (notificationHistory.value.length > 50) {
+    notificationHistory.value = notificationHistory.value.slice(0, 50);
+  }
 }
 
 // ─── Monaco Editor Actions (built-in editor commands) ──
@@ -1464,6 +1839,8 @@ async function openFile(path: string) {
   }
 
   saveStatus.value = 'idle';
+  // Update outline for the newly opened file
+  nextTick(() => updateOutline());
 }
 
 async function initEditor(content: string, filename: string, path: string) {
@@ -1536,23 +1913,48 @@ async function initEditor(content: string, filename: string, path: string) {
     mouseWheelZoom: true,
   });
 
-  editor.onDidChangeModelContent(() => {
-    if (isLoadingFile) return;
-    const tab = openTabs.value.find(t => t.path === currentFile.value);
-    if (tab) tab.modified = true;
-    scheduleSave();
-  });
-
   editor.onDidChangeCursorPosition((e: any) => {
     cursorLine.value = e.position.lineNumber;
     cursorColumn.value = e.position.column;
   });
 
+  editor.onDidChangeCursorSelection((e: any) => {
+    const sel = e.selection;
+    if (sel.startLineNumber === sel.endLineNumber && sel.startColumn === sel.endColumn) {
+      selectionCount.value = 0;
+    } else {
+      const selectedText = editor.getModel()?.getValueInRange(sel) || '';
+      selectionCount.value = selectedText.length;
+    }
+  });
+
+  // Listen for marker changes (for Problems panel)
+  monacoModule.editor.onDidChangeMarkers(() => {
+    updateProblems();
+  });
+
+  // Update outline when model content changes
+  editor.onDidChangeModelContent(() => {
+    if (isLoadingFile) return;
+    const tab = openTabs.value.find(t => t.path === currentFile.value);
+    if (tab) tab.modified = true;
+    scheduleSave();
+    // Debounced outline update
+    clearTimeout(outlineTimer);
+    outlineTimer = setTimeout(updateOutline, 500);
+  });
+
   // Apply enabled extensions after editor is ready
   applyAllEnabledExtensions();
+  // Initial outline update
+  updateOutline();
+  updateProblems();
 }
 
+let outlineTimer: ReturnType<typeof setTimeout> | null = null;
+
 function scheduleSave() {
+  if (!autoSaveEnabled.value) return;
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => saveCurrentFile(), SAVE_DELAY);
 }
@@ -1776,11 +2178,12 @@ async function removeDirectory(path: string) {
 }
 
 // ─── Command Palette ────────────────────────────────
-function openCommandPalette(mode: 'commands' | 'files') {
+function openCommandPalette(mode: 'commands' | 'files' | 'symbols') {
   paletteMode.value = mode;
   paletteQuery.value = '';
   paletteIndex.value = 0;
   showCommandPalette.value = true;
+  if (mode === 'symbols') updateOutline();
   nextTick(() => paletteInput.value?.focus());
 }
 
@@ -1865,8 +2268,11 @@ function setTerminalRef(id: number, el: any) {
 }
 
 function toggleTerminal() {
-  terminalVisible.value = !terminalVisible.value;
-  if (terminalVisible.value) {
+  if (bottomPanelVisible.value && bottomPanelTab.value === 'terminal') {
+    bottomPanelVisible.value = false;
+  } else {
+    bottomPanelVisible.value = true;
+    bottomPanelTab.value = 'terminal';
     nextTick(() => {
       const ref = terminalRefs.get(activeTerminalId.value);
       if (ref) ref.fit();
@@ -2393,6 +2799,369 @@ function formatCommitTime(timestamp: number): string {
   return date.toLocaleDateString();
 }
 
+// ─── Git File Decorations ───────────────────────────
+function getFileDecoration(node: TreeNode): string {
+  if (!scmInitialized.value || node.isDirectory) return '';
+  const relPath = node.path.startsWith(projectRoot.value!)
+    ? node.path.slice(projectRoot.value!.length + 1)
+    : node.path;
+  const inChanged = scmChangedFiles.value.find(f => f.path === relPath);
+  const inStaged = scmStagedFiles.value.find(f => f.path === relPath);
+  const entry = inChanged || inStaged;
+  if (!entry) return '';
+  return 'scm-' + entry.status;
+}
+
+function getFileDecorationLabel(node: TreeNode): string {
+  if (!scmInitialized.value || node.isDirectory) return '';
+  const relPath = node.path.startsWith(projectRoot.value!)
+    ? node.path.slice(projectRoot.value!.length + 1)
+    : node.path;
+  const inChanged = scmChangedFiles.value.find(f => f.path === relPath);
+  const inStaged = scmStagedFiles.value.find(f => f.path === relPath);
+  const entry = inChanged || inStaged;
+  if (!entry) return '';
+  return entry.statusLabel;
+}
+
+// ─── Problems Panel ─────────────────────────────────
+function updateProblems() {
+  if (!editor || !monacoModule) { editorProblems.value = []; return; }
+  const markers = monacoModule.editor.getModelMarkers({});
+  editorProblems.value = markers.map((m: any) => ({
+    severity: m.severity === 8 ? 'error' : 'warning',
+    message: m.message,
+    source: m.source || '',
+    line: m.startLineNumber,
+    col: m.startColumn,
+    file: m.resource?.path || '',
+  }));
+}
+
+function goToProblem(problem: EditorProblem) {
+  if (editor && problem.file) {
+    const fullPath = problem.file.startsWith('/') ? problem.file : '/' + problem.file;
+    // Try to find the file and open it
+    const tab = openTabs.value.find(t => t.path.endsWith(problem.file));
+    if (tab) switchToTab(tab.path);
+    nextTick(() => {
+      if (editor) {
+        editor.revealLineInCenter(problem.line);
+        editor.setPosition({ lineNumber: problem.line, column: problem.col });
+        editor.focus();
+      }
+    });
+  }
+}
+
+// ─── Output Panel ───────────────────────────────────
+function addOutput(text: string, type: OutputLine['type'] = 'info') {
+  const now = new Date();
+  const time = now.toLocaleTimeString();
+  outputLines.value.push({ text, type, time });
+  // Keep last 1000 lines
+  if (outputLines.value.length > 1000) {
+    outputLines.value = outputLines.value.slice(-500);
+  }
+}
+
+// ─── Settings & Theme ───────────────────────────────
+function applySettings() {
+  if (!editor) return;
+  editor.updateOptions({
+    fontSize: settingsFontSize.value,
+    tabSize: editorTabSize.value,
+    wordWrap: wordWrapEnabled.value ? 'on' : 'off',
+    minimap: { enabled: minimapEnabled.value },
+    renderWhitespace: renderWhitespace.value,
+    cursorStyle: cursorStyle.value,
+    lineNumbers: lineNumbers.value,
+  });
+}
+
+function applyTheme() {
+  if (!monacoModule) return;
+  monacoModule.editor.setTheme(currentTheme.value);
+}
+
+function openThemePicker() {
+  // Cycle through themes as a quick picker
+  const idx = availableThemes.findIndex(t => t.id === currentTheme.value);
+  const nextIdx = (idx + 1) % availableThemes.length;
+  currentTheme.value = availableThemes[nextIdx].id;
+  applyTheme();
+  notify(`Theme: ${availableThemes[nextIdx].label}`, 'info');
+}
+
+// ─── Status Bar Helpers ─────────────────────────────
+function cycleTabSize() {
+  const sizes = [2, 4, 8];
+  const idx = sizes.indexOf(editorTabSize.value);
+  editorTabSize.value = sizes[(idx + 1) % sizes.length];
+  if (editor) editor.getModel()?.updateOptions({ tabSize: editorTabSize.value });
+}
+
+function toggleEol() {
+  eolMode.value = eolMode.value === 'LF' ? 'CRLF' : 'LF';
+  if (editor && monacoModule) {
+    const model = editor.getModel();
+    if (model) {
+      model.setEOL(eolMode.value === 'LF' ? 0 : 1);
+    }
+  }
+}
+
+function toggleEncoding() {
+  // Simple toggle for demonstration
+  const encodings = ['UTF-8', 'UTF-16', 'ASCII', 'ISO-8859-1'];
+  const idx = encodings.indexOf(encoding.value);
+  encoding.value = encodings[(idx + 1) % encodings.length];
+}
+
+// ─── Zen Mode ───────────────────────────────────────
+function toggleZenMode() {
+  zenMode.value = !zenMode.value;
+  if (zenMode.value) {
+    zenModePreviousState = {
+      sidebar: sidebarVisible.value,
+      panel: bottomPanelVisible.value,
+    };
+    sidebarVisible.value = false;
+    bottomPanelVisible.value = false;
+  } else {
+    if (zenModePreviousState) {
+      sidebarVisible.value = zenModePreviousState.sidebar;
+      bottomPanelVisible.value = zenModePreviousState.panel;
+      zenModePreviousState = null;
+    }
+  }
+}
+
+// ─── Outline Symbols ────────────────────────────────
+function updateOutline() {
+  if (!editor || !monacoModule || !currentFile.value) {
+    outlineSymbols.value = [];
+    return;
+  }
+  const model = editor.getModel();
+  if (!model) { outlineSymbols.value = []; return; }
+
+  // Extract symbols from the current file using simple regex-based parsing
+  const content = model.getValue();
+  const lines = content.split('\n');
+  const symbols: OutlineSymbol[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Function declarations
+    let match = line.match(/^\s*(export\s+)?(async\s+)?function\s+(\w+)/);
+    if (match) {
+      symbols.push({ name: match[3], icon: 'symbol-method', color: '#b180d7', detail: 'function', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Arrow functions / const functions
+    match = line.match(/^\s*(export\s+)?(const|let|var)\s+(\w+)\s*=\s*(async\s+)?\(/);
+    if (match) {
+      symbols.push({ name: match[3], icon: 'symbol-method', color: '#b180d7', detail: 'function', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Class declarations
+    match = line.match(/^\s*(export\s+)?class\s+(\w+)/);
+    if (match) {
+      symbols.push({ name: match[2], icon: 'symbol-class', color: '#ee9d28', detail: 'class', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Interface declarations (TypeScript)
+    match = line.match(/^\s*(export\s+)?interface\s+(\w+)/);
+    if (match) {
+      symbols.push({ name: match[2], icon: 'symbol-interface', color: '#75beff', detail: 'interface', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Type declarations (TypeScript)
+    match = line.match(/^\s*(export\s+)?type\s+(\w+)/);
+    if (match) {
+      symbols.push({ name: match[2], icon: 'symbol-type-parameter', color: '#4ec9b0', detail: 'type', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Enum declarations
+    match = line.match(/^\s*(export\s+)?enum\s+(\w+)/);
+    if (match) {
+      symbols.push({ name: match[2], icon: 'symbol-enum', color: '#ee9d28', detail: 'enum', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Python: def/class
+    match = line.match(/^(\s*)def\s+(\w+)/);
+    if (match) {
+      const depth = Math.floor(match[1].length / 4);
+      symbols.push({ name: match[2], icon: 'symbol-method', color: '#b180d7', detail: 'def', line: i + 1, depth });
+      continue;
+    }
+    match = line.match(/^class\s+(\w+)/);
+    if (match) {
+      symbols.push({ name: match[1], icon: 'symbol-class', color: '#ee9d28', detail: 'class', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Go: func
+    match = line.match(/^func\s+(\w+)/);
+    if (match) {
+      symbols.push({ name: match[1], icon: 'symbol-method', color: '#b180d7', detail: 'func', line: i + 1, depth: 0 });
+      continue;
+    }
+    // Markdown headings
+    match = line.match(/^(#{1,6})\s+(.+)/);
+    if (match) {
+      const depth = match[1].length - 1;
+      symbols.push({ name: match[2], icon: 'symbol-string', color: '#569cd6', detail: `h${match[1].length}`, line: i + 1, depth });
+    }
+  }
+
+  outlineSymbols.value = symbols;
+}
+
+function goToSymbol(sym: OutlineSymbol) {
+  if (editor) {
+    editor.revealLineInCenter(sym.line);
+    editor.setPosition({ lineNumber: sym.line, column: 1 });
+    editor.focus();
+  }
+}
+
+// ─── Search & Replace in Files ──────────────────────
+async function replaceAllInFiles() {
+  if (!sidebarSearchQuery.value || !sidebarReplaceQuery.value || !fs || !projectRoot.value) return;
+  if (!confirm(`Replace all occurrences of "${sidebarSearchQuery.value}" with "${sidebarReplaceQuery.value}" in ${sidebarSearchResults.value.length} locations?`)) return;
+
+  const query = sidebarSearchQuery.value;
+  const replacement = sidebarReplaceQuery.value;
+  let totalReplacements = 0;
+
+  // Group results by file
+  const fileGroups = new Map<string, SearchResult[]>();
+  for (const result of sidebarSearchResults.value) {
+    const existing = fileGroups.get(result.file) || [];
+    existing.push(result);
+    fileGroups.set(result.file, existing);
+  }
+
+  for (const [relFile] of fileGroups) {
+    const fullPath = normalizePath(projectRoot.value + '/' + relFile);
+    try {
+      let content = await fs.readFile(fullPath);
+      if (searchRegex.value) {
+        try {
+          const flags = searchCaseSensitive.value ? 'g' : 'gi';
+          const re = new RegExp(query, flags);
+          const matches = content.match(re);
+          if (matches) totalReplacements += matches.length;
+          content = content.replace(re, replacement);
+        } catch { continue; }
+      } else {
+        const lq = searchCaseSensitive.value ? query : query.toLowerCase();
+        let idx = 0;
+        let newContent = '';
+        const searchContent = searchCaseSensitive.value ? content : content.toLowerCase();
+        while (true) {
+          const pos = searchContent.indexOf(lq, idx);
+          if (pos === -1) {
+            newContent += content.slice(idx);
+            break;
+          }
+          newContent += content.slice(idx, pos) + replacement;
+          totalReplacements++;
+          idx = pos + query.length;
+        }
+        content = newContent;
+      }
+      await opfsSaveFile(fullPath, content);
+
+      // Update open tab if needed
+      const model = fileModels.get(fullPath);
+      if (model) {
+        isLoadingFile = true;
+        model.setValue(content);
+        isLoadingFile = false;
+      }
+    } catch { /* skip */ }
+  }
+
+  notify(`Replaced ${totalReplacements} occurrences across ${fileGroups.size} files`, 'success');
+  addOutput(`Replace: "${query}" → "${replacement}" (${totalReplacements} replacements in ${fileGroups.size} files)`, 'info');
+  await performSidebarSearch(); // Refresh search results
+}
+
+// ─── Drag Files in Explorer ─────────────────────────
+function onExplorerDragStart(e: DragEvent, node: TreeNode) {
+  draggedExplorerNode.value = node;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', node.path);
+  }
+}
+
+function onExplorerDragOver(e: DragEvent, node: TreeNode) {
+  if (!draggedExplorerNode.value || draggedExplorerNode.value.path === node.path) return;
+  if (!node.isDirectory) return;
+  e.preventDefault();
+  dragOverExplorerNode.value = node.path;
+}
+
+function onExplorerDragLeave() {
+  dragOverExplorerNode.value = null;
+}
+
+async function onExplorerDrop(e: DragEvent, targetNode: TreeNode) {
+  dragOverExplorerNode.value = null;
+  const sourceNode = draggedExplorerNode.value;
+  draggedExplorerNode.value = null;
+  if (!sourceNode || !targetNode.isDirectory || !fs) return;
+  if (sourceNode.path === targetNode.path) return;
+  // Don't allow moving into itself
+  if (targetNode.path.startsWith(sourceNode.path + '/')) return;
+
+  const newPath = normalizePath(targetNode.path + '/' + sourceNode.name);
+  try {
+    if (sourceNode.isDirectory) {
+      // For directories, we'd need recursive move - skip for now
+      notify('Moving folders is not yet supported', 'info');
+      return;
+    }
+    const content = await fs.readFile(sourceNode.path);
+    await opfsSaveFile(newPath, content);
+    await fs.unlink(sourceNode.path);
+
+    // Update tab if open
+    const tab = openTabs.value.find(t => t.path === sourceNode.path);
+    if (tab) {
+      const model = fileModels.get(sourceNode.path);
+      if (model) {
+        fileModels.delete(sourceNode.path);
+        const newModel = monacoModule?.editor.createModel(content, getLanguage(sourceNode.name), pathToMonacoUri(newPath));
+        if (newModel) fileModels.set(newPath, newModel);
+        model.dispose();
+      }
+      tab.path = newPath;
+      if (currentFile.value === sourceNode.path) {
+        currentFile.value = newPath;
+        if (editor && fileModels.get(newPath)) {
+          isLoadingFile = true;
+          editor.setModel(fileModels.get(newPath));
+          isLoadingFile = false;
+        }
+      }
+    }
+
+    await refreshTree();
+    notify(`Moved ${sourceNode.name} to ${targetNode.name}/`, 'success');
+  } catch (err) {
+    notify(`Failed to move file: ${sourceNode.name}`, 'error');
+  }
+}
+
+function onExplorerDragEnd() {
+  draggedExplorerNode.value = null;
+  dragOverExplorerNode.value = null;
+}
+
 // ─── Keyboard Shortcuts ─────────────────────────────
 function handleKeydown(e: KeyboardEvent) {
   const ctrl = e.ctrlKey || e.metaKey;
@@ -2402,6 +3171,8 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault(); openCommandPalette('commands');
   } else if (ctrl && !shift && e.key === 'p') {
     e.preventDefault(); openCommandPalette('files');
+  } else if (ctrl && shift && e.key === 'O') {
+    e.preventDefault(); openCommandPalette('symbols');
   } else if (ctrl && e.key === 'n') {
     e.preventDefault(); startInlineCreate('file');
   } else if (ctrl && e.key === 's') {
@@ -2411,6 +3182,8 @@ function handleKeydown(e: KeyboardEvent) {
     if (currentFile.value) closeTab(currentFile.value);
   } else if (ctrl && shift && e.key === 'F') {
     e.preventDefault(); openSidebarSearch();
+  } else if (ctrl && shift && e.key === 'H') {
+    e.preventDefault(); openSidebarSearch(); searchReplaceVisible.value = true;
   } else if (ctrl && shift && e.key === 'G') {
     e.preventDefault(); togglePanel('scm');
   } else if (ctrl && shift && e.key === 'E') {
@@ -2421,6 +3194,26 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault(); sidebarVisible.value = !sidebarVisible.value;
   } else if (ctrl && e.key === '`') {
     e.preventDefault(); toggleTerminal();
+  } else if (ctrl && e.key === 'j') {
+    e.preventDefault(); bottomPanelVisible.value = !bottomPanelVisible.value;
+  } else if (ctrl && e.key === ',') {
+    e.preventDefault(); showSettings.value = !showSettings.value;
+  } else if (ctrl && e.key === 'k') {
+    // Two-key shortcuts: Ctrl+K Z = Zen Mode, Ctrl+K Ctrl+T = Theme
+    e.preventDefault();
+    const onSecondKey = (e2: KeyboardEvent) => {
+      window.removeEventListener('keydown', onSecondKey);
+      if (e2.key === 'z' || e2.key === 'Z') {
+        e2.preventDefault();
+        toggleZenMode();
+      } else if ((e2.ctrlKey || e2.metaKey) && (e2.key === 't' || e2.key === 'T')) {
+        e2.preventDefault();
+        openThemePicker();
+      }
+    };
+    window.addEventListener('keydown', onSecondKey, { once: true });
+  } else if (e.key === 'Escape' && zenMode.value) {
+    e.preventDefault(); toggleZenMode();
   } else if (e.key === 'F2' && currentFile.value) {
     e.preventDefault(); startRenaming(currentFile.value);
   }
@@ -3605,4 +4398,364 @@ kbd {
   color: #666;
   font-size: 11px;
 }
+
+/* ─── Explorer Sections ────────────────────────── */
+.explorer-section {
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.explorer-section-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #bbbbbb;
+  cursor: pointer;
+  gap: 4px;
+  min-height: 22px;
+}
+
+.explorer-section-header:hover { background: #2a2d2e; }
+.explorer-section-title { text-transform: uppercase; }
+.explorer-section-content { max-height: 200px; overflow-y: auto; }
+
+/* ─── Outline View ─────────────────────────────── */
+.outline-item { cursor: pointer; }
+.outline-detail {
+  font-size: 10px;
+  color: #666;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ─── File Decorations (Git) ───────────────────── */
+.file-name.scm-modified { color: #e8a838; }
+.file-name.scm-added { color: #22c55e; }
+.file-name.scm-deleted { color: #e06c75; text-decoration: line-through; }
+
+.file-decoration-badge {
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 4px;
+}
+.file-decoration-badge.scm-modified { color: #e8a838; }
+.file-decoration-badge.scm-added { color: #22c55e; }
+.file-decoration-badge.scm-deleted { color: #e06c75; }
+
+/* ─── Drag over directory highlight ────────────── */
+.file-item.drag-over-dir {
+  background: #094771 !important;
+  outline: 1px dashed #007acc;
+}
+
+/* ─── Panel Type Tabs (Terminal, Problems, Output) ─ */
+.panel-type-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 35px;
+  border-right: 1px solid #3c3c3c;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.panel-type-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  padding: 0 12px;
+  height: 35px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+
+.panel-type-tab:hover { color: #cccccc; }
+.panel-type-tab.active { color: #cccccc; border-bottom-color: #cccccc; }
+.panel-type-tab .codicon { font-size: 14px; }
+
+.panel-badge {
+  background: #007acc;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 14px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  margin-left: 2px;
+}
+
+/* ─── Panel Content (Problems, Output) ─────────── */
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', Menlo, Monaco, monospace;
+}
+
+.panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  color: #888;
+  font-size: 12px;
+}
+
+.panel-empty .codicon { font-size: 16px; }
+
+.problem-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+
+.problem-item:hover { background: #2a2d2e; }
+.problem-item .codicon { font-size: 14px; flex-shrink: 0; }
+.problem-message { flex: 1; color: #cccccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.problem-source { color: #888; font-size: 11px; flex-shrink: 0; }
+.problem-location { color: #666; font-size: 11px; flex-shrink: 0; }
+
+.output-content { font-size: 12px; }
+.output-line {
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.output-line.error { color: #f44747; }
+.output-line.warning { color: #e8a838; }
+.output-time {
+  color: #666;
+  margin-right: 8px;
+  font-size: 11px;
+}
+
+/* ─── Status Bar Badge ─────────────────────────── */
+.status-badge {
+  background: #e8a838;
+  color: #000;
+  font-size: 8px;
+  font-weight: 700;
+  min-width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  margin-left: 2px;
+  line-height: 1;
+}
+
+/* ─── Zen Mode ─────────────────────────────────── */
+.zen-status { opacity: 0; transition: opacity 0.3s; }
+.zen-status:hover { opacity: 1; }
+
+/* ─── Notification Center ──────────────────────── */
+.notification-center {
+  position: fixed;
+  bottom: 30px;
+  right: 12px;
+  z-index: 3000;
+  width: 360px;
+  max-height: 400px;
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.notification-center-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #cccccc;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.notification-center-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 350px;
+}
+
+.notification-empty {
+  padding: 24px;
+  text-align: center;
+  color: #666;
+  font-size: 12px;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #3c3c3c;
+  font-size: 12px;
+}
+
+.notification-item .codicon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.notification-item.success .codicon { color: #22c55e; }
+.notification-item.error .codicon { color: #e06c75; }
+.notification-item.info .codicon { color: #007acc; }
+
+.notification-text { flex: 1; color: #cccccc; word-break: break-word; }
+.notification-time { color: #666; font-size: 10px; flex-shrink: 0; white-space: nowrap; }
+
+/* ─── Settings Panel ───────────────────────────── */
+.settings-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 4000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0,0,0,0.4);
+}
+
+.settings-panel {
+  width: 500px;
+  max-width: 90vw;
+  max-height: 80vh;
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #cccccc;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.settings-header .codicon { font-size: 16px; }
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.settings-group {
+  margin-bottom: 20px;
+}
+
+.settings-group h4 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  margin-bottom: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 13px;
+  color: #cccccc;
+}
+
+.settings-row label {
+  flex: 1;
+}
+
+.settings-input {
+  width: 150px;
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #3c3c3c;
+  outline: none;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 2px;
+  font-family: inherit;
+}
+
+.settings-input:focus { border-color: #007acc; }
+
+select.settings-input {
+  cursor: pointer;
+}
+
+/* ─── Search Options ───────────────────────────── */
+.search-options-row {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.search-option-btn {
+  background: none;
+  border: 1px solid #3c3c3c;
+  color: #888;
+  cursor: pointer;
+  width: 26px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.search-option-btn:hover { color: #cccccc; border-color: #555; }
+.search-option-btn.active { color: #fff; border-color: #007acc; background: #007acc; }
+.search-option-btn .codicon { font-size: 12px; }
+
+.search-replace-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.search-replace-btn:hover { color: #cccccc; background: #3c3c3c; }
+.search-replace-btn:disabled { color: #555; cursor: not-allowed; }
+.search-replace-btn .codicon { font-size: 14px; }
 </style>

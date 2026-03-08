@@ -2,13 +2,14 @@
  * Composable for saving and loading internal settings files using OPFS.
  * Uses the shared stark-orchestrator directory for consistency with other apps.
  * Note: This is only used for internal settings (extensions state).
- * File operations now use the shared OPFS utilities directly.
+ * Files are stored under /home/.stark-code/ in the OPFS filesystem.
  */
 
 async function getOpfsDir(): Promise<FileSystemDirectoryHandle> {
   const root = await navigator.storage.getDirectory();
   const starkRoot = await root.getDirectoryHandle('stark-orchestrator', { create: true });
-  return starkRoot.getDirectoryHandle('.stark-code', { create: true });
+  const homeDir = await starkRoot.getDirectoryHandle('home', { create: true });
+  return homeDir.getDirectoryHandle('.stark-code', { create: true });
 }
 
 export async function saveFile(filename: string, content: string): Promise<void> {

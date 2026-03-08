@@ -1,0 +1,134 @@
+/**
+ * VS Code Services Initialization for Stark Code.
+ *
+ * Uses @codingame/monaco-vscode-api to bring real VS Code services to the
+ * Monaco editor, replacing the limited standalone services.
+ *
+ * This module must be called ONCE before the first editor is created.
+ *
+ * Services enabled:
+ * - Theme service (VS Code themes with TextMate grammar support)
+ * - TextMate service (proper tokenization/syntax highlighting)
+ * - Languages service (language detection, configuration)
+ * - Configuration service (VS Code settings.json support)
+ * - Keybindings service (VS Code keybindings)
+ * - Model service (document model management)
+ * - Editor service (multi-editor support)
+ * - Lifecycle service (shutdown management)
+ *
+ * Default extensions loaded:
+ * - Theme Defaults (Dark+, Light+, High Contrast themes)
+ * - JavaScript/TypeScript basic language support (grammar/highlighting)
+ * - JSON basic language support
+ * - HTML basic language support
+ * - CSS basic language support
+ * - Markdown basic language support
+ *
+ * Note: Language *feature* extensions (diagnostics, validation) are NOT loaded
+ * because they spawn web workers whose URLs cannot be constructed in the
+ * about:srcdoc iframe context used for single-bundle deployment.
+ */
+
+let initialized = false;
+let initPromise: Promise<void> | null = null;
+
+/**
+ * Initialize VS Code services. Safe to call multiple times — only the first
+ * call performs initialization; subsequent calls return the same promise.
+ */
+export async function initializeVscodeServices(): Promise<void> {
+  if (initialized) return;
+  if (initPromise) return initPromise;
+
+  initPromise = doInitialize();
+  await initPromise;
+  initialized = true;
+}
+
+async function doInitialize(): Promise<void> {
+  // Suppress worker URL errors in about:srcdoc context.
+  // The TextMate service attempts to create a background tokenizer worker
+  // via new URL(path, import.meta.url). In about:srcdoc, import.meta.url
+  // is "about:srcdoc" which is not a valid URL base, causing:
+  //   TypeError: Failed to construct 'URL': Invalid URL
+  // The tokenizer falls back to synchronous mode, so this is safe to ignore.
+  // The handler is installed only during initialization and restored after.
+  const prevHandler = self.onunhandledrejection;
+  self.onunhandledrejection = (event: PromiseRejectionEvent) => {
+    if (event.reason instanceof TypeError &&
+        event.reason.message?.includes('Invalid URL')) {
+      event.preventDefault();
+      return;
+    }
+    if (prevHandler) return prevHandler.call(self, event);
+  };
+
+  // Dynamic imports — only loaded on first call
+  const { initialize } = await import('@codingame/monaco-vscode-api');
+
+  // Service overrides
+  const [
+    { default: getThemeServiceOverride },
+    { default: getTextmateServiceOverride },
+    { default: getLanguagesServiceOverride },
+    { default: getConfigurationServiceOverride, updateUserConfiguration },
+    { default: getKeybindingsServiceOverride },
+    { default: getModelServiceOverride },
+    { default: getEditorServiceOverride },
+    { default: getLifecycleServiceOverride },
+  ] = await Promise.all([
+    import('@codingame/monaco-vscode-theme-service-override'),
+    import('@codingame/monaco-vscode-textmate-service-override'),
+    import('@codingame/monaco-vscode-languages-service-override'),
+    import('@codingame/monaco-vscode-configuration-service-override'),
+    import('@codingame/monaco-vscode-keybindings-service-override'),
+    import('@codingame/monaco-vscode-model-service-override'),
+    import('@codingame/monaco-vscode-editor-service-override'),
+    import('@codingame/monaco-vscode-lifecycle-service-override'),
+  ]);
+
+  // Initialize with all service overrides
+  await initialize({
+    ...getThemeServiceOverride(),
+    ...getTextmateServiceOverride(),
+    ...getLanguagesServiceOverride(),
+    ...getConfigurationServiceOverride(),
+    ...getKeybindingsServiceOverride(),
+    ...getModelServiceOverride(),
+    ...getEditorServiceOverride(),
+    ...getLifecycleServiceOverride(),
+  });
+
+  // Set dark theme via VS Code configuration service — this ensures the
+  // service layer uses dark colors (body background, editor chrome, etc.)
+  // instead of the default light theme that causes white background flashes.
+  await updateUserConfiguration(JSON.stringify({
+    'workbench.colorTheme': 'Default Dark+',
+  }));
+
+  // Load default extensions — grammar/syntax highlighting only.
+  // These provide TextMate grammars for proper tokenization without
+  // spawning any workers.
+  await Promise.all([
+    import('@codingame/monaco-vscode-theme-defaults-default-extension'),
+    import('@codingame/monaco-vscode-javascript-default-extension'),
+    import('@codingame/monaco-vscode-typescript-basics-default-extension'),
+    import('@codingame/monaco-vscode-json-default-extension'),
+    import('@codingame/monaco-vscode-html-default-extension'),
+    import('@codingame/monaco-vscode-css-default-extension'),
+    import('@codingame/monaco-vscode-markdown-basics-default-extension'),
+  ]);
+
+  // Restore previous handler — the Invalid URL errors from background
+  // tokenizer worker creation are fired asynchronously after init, so
+  // keep the handler installed to catch them.
+  // Note: We intentionally leave the handler because the TextMate service
+  // may attempt worker creation lazily when files are opened.
+}
+
+/**
+ * Returns whether VS Code services have been initialized.
+ */
+export function isVscodeInitialized(): boolean {
+  return initialized;
+}

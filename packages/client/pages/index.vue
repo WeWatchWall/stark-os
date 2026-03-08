@@ -171,9 +171,8 @@ function resolveInitialNodeName(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz';
   const len = 5 + Math.floor(Math.random() * 4); // 5-8 characters
   let suffix = '';
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
   for (let i = 0; i < len; i++) {
-    suffix += chars[bytes[i] % chars.length];
+    suffix += chars[Math.floor(Math.random() * chars.length)];
   }
   return `browser-${suffix}`;
 }

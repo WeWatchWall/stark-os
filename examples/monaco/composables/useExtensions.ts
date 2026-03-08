@@ -10,6 +10,16 @@ const EXTENSIONS_STATE_FILE = '.stark-extensions.json';
 
 // ─── Types ──────────────────────────────────────────
 
+export interface ExtensionConfigOption {
+  key: string;
+  label: string;
+  type: 'boolean' | 'select' | 'number';
+  default: any;
+  options?: { value: any; label: string }[];  // for select type
+  min?: number;  // for number type
+  max?: number;
+}
+
 export interface Extension {
   id: string;
   name: string;
@@ -21,6 +31,7 @@ export interface Extension {
   codicon: string;
   downloads: string;
   rating: number;
+  configOptions?: ExtensionConfigOption[];
 }
 
 export type ExtensionCategory =
@@ -34,6 +45,7 @@ export type ExtensionCategory =
 export interface ExtensionState {
   installed: string[];  // extension IDs
   enabled: string[];    // extension IDs
+  config: Record<string, Record<string, any>>;  // extId → { key: value }
 }
 
 // ─── Built-in Extension Catalog ─────────────────────
@@ -201,6 +213,10 @@ export const extensionCatalog: Extension[] = [
     codicon: 'symbol-method',
     downloads: '42.1M',
     rating: 4.2,
+    configOptions: [
+      { key: 'formatOnPaste', label: 'Format on Paste', type: 'boolean', default: true },
+      { key: 'formatOnType', label: 'Format on Type', type: 'boolean', default: true },
+    ],
   },
   {
     id: 'fmt-indent-rainbow',
@@ -213,6 +229,9 @@ export const extensionCatalog: Extension[] = [
     codicon: 'symbol-color',
     downloads: '9.3M',
     rating: 4.5,
+    configOptions: [
+      { key: 'highlightActive', label: 'Highlight Active Indent', type: 'boolean', default: true },
+    ],
   },
   {
     id: 'fmt-trailing-spaces',
@@ -225,6 +244,14 @@ export const extensionCatalog: Extension[] = [
     codicon: 'whitespace',
     downloads: '3.2M',
     rating: 4.3,
+    configOptions: [
+      { key: 'trimOnSave', label: 'Trim on Save', type: 'boolean', default: true },
+      { key: 'showWhitespace', label: 'Show Whitespace', type: 'select', default: 'trailing', options: [
+        { value: 'trailing', label: 'Trailing' },
+        { value: 'all', label: 'All' },
+        { value: 'boundary', label: 'Boundary' },
+      ]},
+    ],
   },
 
   // Keymaps
@@ -289,6 +316,11 @@ export const extensionCatalog: Extension[] = [
     codicon: 'warning',
     downloads: '8.4M',
     rating: 4.7,
+    configOptions: [
+      { key: 'showErrors', label: 'Show Errors', type: 'boolean', default: true },
+      { key: 'showWarnings', label: 'Show Warnings', type: 'boolean', default: true },
+      { key: 'showInline', label: 'Show Inline Messages', type: 'boolean', default: true },
+    ],
   },
   {
     id: 'other-todo-highlight',
@@ -301,6 +333,12 @@ export const extensionCatalog: Extension[] = [
     codicon: 'checklist',
     downloads: '6.8M',
     rating: 4.4,
+    configOptions: [
+      { key: 'highlightTodo', label: 'Highlight TODO', type: 'boolean', default: true },
+      { key: 'highlightFixme', label: 'Highlight FIXME', type: 'boolean', default: true },
+      { key: 'highlightHack', label: 'Highlight HACK', type: 'boolean', default: true },
+      { key: 'highlightNote', label: 'Highlight NOTE', type: 'boolean', default: true },
+    ],
   },
 ];
 
@@ -309,6 +347,7 @@ export const extensionCatalog: Extension[] = [
 const defaultState: ExtensionState = {
   installed: [],
   enabled: [],
+  config: {},
 };
 
 export async function loadExtensionState(): Promise<ExtensionState> {
@@ -319,12 +358,13 @@ export async function loadExtensionState(): Promise<ExtensionState> {
       return {
         installed: Array.isArray(parsed.installed) ? parsed.installed : [],
         enabled: Array.isArray(parsed.enabled) ? parsed.enabled : [],
+        config: parsed.config && typeof parsed.config === 'object' ? parsed.config : {},
       };
     }
   } catch {
     // ignore
   }
-  return { ...defaultState };
+  return { ...defaultState, config: {} };
 }
 
 export async function saveExtensionState(state: ExtensionState): Promise<void> {
@@ -338,6 +378,15 @@ export function getExtensionById(id: string): Extension | undefined {
 export function getCategories(): ExtensionCategory[] {
   const cats = new Set(extensionCatalog.map(e => e.category));
   return Array.from(cats) as ExtensionCategory[];
+}
+
+/** Get effective config value for an extension option (user value or default). */
+export function getExtConfigValue(state: ExtensionState, extId: string, key: string): any {
+  const ext = getExtensionById(extId);
+  const userVal = state.config[extId]?.[key];
+  if (userVal !== undefined) return userVal;
+  const opt = ext?.configOptions?.find(o => o.key === key);
+  return opt?.default;
 }
 
 // ─── Extension Application ──────────────────────────
@@ -490,7 +539,8 @@ export const themeExtensionMap: Record<string, string> = {
 export function applyExtension(
   extId: string,
   editor: any,
-  monaco: any
+  monaco: any,
+  config?: Record<string, any>
 ): (() => void) | null {
   // Theme extensions
   if (extId in themeExtensionMap) {
@@ -582,7 +632,9 @@ export function applyExtension(
   // Formatter extensions: configure editor options
   if (extId === 'fmt-prettier') {
     if (editor) {
-      editor.updateOptions({ formatOnPaste: true, formatOnType: true });
+      const formatOnPaste = config?.formatOnPaste !== false;
+      const formatOnType = config?.formatOnType !== false;
+      editor.updateOptions({ formatOnPaste, formatOnType });
     }
     return () => {
       if (editor) editor.updateOptions({ formatOnPaste: false, formatOnType: false });
@@ -591,8 +643,9 @@ export function applyExtension(
 
   if (extId === 'fmt-indent-rainbow') {
     if (editor) {
+      const highlightActive = config?.highlightActive !== false;
       editor.updateOptions({
-        guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
+        guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: highlightActive },
         renderIndentGuides: true,
       });
     }
@@ -603,7 +656,9 @@ export function applyExtension(
 
   if (extId === 'fmt-trailing-spaces') {
     if (editor) {
-      editor.updateOptions({ renderWhitespace: 'trailing', trimAutoWhitespace: true });
+      const whitespace = config?.showWhitespace || 'trailing';
+      const trimOnSave = config?.trimOnSave !== false;
+      editor.updateOptions({ renderWhitespace: whitespace, trimAutoWhitespace: trimOnSave });
     }
     return () => {
       if (editor) editor.updateOptions({ renderWhitespace: 'selection', trimAutoWhitespace: false });
@@ -632,32 +687,44 @@ export function applyExtension(
   }
 
   // Error Lens — show inline diagnostics (errors/warnings) at the end of each line
+  // Error Lens — show inline diagnostics (errors/warnings) at the end of each line
   if (extId === 'other-error-lens') {
     if (!editor || !monaco) return null;
+    const showErrors = config?.showErrors !== false;
+    const showWarnings = config?.showWarnings !== false;
+    const showInline = config?.showInline !== false;
     const decorationCollection = editor.createDecorationsCollection([]);
     const updateDecorations = () => {
       const model = editor.getModel();
       if (!model) return;
       const markers = monaco.editor.getModelMarkers({ resource: model.uri });
-      const newDecorations = markers.map((m: any) => {
-        const isError = m.severity === monaco.MarkerSeverity.Error;
-        const colorClass = isError ? 'error-lens-error' : 'error-lens-warning';
-        return {
-          range: new monaco.Range(m.startLineNumber, 1, m.startLineNumber, 1),
-          options: {
+      const newDecorations = markers
+        .filter((m: any) => {
+          const isError = m.severity === monaco.MarkerSeverity.Error;
+          return isError ? showErrors : showWarnings;
+        })
+        .map((m: any) => {
+          const isError = m.severity === monaco.MarkerSeverity.Error;
+          const colorClass = isError ? 'error-lens-error' : 'error-lens-warning';
+          const options: any = {
             isWholeLine: true,
             className: colorClass,
-            after: {
-              content: `  ${m.message}`,
-              inlineClassName: `error-lens-inline ${colorClass}-text`,
-            },
             overviewRuler: {
               color: isError ? '#f44747' : '#e8a838',
               position: monaco.editor.OverviewRulerLane?.Full ?? 4,
             },
-          },
-        };
-      });
+          };
+          if (showInline) {
+            options.after = {
+              content: `  ${m.message}`,
+              inlineClassName: `error-lens-inline ${colorClass}-text`,
+            };
+          }
+          return {
+            range: new monaco.Range(m.startLineNumber, 1, m.startLineNumber, 1),
+            options,
+          };
+        });
       decorationCollection.set(newDecorations);
     };
     // Update when markers change
@@ -687,7 +754,14 @@ export function applyExtension(
   if (extId === 'other-todo-highlight') {
     if (!editor || !monaco) return null;
     const decorationCollection = editor.createDecorationsCollection([]);
-    const todoPattern = /\b(TODO|FIXME|HACK|NOTE|XXX|BUG)\b/gi;
+    // Build keyword list from config
+    const enabledKeywords: string[] = [];
+    if (config?.highlightTodo !== false) enabledKeywords.push('TODO');
+    if (config?.highlightFixme !== false) enabledKeywords.push('FIXME');
+    if (config?.highlightHack !== false) enabledKeywords.push('HACK');
+    if (config?.highlightNote !== false) enabledKeywords.push('NOTE');
+    enabledKeywords.push('XXX', 'BUG'); // always on
+    const todoPattern = new RegExp(`\\b(${enabledKeywords.join('|')})\\b`, 'gi');
     const colorMap: Record<string, string> = {
       'TODO': '#ff8c00',
       'FIXME': '#f44747',

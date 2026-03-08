@@ -18,11 +18,10 @@
  *
  * Default extensions loaded:
  * - Theme Defaults (Dark+, Light+, High Contrast themes)
- * - JavaScript language support
- * - TypeScript language support
- * - JSON language support
- * - HTML language support
- * - CSS language support
+ * - JavaScript/TypeScript language support + language features (diagnostics)
+ * - JSON language support + language features (validation)
+ * - HTML language support + language features
+ * - CSS language support + language features (validation)
  * - Markdown language support
  */
 
@@ -51,7 +50,7 @@ async function doInitialize(): Promise<void> {
     { default: getThemeServiceOverride },
     { default: getTextmateServiceOverride },
     { default: getLanguagesServiceOverride },
-    { default: getConfigurationServiceOverride },
+    { default: getConfigurationServiceOverride, updateUserConfiguration },
     { default: getKeybindingsServiceOverride },
     { default: getModelServiceOverride },
     { default: getEditorServiceOverride },
@@ -79,7 +78,14 @@ async function doInitialize(): Promise<void> {
     ...getLifecycleServiceOverride(),
   });
 
-  // Load default extensions (theme + language support)
+  // Set dark theme via VS Code configuration service — this ensures the
+  // service layer uses dark colors (body background, editor chrome, etc.)
+  // instead of the default light theme that causes white background flashes.
+  await updateUserConfiguration(JSON.stringify({
+    'workbench.colorTheme': 'Default Dark+',
+  }));
+
+  // Load default extensions — grammar/syntax highlighting
   await Promise.all([
     import('@codingame/monaco-vscode-theme-defaults-default-extension'),
     import('@codingame/monaco-vscode-javascript-default-extension'),
@@ -88,6 +94,15 @@ async function doInitialize(): Promise<void> {
     import('@codingame/monaco-vscode-html-default-extension'),
     import('@codingame/monaco-vscode-css-default-extension'),
     import('@codingame/monaco-vscode-markdown-basics-default-extension'),
+  ]);
+
+  // Load language feature extensions — these provide diagnostics/validation
+  // (syntax checking, type errors, etc.) for each language.
+  await Promise.all([
+    import('@codingame/monaco-vscode-typescript-language-features-default-extension'),
+    import('@codingame/monaco-vscode-json-language-features-default-extension'),
+    import('@codingame/monaco-vscode-css-language-features-default-extension'),
+    import('@codingame/monaco-vscode-html-language-features-default-extension'),
   ]);
 }
 

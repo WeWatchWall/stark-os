@@ -564,6 +564,37 @@
               ><i class="codicon codicon-trash"></i> Uninstall</button>
             </template>
           </div>
+          <!-- Extension Configuration -->
+          <div v-if="selectedExt.configOptions && selectedExt.configOptions.length > 0 && isInstalled(selectedExt.id)" class="ext-config">
+            <div class="ext-config-title"><i class="codicon codicon-gear"></i> Configuration</div>
+            <div v-for="opt in selectedExt.configOptions" :key="opt.key" class="ext-config-item">
+              <label class="ext-config-label">{{ opt.label }}</label>
+              <input
+                v-if="opt.type === 'boolean'"
+                type="checkbox"
+                class="ext-config-checkbox"
+                :checked="getExtConfigValue(extState, selectedExt.id, opt.key)"
+                @change="updateExtConfig(selectedExt.id, opt.key, ($event.target as HTMLInputElement).checked)"
+              >
+              <select
+                v-else-if="opt.type === 'select'"
+                class="ext-config-select"
+                :value="getExtConfigValue(extState, selectedExt.id, opt.key)"
+                @change="updateExtConfig(selectedExt.id, opt.key, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="o in opt.options" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+              <input
+                v-else-if="opt.type === 'number'"
+                type="number"
+                class="ext-config-number"
+                :value="getExtConfigValue(extState, selectedExt.id, opt.key)"
+                :min="opt.min"
+                :max="opt.max"
+                @change="updateExtConfig(selectedExt.id, opt.key, Number(($event.target as HTMLInputElement).value))"
+              >
+            </div>
+          </div>
         </div>
       </template>
     </div>
@@ -945,11 +976,12 @@ import {
   getCategories,
   defineCustomThemes,
   applyExtension,
+  getExtConfigValue,
   type Extension,
   type ExtensionState,
   type ExtensionCategory,
+  type ExtensionConfigOption,
 } from '~/composables/useExtensions';
-import { saveFile, loadFile } from '~/composables/useOpfsStorage';
 import { initializeVscodeServices } from '~/composables/useVscodeServices';
 
 // ─── Types ──────────────────────────────────────────
@@ -1009,14 +1041,14 @@ interface TerminalInstance {
 
 // ─── Constants ──────────────────────────────────────
 const SAVE_DELAY = 1000;
-const SETTINGS_FILE = '.stark-code/settings.json';
+const SETTINGS_FILE = 'home/.stark-code/settings.json'; // /home/.stark-code/settings.json in OPFS
 
 /** Returns the SCM storage path scoped to the current project folder. */
 function getScmStorageKey(): string {
   if (projectRoot.value && projectRoot.value.length > 0) {
     return normalizePath(projectRoot.value + '/.git/scm.json');
   }
-  return '.stark-code/scm.json'; // fallback when no project is open
+  return 'home/.stark-code/scm.json'; // fallback when no project is open
 }
 
 // ─── Shared OPFS FS ────────────────────────────────
@@ -1506,7 +1538,8 @@ async function disableExtension(id: string) {
 function applyExt(id: string) {
   if (activeExtDisposers.has(id)) return; // already applied
   if (!monacoModule || !editor) return;
-  const disposer = applyExtension(id, editor, monacoModule);
+  const extConfig = extState.value.config[id] || {};
+  const disposer = applyExtension(id, editor, monacoModule, extConfig);
   if (disposer) activeExtDisposers.set(id, disposer);
 }
 
@@ -1515,6 +1548,24 @@ function unapplyExt(id: string) {
   if (disposer) {
     disposer();
     activeExtDisposers.delete(id);
+  }
+}
+
+/** Re-apply an extension (e.g. after config change). */
+function reapplyExt(id: string) {
+  unapplyExt(id);
+  applyExt(id);
+}
+
+async function updateExtConfig(extId: string, key: string, value: any) {
+  if (!extState.value.config[extId]) {
+    extState.value.config[extId] = {};
+  }
+  extState.value.config[extId][key] = value;
+  await saveExtensionState(extState.value);
+  // Re-apply extension with new config if it's enabled
+  if (isEnabled(extId)) {
+    reapplyExt(extId);
   }
 }
 
@@ -1755,6 +1806,21 @@ async function openFolder() {
     await closeTab(tab.path);
   }
   currentFile.value = null;
+  // Reload SCM state for the newly opened folder
+  scmInitialized.value = false;
+  scmBranch.value = 'main';
+  scmCommits.value = [];
+  scmStagedFiles.value = [];
+  scmChangedFiles.value = [];
+  scmSnapshot.value = {};
+  const savedScm = await loadScmState();
+  if (savedScm && savedScm.initialized) {
+    scmInitialized.value = true;
+    scmBranch.value = savedScm.branch || 'main';
+    scmCommits.value = savedScm.commits || [];
+    scmSnapshot.value = savedScm.snapshot || {};
+    await refreshScm();
+  }
   notify(`Opened folder: ${projectRoot.value}`, 'success');
 }
 
@@ -2909,6 +2975,7 @@ interface EditorSettings {
 }
 
 async function saveEditorSettings() {
+  if (!fs) return;
   try {
     const settings: EditorSettings = {
       fontSize: settingsFontSize.value,
@@ -2921,13 +2988,16 @@ async function saveEditorSettings() {
       autoSave: autoSaveEnabled.value,
       theme: currentTheme.value,
     };
-    await saveFile(SETTINGS_FILE, JSON.stringify(settings));
+    // Ensure /home/.stark-code/ directory exists
+    await fs.mkdir('home/.stark-code', true);
+    await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings));
   } catch { /* ignore */ }
 }
 
 async function loadEditorSettings() {
+  if (!fs) return;
   try {
-    const raw = await loadFile(SETTINGS_FILE);
+    const raw = await fs.readFile(SETTINGS_FILE);
     if (!raw) return;
     const settings: Partial<EditorSettings> = JSON.parse(raw);
     if (settings.fontSize !== undefined) settingsFontSize.value = settings.fontSize;
@@ -4297,6 +4367,54 @@ kbd {
 .ext-btn.disable:hover { background: #555; }
 .ext-btn.uninstall { background: #3c3c3c; color: #e06c75; }
 .ext-btn.uninstall:hover { background: #5a1d1d; }
+
+/* ─── Extension Config ───────────────────────── */
+.ext-config {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #333;
+}
+.ext-config-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ccc;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ext-config-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+.ext-config-label {
+  font-size: 12px;
+  color: #bbb;
+}
+.ext-config-checkbox {
+  accent-color: #007acc;
+  cursor: pointer;
+}
+.ext-config-select {
+  background: #2d2d2d;
+  color: #ccc;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ext-config-number {
+  background: #2d2d2d;
+  color: #ccc;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  width: 60px;
+}
 
 /* ─── Activity Badge ──────────────────────────── */
 .activity-btn {

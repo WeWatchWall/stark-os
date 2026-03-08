@@ -15,7 +15,7 @@
 // In the browser, provide the polyfill from the `buffer` npm package
 // which is already a transitive dependency of isomorphic-git.
 import { Buffer } from 'buffer';
-if (typeof globalThis !== 'undefined' && typeof globalThis.Buffer === 'undefined') {
+if (typeof globalThis.Buffer === 'undefined') {
   (globalThis as any).Buffer = Buffer;
 }
 

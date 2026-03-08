@@ -84,6 +84,12 @@ export class ServiceController {
   /** Minimum gap in ms between reconcile cycles triggered externally */
   private static readonly RECONCILE_DEBOUNCE_MS = 3000;
   /**
+   * Timer for deferred reconcile when a trigger is debounced.
+   * Ensures the pending reconcile runs after the debounce window
+   * instead of waiting for the next polling interval.
+   */
+  private debouncedReconcileTimer: NodeJS.Timeout | null = null;
+  /**
    * Per-service lock set. While a service ID is in this set, no other
    * reconcile pass can create pods for it. Prevents the triggered-reconcile
    * vs interval-reconcile race from double-creating pods.
@@ -129,6 +135,11 @@ export class ServiceController {
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
       this.intervalTimer = null;
+    }
+
+    if (this.debouncedReconcileTimer) {
+      clearTimeout(this.debouncedReconcileTimer);
+      this.debouncedReconcileTimer = null;
     }
 
     logger.info('Service controller stopped');
@@ -996,17 +1007,31 @@ export class ServiceController {
   /**
    * Trigger an immediate reconciliation cycle.
    * Debounced: if a reconcile completed within RECONCILE_DEBOUNCE_MS, the call
-   * is coalesced into a pending flag so the next interval picks it up instead
-   * of racing with pod creation from the just-finished cycle.
+   * is deferred to run after the debounce window expires instead of running
+   * immediately. This avoids racing with pod creation from the just-finished
+   * cycle while still ensuring the trigger is handled promptly.
    */
   async triggerReconcile(): Promise<void> {
     const elapsed = Date.now() - this.lastReconcileAt;
     if (elapsed < ServiceController.RECONCILE_DEBOUNCE_MS) {
-      logger.debug('Debouncing triggerReconcile — recent cycle completed', {
+      logger.debug('Debouncing triggerReconcile — scheduling deferred cycle', {
         elapsedMs: elapsed,
         debounceMs: ServiceController.RECONCILE_DEBOUNCE_MS,
       });
       this.pendingReconcile = true;
+
+      // Schedule a deferred cycle after the debounce window expires.
+      // Without this, the pending flag would only be consumed when the next
+      // polling interval fires (up to reconcileInterval ms away).
+      if (!this.debouncedReconcileTimer) {
+        const delay = ServiceController.RECONCILE_DEBOUNCE_MS - elapsed;
+        this.debouncedReconcileTimer = setTimeout(() => {
+          this.debouncedReconcileTimer = null;
+          if (this.pendingReconcile && this.isRunning) {
+            this.runReconcileLoop();
+          }
+        }, delay);
+      }
       return;
     }
     await this.runReconcileLoop();

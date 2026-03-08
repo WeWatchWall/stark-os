@@ -204,6 +204,17 @@ export async function handleNodeRegister(
 
   const registeredNodeId = createResult.data.id;
 
+  // Trigger reactive reconciliation — services (especially DaemonSets) may need
+  // pods deployed to the newly registered node.
+  const serviceController = getServiceController();
+  if (serviceController && serviceController.isActive()) {
+    serviceController.triggerReconcile().catch((error) => {
+      logger.error('Failed to trigger reconciliation after node register', error instanceof Error ? error : undefined, {
+        nodeId: registeredNodeId,
+      });
+    });
+  }
+
   // Trigger reactive scheduling — pending pods may now have a compatible node
   const scheduler = getSchedulerService();
   if (scheduler.isActive()) {

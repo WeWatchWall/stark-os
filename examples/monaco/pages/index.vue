@@ -949,6 +949,7 @@ import {
   type ExtensionState,
   type ExtensionCategory,
 } from '~/composables/useExtensions';
+import { initializeVscodeServices } from '~/composables/useVscodeServices';
 
 // ─── Types ──────────────────────────────────────────
 interface Tab {
@@ -1187,7 +1188,7 @@ const scmCommits = ref<ScmCommitEntry[]>([]);
 const scmStagedExpanded = ref(true);
 const scmChangesExpanded = ref(true);
 const scmHistoryExpanded = ref(false);
-let scmSnapshot: Record<string, string> = {};  // path → content at last commit
+const scmSnapshot = ref<Record<string, string>>({}); // path → content at last commit
 
 // Editor internals
 let editor: any = null;
@@ -1843,7 +1844,18 @@ async function openFile(path: string) {
 }
 
 async function initEditor(content: string, filename: string, path: string) {
-  // Monaco Editor — the core editor component
+  // Initialize VS Code services before first editor creation.
+  // This replaces standalone Monaco services with real VS Code implementations
+  // for themes, TextMate grammars, language support, configuration, and keybindings.
+  try {
+    await initializeVscodeServices();
+  } catch (e) {
+    // If VS Code services fail to initialize (e.g. in test environment),
+    // fall back to standalone Monaco
+    console.warn('VS Code services initialization failed, using standalone Monaco:', e);
+  }
+
+  // Monaco Editor — now backed by VS Code services
   monacoModule = await import('monaco-editor');
 
   (self as any).MonacoEnvironment = {
@@ -2007,11 +2019,9 @@ function startRenaming(path: string) {
   renameValue.value = parts[parts.length - 1] || '';
   nextTick(() => {
     const input = renameInput.value;
-    if (Array.isArray(input) && input[0]) {
-      input[0].focus(); input[0].select();
-    } else if (input && !Array.isArray(input)) {
-      (input as HTMLInputElement).focus();
-      (input as HTMLInputElement).select();
+    if (input) {
+      const el = Array.isArray(input) ? input[0] : input;
+      if (el) { el.focus(); el.select(); }
     }
   });
 }
@@ -2372,10 +2382,9 @@ function startInlineCreate(type: 'file' | 'directory', parentPath?: string) {
 
   nextTick(() => {
     const input = inlineCreateInput.value;
-    if (Array.isArray(input) && input[0]) {
-      input[0].focus();
-    } else if (input && !Array.isArray(input)) {
-      (input as HTMLInputElement).focus();
+    if (input) {
+      const el = Array.isArray(input) ? input[0] : input;
+      if (el) { el.focus(); el.select(); }
     }
   });
 }
@@ -2527,7 +2536,7 @@ async function saveScmState() {
     branch: scmBranch.value,
     commits: scmCommits.value,
     staged: scmStagedFiles.value.map(f => f.path),
-    snapshot: scmSnapshot,
+    snapshot: scmSnapshot.value,
   };
   try {
     await fs.mkdir('.stark-code', true);
@@ -2543,12 +2552,12 @@ async function initScm() {
   scmInitialized.value = true;
   scmBranch.value = 'main';
   scmCommits.value = [];
-  scmSnapshot = {};
+  scmSnapshot.value = {};
 
   // Take initial snapshot of all files
   await takeSnapshot();
   // Create initial commit
-  const files = Object.keys(scmSnapshot);
+  const files = Object.keys(scmSnapshot.value);
   const commit: ScmCommitEntry = {
     hash: generateCommitId(),
     message: 'Initial commit',
@@ -2562,7 +2571,7 @@ async function initScm() {
 
 async function takeSnapshot() {
   if (!fs || !projectRoot.value) return;
-  scmSnapshot = {};
+  scmSnapshot.value = {};
   await snapshotDir(projectRoot.value);
 }
 
@@ -2582,7 +2591,7 @@ async function snapshotDir(dirPath: string) {
           const relPath = childPath.startsWith(projectRoot.value!)
             ? childPath.slice(projectRoot.value!.length + 1)
             : childPath;
-          scmSnapshot[relPath] = content;
+          scmSnapshot.value[relPath] = content;
         } catch { /* skip unreadable */ }
       }
     }
@@ -2602,7 +2611,7 @@ async function refreshScm() {
   // Check for modified and added files
   for (const [relPath, content] of Object.entries(currentFiles)) {
     if (relPath.startsWith('.stark-code/')) continue;
-    if (!(relPath in scmSnapshot)) {
+    if (!(relPath in scmSnapshot.value)) {
       const entry: ScmFileEntry = {
         path: relPath,
         name: relPath.split('/').pop() || relPath,
@@ -2612,7 +2621,7 @@ async function refreshScm() {
       if (!stagedPaths.has(relPath)) {
         changed.push(entry);
       }
-    } else if (content !== scmSnapshot[relPath]) {
+    } else if (content !== scmSnapshot.value[relPath]) {
       const entry: ScmFileEntry = {
         path: relPath,
         name: relPath.split('/').pop() || relPath,
@@ -2626,7 +2635,7 @@ async function refreshScm() {
   }
 
   // Check for deleted files
-  for (const relPath of Object.keys(scmSnapshot)) {
+  for (const relPath of Object.keys(scmSnapshot.value)) {
     if (!(relPath in currentFiles)) {
       const entry: ScmFileEntry = {
         path: relPath,
@@ -2645,10 +2654,10 @@ async function refreshScm() {
   for (const staged of scmStagedFiles.value) {
     if (staged.path.startsWith('.stark-code/')) continue;
     const currentContent = currentFiles[staged.path];
-    const snapshotContent = scmSnapshot[staged.path];
+    const snapshotContent = scmSnapshot.value[staged.path];
     if (staged.status === 'deleted' && !(staged.path in currentFiles)) {
       updatedStaged.push(staged);
-    } else if (staged.status === 'added' && !(staged.path in scmSnapshot) && currentContent !== undefined) {
+    } else if (staged.status === 'added' && !(staged.path in scmSnapshot.value) && currentContent !== undefined) {
       updatedStaged.push(staged);
     } else if (staged.status === 'modified' && currentContent !== snapshotContent) {
       updatedStaged.push(staged);
@@ -2708,8 +2717,8 @@ function unstageAllScm() {
 async function discardScmFile(path: string) {
   if (!fs || !projectRoot.value) return;
   const fullPath = normalizePath(projectRoot.value + '/' + path);
-  if (path in scmSnapshot) {
-    await opfsSaveFile(fullPath, scmSnapshot[path]);
+  if (path in scmSnapshot.value) {
+    await opfsSaveFile(fullPath, scmSnapshot.value[path]);
   } else {
     await opfsDeleteFile(fullPath);
   }
@@ -2751,12 +2760,12 @@ async function commitScm() {
   // Update snapshot with staged changes
   for (const file of scmStagedFiles.value) {
     if (file.status === 'deleted') {
-      delete scmSnapshot[file.path];
+      delete scmSnapshot.value[file.path];
     } else if (fs && projectRoot.value) {
       const fullPath = normalizePath(projectRoot.value + '/' + file.path);
       try {
         const content = await fs.readFile(fullPath);
-        scmSnapshot[file.path] = content;
+        scmSnapshot.value[file.path] = content;
       } catch { /* skip */ }
     }
   }
@@ -3233,7 +3242,7 @@ onMounted(async () => {
     scmInitialized.value = true;
     scmBranch.value = savedScm.branch || 'main';
     scmCommits.value = savedScm.commits || [];
-    scmSnapshot = savedScm.snapshot || {};
+    scmSnapshot.value = savedScm.snapshot || {};
   }
   window.addEventListener('keydown', handleKeydown);
 });

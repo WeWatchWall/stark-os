@@ -1028,7 +1028,9 @@ export class ServiceController {
         this.debouncedReconcileTimer = setTimeout(() => {
           this.debouncedReconcileTimer = null;
           if (this.pendingReconcile && this.isRunning) {
-            this.runReconcileLoop();
+            this.runReconcileLoop().catch((err) => {
+              logger.error('Error in deferred reconcile cycle', err instanceof Error ? err : undefined);
+            });
           }
         }, delay);
       }

@@ -502,7 +502,9 @@ export class SchedulerService {
         this.debouncedScheduleTimer = setTimeout(() => {
           this.debouncedScheduleTimer = null;
           if (this.pendingSchedule && this.isRunning) {
-            this.runSchedulingCycle();
+            this.runSchedulingCycle().catch((err) => {
+              logger.error('Error in deferred scheduling cycle', err instanceof Error ? err : undefined);
+            });
           }
         }, delay);
       }

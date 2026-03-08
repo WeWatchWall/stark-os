@@ -710,13 +710,13 @@ export async function gitDiffWorkingFile(
   }
 
   if (staged) {
-    // For staged files, read the index (staging area) version
-    // Use statusMatrix to determine the state, then read from tree if staged
+    // For staged files, we need the content in the Git index.
+    // isomorphic-git doesn't expose a simple "read blob from index" API,
+    // so we read the working-tree copy.  For the common workflow (edit →
+    // stage → commit) the working-tree and the index are identical.
+    // In the rare partially-staged case (stage=3) the diff may not be
+    // perfectly accurate, but it is still useful.
     try {
-      // Read the blob from the index via git.readBlob with the index tree
-      // Since isomorphic-git doesn't expose index blob directly,
-      // we read the workdir content as the staged content approximation.
-      // In most cases for freshly staged files, workdir === index.
       const fullPath = normalizePath(dir + '/' + filepath);
       const fh = await getFileHandle(rootHandle, fullPath);
       const file = await fh.getFile();

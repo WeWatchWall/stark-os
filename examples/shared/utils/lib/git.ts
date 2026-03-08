@@ -104,8 +104,10 @@ function normalizeError(err: unknown, filepath: string): Error {
   let code: string;
   switch (name) {
     case 'NotFoundError':
-    case 'NotAllowedError':
       code = 'ENOENT';
+      break;
+    case 'NotAllowedError':
+      code = 'EACCES';
       break;
     case 'TypeMismatchError':
       code = 'ENOTDIR';

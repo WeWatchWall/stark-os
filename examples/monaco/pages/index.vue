@@ -1008,7 +1008,15 @@ interface TerminalInstance {
 
 // ─── Constants ──────────────────────────────────────
 const SAVE_DELAY = 1000;
-const SCM_STORAGE_KEY = '.stark-code/scm.json';
+const SETTINGS_FILE = '.stark-code/settings.json';
+
+/** Returns the SCM storage path scoped to the current project folder. */
+function getScmStorageKey(): string {
+  if (projectRoot.value) {
+    return normalizePath(projectRoot.value + '/.git/scm.json');
+  }
+  return '.stark-code/scm.json'; // fallback
+}
 
 // ─── Shared OPFS FS ────────────────────────────────
 let opfsRoot: FileSystemDirectoryHandle | null = null;
@@ -2522,7 +2530,7 @@ async function closeAllTabs() {
 async function loadScmState(): Promise<ScmState | null> {
   if (!fs) return null;
   try {
-    const raw = await fs.readFile(SCM_STORAGE_KEY);
+    const raw = await fs.readFile(getScmStorageKey());
     return JSON.parse(raw);
   } catch {
     return null;
@@ -2539,8 +2547,11 @@ async function saveScmState() {
     snapshot: scmSnapshot.value,
   };
   try {
-    await fs.mkdir('.stark-code', true);
-    await fs.writeFile(SCM_STORAGE_KEY, JSON.stringify(state));
+    const scmKey = getScmStorageKey();
+    // Ensure parent directory exists (.git/ inside the project folder)
+    const parentDir = scmKey.substring(0, scmKey.lastIndexOf('/'));
+    if (parentDir) await fs.mkdir(parentDir, true);
+    await fs.writeFile(scmKey, JSON.stringify(state));
   } catch { /* ignore */ }
 }
 
@@ -2581,8 +2592,8 @@ async function snapshotDir(dirPath: string) {
     const entries = await fs.readdirWithTypes(dirPath);
     for (const entry of entries) {
       const childPath = normalizePath(dirPath + '/' + entry.name);
-      // Skip .stark-code internal directory
-      if (entry.name === '.stark-code') continue;
+      // Skip .stark-code internal directory and .git directory
+      if (entry.name === '.stark-code' || entry.name === '.git') continue;
       if (entry.isDirectory()) {
         await snapshotDir(childPath);
       } else {
@@ -2610,7 +2621,7 @@ async function refreshScm() {
 
   // Check for modified and added files
   for (const [relPath, content] of Object.entries(currentFiles)) {
-    if (relPath.startsWith('.stark-code/')) continue;
+    if (relPath.startsWith('.stark-code/') || relPath.startsWith('.git/')) continue;
     if (!(relPath in scmSnapshot.value)) {
       const entry: ScmFileEntry = {
         path: relPath,
@@ -2674,7 +2685,7 @@ async function collectCurrentFiles(dirPath: string, result: Record<string, strin
     const entries = await fs.readdirWithTypes(dirPath);
     for (const entry of entries) {
       const childPath = normalizePath(dirPath + '/' + entry.name);
-      if (entry.name === '.stark-code') continue;
+      if (entry.name === '.stark-code' || entry.name === '.git') continue;
       if (entry.isDirectory()) {
         await collectCurrentFiles(childPath, result);
       } else {
@@ -2874,6 +2885,52 @@ function addOutput(text: string, type: OutputLine['type'] = 'info') {
 }
 
 // ─── Settings & Theme ───────────────────────────────
+interface EditorSettings {
+  fontSize: number;
+  tabSize: number;
+  wordWrap: boolean;
+  minimap: boolean;
+  renderWhitespace: string;
+  cursorStyle: string;
+  lineNumbers: string;
+  autoSave: boolean;
+  theme: string;
+}
+
+async function saveEditorSettings() {
+  try {
+    const settings: EditorSettings = {
+      fontSize: settingsFontSize.value,
+      tabSize: editorTabSize.value,
+      wordWrap: wordWrapEnabled.value,
+      minimap: minimapEnabled.value,
+      renderWhitespace: renderWhitespace.value,
+      cursorStyle: cursorStyle.value,
+      lineNumbers: lineNumbers.value,
+      autoSave: autoSaveEnabled.value,
+      theme: currentTheme.value,
+    };
+    await saveFile(SETTINGS_FILE, JSON.stringify(settings));
+  } catch { /* ignore */ }
+}
+
+async function loadEditorSettings() {
+  try {
+    const raw = await loadFile(SETTINGS_FILE);
+    if (!raw) return;
+    const settings: Partial<EditorSettings> = JSON.parse(raw);
+    if (settings.fontSize !== undefined) settingsFontSize.value = settings.fontSize;
+    if (settings.tabSize !== undefined) editorTabSize.value = settings.tabSize;
+    if (settings.wordWrap !== undefined) wordWrapEnabled.value = settings.wordWrap;
+    if (settings.minimap !== undefined) minimapEnabled.value = settings.minimap;
+    if (settings.renderWhitespace !== undefined) renderWhitespace.value = settings.renderWhitespace;
+    if (settings.cursorStyle !== undefined) cursorStyle.value = settings.cursorStyle;
+    if (settings.lineNumbers !== undefined) lineNumbers.value = settings.lineNumbers;
+    if (settings.autoSave !== undefined) autoSaveEnabled.value = settings.autoSave;
+    if (settings.theme !== undefined) currentTheme.value = settings.theme;
+  } catch { /* ignore — use defaults */ }
+}
+
 function applySettings() {
   if (!editor) return;
   editor.updateOptions({
@@ -2885,11 +2942,15 @@ function applySettings() {
     cursorStyle: cursorStyle.value,
     lineNumbers: lineNumbers.value,
   });
+  // Persist settings to OPFS
+  saveEditorSettings();
 }
 
 function applyTheme() {
   if (!monacoModule) return;
   monacoModule.editor.setTheme(currentTheme.value);
+  // Persist theme choice
+  saveEditorSettings();
 }
 
 function openThemePicker() {

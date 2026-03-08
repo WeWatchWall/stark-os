@@ -2260,7 +2260,7 @@ async function saveCurrentFile() {
   const model = editor.getModel();
   if (model) {
     const modelPath = model.uri.path;
-    if (modelPath && modelPath !== '/' && !currentFile.value.endsWith(modelPath)) {
+    if (modelPath && modelPath !== '/' && modelPath !== currentFile.value) {
       return;
     }
   }

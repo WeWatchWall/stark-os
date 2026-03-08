@@ -128,6 +128,8 @@ export interface RegisterNodeInput {
  * Node update input
  */
 export interface UpdateNodeInput {
+  /** New node name (must be unique per namespace) */
+  name?: string;
   status?: NodeStatus;
   capabilities?: NodeCapabilities;
   allocatable?: Partial<AllocatableResources>;

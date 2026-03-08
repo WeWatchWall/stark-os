@@ -15,18 +15,17 @@
             </span>
           </div>
 
-          <!-- Current workspace -->
+          <!-- Node name (with rename) -->
           <div class="status-row">
-            <span class="status-label">Workspace</span>
-            <div class="ws-grid">
-              <button
-                v-for="ws in shell.workspaces"
-                :key="ws.id"
-                class="ws-cell"
-                :class="{ active: ws.id === shell.activeWorkspaceId }"
-                @click="shell.switchWorkspace(ws.id)"
-                :title="'Workspace ' + ws.name"
+            <span class="status-label">Node Name</span>
+            <div class="rename-group">
+              <input
+                v-model="renameValue"
+                class="rename-input"
+                placeholder="Node name"
+                @keydown.enter="submitRename"
               />
+              <button class="rename-ok-btn" @click="submitRename">OK</button>
             </div>
           </div>
 
@@ -70,13 +69,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
-const props = defineProps<{ visible: boolean; connectionState: string }>();
-defineEmits<{ close: []; signout: [] }>();
+const props = defineProps<{ visible: boolean; connectionState: string; nodeName: string }>();
+const emit = defineEmits<{ close: []; signout: []; 'rename-node': [name: string] }>();
 
 const shell = useShellStore();
+const renameValue = ref(props.nodeName);
+
+// Keep rename input in sync when panel opens or nodeName changes
+watch(() => props.nodeName, (n) => { renameValue.value = n; });
+watch(() => props.visible, (v) => { if (v) renameValue.value = props.nodeName; });
 
 const connectionLabel = computed(() => {
   const labels: Record<string, string> = {
@@ -88,6 +92,13 @@ const connectionLabel = computed(() => {
   };
   return labels[props.connectionState] ?? 'Unknown';
 });
+
+function submitRename() {
+  const trimmed = renameValue.value.trim();
+  if (trimmed && trimmed !== props.nodeName) {
+    emit('rename-node', trimmed);
+  }
+}
 
 function setMode(mode: 'desktop' | 'mobile') {
   if (shell.layoutMode === mode) {
@@ -169,27 +180,39 @@ function setMode(mode: 'desktop' | 'mobile') {
 .status-badge.connecting .badge-dot { background: #f59e0b; animation: pulse .8s infinite; }
 .status-badge.disconnected .badge-dot { background: #ef4444; }
 
-/* Workspace grid */
-.ws-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 16px);
-  grid-template-rows: repeat(2, 16px);
-  gap: 2px;
+/* Rename group */
+.rename-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.ws-cell {
-  width: 16px;
-  height: 16px;
-  background: rgba(255,255,255,0.08);
+.rename-input {
+  background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 2px;
-  padding: 0;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  padding: 5px 8px;
+  width: 150px;
+  outline: none;
+  transition: border-color 0.15s;
 }
-.ws-cell:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); }
-.ws-cell.active {
-  background: rgba(59,130,246,0.5);
-  border-color: rgba(59,130,246,0.7);
+.rename-input:focus {
+  border-color: rgba(59,130,246,0.5);
+}
+.rename-ok-btn {
+  background: rgba(59,130,246,0.25);
+  border: 1px solid rgba(59,130,246,0.4);
+  border-radius: 4px;
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.rename-ok-btn:hover {
+  background: rgba(59,130,246,0.4);
 }
 
 /* Toggle group */

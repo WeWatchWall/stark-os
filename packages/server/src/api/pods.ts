@@ -466,9 +466,7 @@ async function listPods(req: Request, res: Response): Promise<void> {
       const ref = p.stoppedAt ?? p.createdAt;
       const referenceTime = ref instanceof Date ? ref.getTime() : new Date(ref).getTime();
       const age = now - referenceTime;
-      if (age >= STALE_POD_THRESHOLD_MS) {
-        logger.debug('Filtering stale pod', { podId: p.id, status: p.status, ageMs: age, stoppedAt: p.stoppedAt?.toISOString(), createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt });
-      }
+
       return age < STALE_POD_THRESHOLD_MS;
     });
 

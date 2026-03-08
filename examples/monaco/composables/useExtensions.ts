@@ -687,7 +687,6 @@ export function applyExtension(
   }
 
   // Error Lens — show inline diagnostics (errors/warnings) at the end of each line
-  // Error Lens — show inline diagnostics (errors/warnings) at the end of each line
   if (extId === 'other-error-lens') {
     if (!editor || !monaco) return null;
     const showErrors = config?.showErrors !== false;

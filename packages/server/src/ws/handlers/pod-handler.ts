@@ -358,9 +358,9 @@ export async function handlePodFail(
   requestLogger.warn('Pod marked as failed', { podId: payload.podId, message: errorMessage });
 
   // Trigger reactive reconciliation — the pod's service may need a replacement
-  const serviceController2 = getServiceController();
-  if (serviceController2.isActive()) {
-    serviceController2.triggerReconcile().catch((err) => {
+  const serviceController = getServiceController();
+  if (serviceController.isActive()) {
+    serviceController.triggerReconcile().catch((err) => {
       requestLogger.error('Failed to trigger reconcile after pod fail', err instanceof Error ? err : undefined);
     });
   }
@@ -417,9 +417,9 @@ export async function handlePodEvict(
   requestLogger.info('Pod evicted successfully', { podId: payload.podId, reason: evictionReason });
 
   // Trigger reactive reconciliation — the evicted pod may need rescheduling
-  const serviceController3 = getServiceController();
-  if (serviceController3.isActive()) {
-    serviceController3.triggerReconcile().catch((err) => {
+  const serviceController = getServiceController();
+  if (serviceController.isActive()) {
+    serviceController.triggerReconcile().catch((err) => {
       requestLogger.error('Failed to trigger reconcile after pod evict', err instanceof Error ? err : undefined);
     });
   }

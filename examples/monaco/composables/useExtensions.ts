@@ -35,7 +35,6 @@ export interface Extension {
 }
 
 export type ExtensionCategory =
-  | 'Themes'
   | 'Language'
   | 'Snippets'
   | 'Formatters'
@@ -51,68 +50,6 @@ export interface ExtensionState {
 // ─── Built-in Extension Catalog ─────────────────────
 
 export const extensionCatalog: Extension[] = [
-  // Themes
-  {
-    id: 'theme-monokai',
-    name: 'monokai',
-    displayName: 'Monokai Theme',
-    description: 'A classic dark theme with vibrant syntax highlighting colors inspired by Monokai.',
-    publisher: 'Stark Themes',
-    version: '1.0.0',
-    category: 'Themes',
-    codicon: 'symbol-color',
-    downloads: '12.4M',
-    rating: 4.8,
-  },
-  {
-    id: 'theme-solarized-dark',
-    name: 'solarized-dark',
-    displayName: 'Solarized Dark',
-    description: 'Precision-designed color scheme for machines and people. Dark variant.',
-    publisher: 'Stark Themes',
-    version: '1.0.0',
-    category: 'Themes',
-    codicon: 'symbol-color',
-    downloads: '5.2M',
-    rating: 4.5,
-  },
-  {
-    id: 'theme-github-dark',
-    name: 'github-dark',
-    displayName: 'GitHub Dark Theme',
-    description: 'GitHub\'s dark theme for Stark Code. Clean and minimal dark mode.',
-    publisher: 'GitHub',
-    version: '1.0.0',
-    category: 'Themes',
-    codicon: 'symbol-color',
-    downloads: '8.7M',
-    rating: 4.7,
-  },
-  {
-    id: 'theme-high-contrast',
-    name: 'high-contrast',
-    displayName: 'High Contrast',
-    description: 'A high contrast theme optimized for accessibility and readability.',
-    publisher: 'Stark Themes',
-    version: '1.0.0',
-    category: 'Themes',
-    codicon: 'symbol-color',
-    downloads: '3.1M',
-    rating: 4.3,
-  },
-  {
-    id: 'theme-light-plus',
-    name: 'light-plus',
-    displayName: 'Light+ (Default Light)',
-    description: 'Default light theme with enhanced token colors.',
-    publisher: 'Stark Themes',
-    version: '1.0.0',
-    category: 'Themes',
-    codicon: 'symbol-color',
-    downloads: '10.1M',
-    rating: 4.4,
-  },
-
   // Language support
   {
     id: 'lang-python',
@@ -522,17 +459,6 @@ export function defineCustomThemes(monaco: any): void {
 }
 
 /**
- * Maps theme extension IDs to Monaco theme names.
- */
-export const themeExtensionMap: Record<string, string> = {
-  'theme-monokai': 'monokai',
-  'theme-solarized-dark': 'solarized-dark',
-  'theme-github-dark': 'github-dark',
-  'theme-high-contrast': 'high-contrast',
-  'theme-light-plus': 'light-plus',
-};
-
-/**
  * Applies effects for an extension.
  * Returns an undo function to revert the effect.
  */
@@ -542,15 +468,6 @@ export function applyExtension(
   monaco: any,
   config?: Record<string, any>
 ): (() => void) | null {
-  // Theme extensions
-  if (extId in themeExtensionMap) {
-    const themeName = themeExtensionMap[extId];
-    monaco.editor.setTheme(themeName);
-    return () => {
-      monaco.editor.setTheme('vs-dark');
-    };
-  }
-
   // Snippets: register completion item providers
   if (extId === 'snippets-javascript') {
     const disposable = monaco.languages.registerCompletionItemProvider('javascript', {

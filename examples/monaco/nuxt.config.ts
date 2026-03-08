@@ -67,71 +67,41 @@ function vscodeAssetInlinePlugin(): Plugin {
 
     // Post-build: inline any remaining asset references that Vite's own
     // new URL() handler emitted as separate files (e.g. HTML, WASM).
-    // Also inlines worker JS chunks as blob URLs for single-bundle deployment.
     // This runs after Vite has already hashed and emitted asset files.
     generateBundle(_options, bundle) {
-      // Collect non-JS assets (WASM/JSON/HTML) to inline as data URIs
+      // Collect assets we want to inline
       const assetsToInline = new Map<string, string>();
-      // Collect worker JS assets to inline as blob URLs
-      const workerJsToInline = new Map<string, string>();
-      // Collect worker support assets (source maps, .txt, .d.ts) to remove
-      const supportAssetsToRemove = new Set<string>();
-
-      // Find the main entry chunk name so we don't accidentally treat it as a worker
-      const mainChunkName = Object.keys(bundle).find(k => {
-        const c = bundle[k];
-        return c.type === 'chunk' && c.isEntry && c.code.length > 100000;
-      });
-
-      for (const [fileName, item] of Object.entries(bundle)) {
-        if (item.type !== 'asset') continue;
+      for (const [fileName, chunk] of Object.entries(bundle)) {
+        if (chunk.type !== 'asset') continue;
         const ext = extname(fileName);
-        const baseName = fileName.split('/').pop() || fileName;
-
-        // Source maps and TypeScript declaration files — mark for removal
-        if (ext === '.map' || ext === '.txt') {
-          supportAssetsToRemove.add(fileName);
-          continue;
-        }
-
-        // WASM/JSON/HTML — inline as data URIs
         const mime = MIME[ext];
-        if (mime) {
-          const content = item.source;
-          const buf = typeof content === 'string'
-            ? Buffer.from(content, 'utf-8')
-            : Buffer.from(content);
-          const base64 = buf.toString('base64');
-          assetsToInline.set(baseName, `data:${mime};base64,${base64}`);
-          if (baseName !== fileName) {
-            assetsToInline.set(fileName, `data:${mime};base64,${base64}`);
-          }
-          continue;
-        }
+        if (!mime) continue;
 
-        // Worker .js files — inline as blob URLs (skip CSS which is handled by Nuxt)
-        if (ext === '.js') {
-          const content = item.source;
-          const code = typeof content === 'string'
-            ? content
-            : Buffer.from(content).toString('utf-8');
-          const encoded = Buffer.from(code, 'utf-8').toString('base64');
-          const blobUrl = `URL.createObjectURL(new Blob([atob("${encoded}")],{type:"text/javascript"}))`;
-          workerJsToInline.set(baseName, blobUrl);
-          if (baseName !== fileName) {
-            workerJsToInline.set(fileName, blobUrl);
-          }
+        // Convert the asset content to a data URI
+        const content = chunk.source;
+        const buf = typeof content === 'string'
+          ? Buffer.from(content, 'utf-8')
+          : Buffer.from(content);
+        const base64 = buf.toString('base64');
+        // Use just the basename as the key since JS references use basenames
+        const baseName = fileName.split('/').pop() || fileName;
+        assetsToInline.set(baseName, `data:${mime};base64,${base64}`);
+        // Also map the full path
+        if (baseName !== fileName) {
+          assetsToInline.set(fileName, `data:${mime};base64,${base64}`);
         }
       }
 
-      // Replace references in JS chunks
+      if (assetsToInline.size === 0) return;
+
+      // Replace references in JS chunks and delete the separate asset files
       for (const [, chunk] of Object.entries(bundle)) {
         if (chunk.type !== 'chunk') continue;
         let code = chunk.code;
         let changed = false;
-
-        // Inline WASM/JSON/HTML assets
         for (const [fileName, dataUri] of assetsToInline) {
+          // Match patterns like: new URL("filename.hash.ext", import.meta.url)
+          // and also: ""+new URL("filename.hash.ext",import.meta.url).href
           if (code.includes(fileName)) {
             code = code.replaceAll(
               `new URL("${fileName}",import.meta.url)`,
@@ -144,47 +114,15 @@ function vscodeAssetInlinePlugin(): Plugin {
             changed = true;
           }
         }
-
-        // Inline worker JS assets: replace URL references with blob URLs
-        for (const [fileName, blobExpr] of workerJsToInline) {
-          if (code.includes(fileName)) {
-            // Pattern: new URL("workerFile.hash.js", import.meta.url)
-            code = code.replaceAll(
-              `new URL("${fileName}",import.meta.url)`,
-              `new URL(${blobExpr})`
-            );
-            code = code.replaceAll(
-              `new URL("${fileName}", import.meta.url)`,
-              `new URL(${blobExpr})`
-            );
-            // Pattern: bare string reference in worker script URL assignment
-            code = code.replaceAll(
-              `"_nuxt/${fileName}"`,
-              `${blobExpr}`
-            );
-            code = code.replaceAll(
-              `"/_nuxt/${fileName}"`,
-              `${blobExpr}`
-            );
-            changed = true;
-          }
-        }
-
         if (changed) {
           chunk.code = code;
         }
       }
 
-      // Remove inlined assets from the bundle
+      // Remove inlined assets from the bundle (match by basename or full path)
       for (const bundleKey of Object.keys(bundle)) {
         const baseName = bundleKey.split('/').pop() || bundleKey;
         if (assetsToInline.has(baseName) || assetsToInline.has(bundleKey)) {
-          delete bundle[bundleKey];
-        }
-        if (workerJsToInline.has(baseName) || workerJsToInline.has(bundleKey)) {
-          delete bundle[bundleKey];
-        }
-        if (supportAssetsToRemove.has(bundleKey)) {
           delete bundle[bundleKey];
         }
       }
@@ -298,10 +236,6 @@ export default defineNuxtConfig({
         '@codingame/monaco-vscode-model-service-override',
         '@codingame/monaco-vscode-editor-service-override',
         '@codingame/monaco-vscode-lifecycle-service-override',
-        '@codingame/monaco-vscode-typescript-language-features-default-extension',
-        '@codingame/monaco-vscode-json-language-features-default-extension',
-        '@codingame/monaco-vscode-css-language-features-default-extension',
-        '@codingame/monaco-vscode-html-language-features-default-extension',
       ],
     },
   },

@@ -18,11 +18,15 @@
  *
  * Default extensions loaded:
  * - Theme Defaults (Dark+, Light+, High Contrast themes)
- * - JavaScript/TypeScript language support + language features (diagnostics)
- * - JSON language support + language features (validation)
- * - HTML language support + language features
- * - CSS language support + language features (validation)
- * - Markdown language support
+ * - JavaScript/TypeScript basic language support (grammar/highlighting)
+ * - JSON basic language support
+ * - HTML basic language support
+ * - CSS basic language support
+ * - Markdown basic language support
+ *
+ * Note: Language *feature* extensions (diagnostics, validation) are NOT loaded
+ * because they spawn web workers whose URLs cannot be constructed in the
+ * about:srcdoc iframe context used for single-bundle deployment.
  */
 
 let initialized = false;
@@ -42,6 +46,22 @@ export async function initializeVscodeServices(): Promise<void> {
 }
 
 async function doInitialize(): Promise<void> {
+  // Suppress worker URL errors in about:srcdoc context.
+  // The TextMate service attempts to create a background tokenizer worker
+  // via new URL(path, import.meta.url). In about:srcdoc, import.meta.url
+  // is "about:srcdoc" which is not a valid URL base, causing:
+  //   TypeError: Failed to construct 'URL': Invalid URL
+  // The tokenizer falls back to synchronous mode, so this is safe to ignore.
+  const prevHandler = self.onunhandledrejection;
+  self.onunhandledrejection = (event: PromiseRejectionEvent) => {
+    if (event.reason instanceof TypeError &&
+        event.reason.message?.includes('Invalid URL')) {
+      event.preventDefault();
+      return;
+    }
+    if (prevHandler) prevHandler.call(self, event);
+  };
+
   // Dynamic imports — only loaded on first call
   const { initialize } = await import('@codingame/monaco-vscode-api');
 
@@ -85,7 +105,9 @@ async function doInitialize(): Promise<void> {
     'workbench.colorTheme': 'Default Dark+',
   }));
 
-  // Load default extensions — grammar/syntax highlighting
+  // Load default extensions — grammar/syntax highlighting only.
+  // These provide TextMate grammars for proper tokenization without
+  // spawning any workers.
   await Promise.all([
     import('@codingame/monaco-vscode-theme-defaults-default-extension'),
     import('@codingame/monaco-vscode-javascript-default-extension'),
@@ -94,15 +116,6 @@ async function doInitialize(): Promise<void> {
     import('@codingame/monaco-vscode-html-default-extension'),
     import('@codingame/monaco-vscode-css-default-extension'),
     import('@codingame/monaco-vscode-markdown-basics-default-extension'),
-  ]);
-
-  // Load language feature extensions — these provide diagnostics/validation
-  // (syntax checking, type errors, etc.) for each language.
-  await Promise.all([
-    import('@codingame/monaco-vscode-typescript-language-features-default-extension'),
-    import('@codingame/monaco-vscode-json-language-features-default-extension'),
-    import('@codingame/monaco-vscode-css-language-features-default-extension'),
-    import('@codingame/monaco-vscode-html-language-features-default-extension'),
   ]);
 }
 

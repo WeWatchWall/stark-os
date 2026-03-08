@@ -1013,10 +1013,10 @@ const SETTINGS_FILE = '.stark-code/settings.json';
 
 /** Returns the SCM storage path scoped to the current project folder. */
 function getScmStorageKey(): string {
-  if (projectRoot.value) {
+  if (projectRoot.value && projectRoot.value.length > 0) {
     return normalizePath(projectRoot.value + '/.git/scm.json');
   }
-  return '.stark-code/scm.json'; // fallback
+  return '.stark-code/scm.json'; // fallback when no project is open
 }
 
 // ─── Shared OPFS FS ────────────────────────────────
@@ -2557,8 +2557,11 @@ async function saveScmState() {
   try {
     const scmKey = getScmStorageKey();
     // Ensure parent directory exists (.git/ inside the project folder)
-    const parentDir = scmKey.substring(0, scmKey.lastIndexOf('/'));
-    if (parentDir) await fs.mkdir(parentDir, true);
+    const lastSlash = scmKey.lastIndexOf('/');
+    if (lastSlash > 0) {
+      const parentDir = scmKey.substring(0, lastSlash);
+      await fs.mkdir(parentDir, true);
+    }
     await fs.writeFile(scmKey, JSON.stringify(state));
   } catch { /* ignore */ }
 }

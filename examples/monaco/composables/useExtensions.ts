@@ -640,7 +640,7 @@ export function applyExtension(
       if (!model) return;
       const markers = monaco.editor.getModelMarkers({ resource: model.uri });
       const newDecorations = markers.map((m: any) => {
-        const isError = m.severity === 8; // MarkerSeverity.Error
+        const isError = m.severity === monaco.MarkerSeverity.Error;
         const colorClass = isError ? 'error-lens-error' : 'error-lens-warning';
         return {
           range: new monaco.Range(m.startLineNumber, 1, m.startLineNumber, 1),
@@ -653,7 +653,7 @@ export function applyExtension(
             },
             overviewRuler: {
               color: isError ? '#f44747' : '#e8a838',
-              position: 4, // OverviewRulerLane.Full
+              position: monaco.editor.OverviewRulerLane?.Full ?? 4,
             },
           },
         };
@@ -712,7 +712,7 @@ export function applyExtension(
           range: new monaco.Range(pos.lineNumber, pos.column, endPos.lineNumber, endPos.column),
           options: {
             inlineClassName: `todo-highlight-${keyword.toLowerCase()}`,
-            overviewRuler: { color, position: 1 },
+            overviewRuler: { color, position: monaco.editor.OverviewRulerLane?.Left ?? 1 },
           },
         });
       }
@@ -801,7 +801,6 @@ export function applyExtension(
       monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
         validate: true,
         allowComments: true,
-        trailingCommas: 'warning',
         schemaValidation: 'warning',
       });
     }

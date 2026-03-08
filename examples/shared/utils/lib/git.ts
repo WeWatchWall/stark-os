@@ -85,9 +85,30 @@ export interface GitFileDiff {
 /** Status matrix row: [filepath, head, workdir, stage] */
 export type GitStatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
-// No CORS proxy — GitHub supports CORS natively for both
-// authenticated AND unauthenticated requests.  The old
-// cors.isomorphic-git.org proxy is no longer needed.
+// CORS proxy for browser-based git HTTP operations.
+// GitHub's git endpoints (github.com/<repo>.git/…) do NOT include
+// Access-Control-Allow-Origin headers — not even for authenticated
+// requests.  A CORS proxy is therefore required for ALL browser-based
+// clone / push / pull / fetch operations.
+//
+// IMPORTANT: isomorphic-git persists `corsProxy` into the repo's
+// .git/config (`http.corsProxy`) during clone, and reads it back when
+// the parameter is `undefined`.  We ALWAYS pass the parameter explicitly
+// so stale or missing config values never cause surprises.
+const DEFAULT_CORS_PROXY = 'https://cors.isomorphic-git.org';
+
+/**
+ * Resolve the CORS proxy value to pass to isomorphic-git.
+ *
+ * - If `explicit` is provided by the caller, honour it.
+ * - Otherwise return the default public proxy.
+ *
+ * Always returns a defined value so isomorphic-git never falls back to
+ * reading `http.corsProxy` from the repo's .git/config.
+ */
+function resolveCorsProxy(explicit: string | undefined): string {
+  return explicit ?? DEFAULT_CORS_PROXY;
+}
 
 // ── OPFS → isomorphic-git filesystem adapter ─────────
 
@@ -353,7 +374,7 @@ export async function gitClone(
     http,
     dir,
     url,
-    ...(corsProxy ? { corsProxy } : {}),
+    corsProxy: resolveCorsProxy(corsProxy),
     singleBranch: false,
     depth: depth ?? 20,
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
@@ -417,7 +438,7 @@ export async function gitPush(
     http,
     dir,
     remote,
-    ...(corsProxy ? { corsProxy } : {}),
+    corsProxy: resolveCorsProxy(corsProxy),
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
   });
 }
@@ -439,7 +460,7 @@ export async function gitPull(
     http,
     dir,
     remote,
-    ...(corsProxy ? { corsProxy } : {}),
+    corsProxy: resolveCorsProxy(corsProxy),
     singleBranch: true,
     author: author || { name: 'User', email: 'user@example.com' },
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
@@ -793,7 +814,7 @@ export async function gitFetch(
     http,
     dir,
     remote,
-    ...(corsProxy ? { corsProxy } : {}),
+    corsProxy: resolveCorsProxy(corsProxy),
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
   });
 }

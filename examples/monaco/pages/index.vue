@@ -3337,6 +3337,7 @@ function showDiffEditor(tab: Tab) {
 
   if (!diffEditorInstance) {
     diffEditorInstance = monacoModule.editor.createDiffEditor(diffEditorContainer.value, {
+      theme: currentTheme.value,
       automaticLayout: true,
       readOnly: true,
       renderSideBySide: true,

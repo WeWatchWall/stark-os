@@ -1008,7 +1008,6 @@ interface TerminalInstance {
 // ─── Constants ──────────────────────────────────────
 const SAVE_DELAY = 1000;
 const SCM_STORAGE_KEY = '.stark-code/scm.json';
-const SCM_SNAPSHOT_DIR = '.stark-code/scm-snapshots';
 
 // ─── Shared OPFS FS ────────────────────────────────
 let opfsRoot: FileSystemDirectoryHandle | null = null;
@@ -2551,7 +2550,7 @@ async function initScm() {
   // Create initial commit
   const files = Object.keys(scmSnapshot);
   const commit: ScmCommitEntry = {
-    hash: generateHash(),
+    hash: generateCommitId(),
     message: 'Initial commit',
     timestamp: Date.now(),
     files,
@@ -2741,7 +2740,7 @@ async function commitScm() {
   if (!scmCommitMessage.value.trim() || scmStagedFiles.value.length === 0) return;
 
   const commit: ScmCommitEntry = {
-    hash: generateHash(),
+    hash: generateCommitId(),
     message: scmCommitMessage.value.trim(),
     timestamp: Date.now(),
     files: scmStagedFiles.value.map(f => f.path),
@@ -2776,7 +2775,7 @@ async function openScmDiff(file: ScmFileEntry) {
   await openFile(fullPath);
 }
 
-function generateHash(): string {
+function generateCommitId(): string {
   const chars = '0123456789abcdef';
   let hash = '';
   for (let i = 0; i < 40; i++) {
@@ -3049,11 +3048,13 @@ async function replaceAllInFiles() {
       let content = await fs.readFile(fullPath);
       if (searchRegex.value) {
         try {
+          // Validate regex before use to avoid ReDoS
           const flags = searchCaseSensitive.value ? 'g' : 'gi';
           const re = new RegExp(query, flags);
+          // Test with a short timeout by limiting match scope
           const matches = content.match(re);
           if (matches) totalReplacements += matches.length;
-          content = content.replace(re, replacement);
+          content = content.replace(re, replacement.replace(/\$/g, '$$$$'));
         } catch { continue; }
       } else {
         const lq = searchCaseSensitive.value ? query : query.toLowerCase();

@@ -343,26 +343,71 @@
         <div class="sidebar-header">
           <span class="sidebar-title">SOURCE CONTROL</span>
           <div class="sidebar-actions">
-            <button class="icon-btn" title="Refresh" @click="refreshScm">
+            <button class="icon-btn" title="Git Settings" @click="showGitSettings = !showGitSettings">
+              <i class="codicon codicon-gear"></i>
+            </button>
+            <button class="icon-btn" title="Refresh" @click="refreshScm(); refreshScmLog();">
               <i class="codicon codicon-refresh"></i>
             </button>
           </div>
         </div>
-        <div v-if="!scmInitialized" class="scm-init-panel">
+
+        <!-- Git settings panel (auth + author) -->
+        <div v-if="showGitSettings" class="scm-settings-panel">
+          <div class="scm-settings-title">Git Settings</div>
+          <label class="scm-settings-label">Author Name</label>
+          <input v-model="gitAuthorName" class="scm-settings-input" placeholder="Your Name" />
+          <label class="scm-settings-label">Author Email</label>
+          <input v-model="gitAuthorEmail" class="scm-settings-input" placeholder="you@example.com" />
+          <label class="scm-settings-label">GitHub Username</label>
+          <input v-model="gitUsername" class="scm-settings-input" placeholder="username" />
+          <label class="scm-settings-label">Personal Access Token</label>
+          <input v-model="gitToken" class="scm-settings-input" type="password" placeholder="ghp_..." />
+          <button class="scm-commit-btn" style="margin-top:8px;" @click="saveGitSettings">
+            <i class="codicon codicon-save"></i> Save Settings
+          </button>
+        </div>
+
+        <div v-if="!scmInitialized && !showGitSettings" class="scm-init-panel">
           <div class="scm-init-message">
             <i class="codicon codicon-source-control" style="font-size: 48px; color: #555; display: block; margin-bottom: 12px;"></i>
             <p style="color: #888; font-size: 12px; margin-bottom: 12px;">No source control provider registered.</p>
-            <button class="ext-btn install" @click="initScm" style="margin: 0 auto;">
+            <button class="ext-btn install" @click="initScm" style="margin: 0 auto; margin-bottom: 8px;">
               <i class="codicon codicon-add"></i> Initialize Repository
+            </button>
+            <button class="ext-btn install" @click="openCloneDialog" style="margin: 0 auto;">
+              <i class="codicon codicon-cloud-download"></i> Clone Repository
             </button>
           </div>
         </div>
-        <template v-else>
+
+        <!-- Clone dialog -->
+        <div v-if="showCloneDialog" class="scm-clone-dialog">
+          <div class="scm-settings-title">Clone Repository</div>
+          <label class="scm-settings-label">Repository URL</label>
+          <input v-model="cloneUrl" class="scm-settings-input" placeholder="https://github.com/user/repo.git" />
+          <label class="scm-settings-label">Folder Name (optional)</label>
+          <input v-model="cloneFolder" class="scm-settings-input" placeholder="auto-detect from URL" />
+          <label class="scm-settings-label">Depth (number of commits)</label>
+          <input v-model.number="cloneDepth" class="scm-settings-input" type="number" min="1" max="1000" />
+          <div v-if="cloneProgressMsg" class="scm-clone-progress">{{ cloneProgressMsg }}</div>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <button class="scm-commit-btn" :disabled="cloneInProgress || !cloneUrl.trim()" @click="performClone" style="flex:1;">
+              <i class="codicon codicon-cloud-download"></i> {{ cloneInProgress ? 'Cloning...' : 'Clone' }}
+            </button>
+            <button class="scm-commit-btn" style="flex:0; background:#3c3c3c;" @click="showCloneDialog = false" :disabled="cloneInProgress">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <template v-if="scmInitialized && !showGitSettings && !showCloneDialog">
           <!-- Commit message input -->
           <div class="scm-commit-area">
             <div class="scm-branch-row">
               <i class="codicon codicon-git-branch"></i>
               <span class="scm-branch-name">{{ scmBranch }}</span>
+              <span v-if="scmLoading" class="scm-loading"><i class="codicon codicon-loading codicon-modifier-spin"></i></span>
             </div>
             <div class="scm-input-wrapper">
               <textarea
@@ -373,9 +418,17 @@
                 @keydown.ctrl.enter="commitScm"
               ></textarea>
             </div>
-            <button class="scm-commit-btn" :disabled="!scmCommitMessage.trim() || scmStagedFiles.length === 0" @click="commitScm">
-              <i class="codicon codicon-check"></i> Commit
-            </button>
+            <div class="scm-btn-row">
+              <button class="scm-commit-btn" :disabled="!scmCommitMessage.trim() || scmStagedFiles.length === 0 || scmLoading" @click="commitScm" style="flex:1;">
+                <i class="codicon codicon-check"></i> Commit
+              </button>
+              <button class="scm-commit-btn scm-push-btn" :disabled="scmLoading" @click="pushScm" title="Push to Remote">
+                <i class="codicon codicon-cloud-upload"></i>
+              </button>
+              <button class="scm-commit-btn scm-pull-btn" :disabled="scmLoading" @click="pullScm" title="Pull from Remote">
+                <i class="codicon codicon-cloud-download"></i>
+              </button>
+            </div>
           </div>
           <!-- Staged changes -->
           <div v-if="scmStagedFiles.length > 0" class="scm-section">
@@ -425,7 +478,7 @@
               </div>
             </template>
           </div>
-          <div v-if="scmChangedFiles.length === 0 && scmStagedFiles.length === 0" class="scm-clean-msg">
+          <div v-if="scmChangedFiles.length === 0 && scmStagedFiles.length === 0 && !scmLoading" class="scm-clean-msg">
             <i class="codicon codicon-check" style="color: #22c55e;"></i>
             <span>No changes detected</span>
           </div>
@@ -437,12 +490,48 @@
               <span class="scm-section-count">{{ scmCommits.length }}</span>
             </div>
             <template v-if="scmHistoryExpanded">
-              <div v-for="commit in scmCommits.slice(0, 50)" :key="commit.hash" class="scm-commit-entry">
-                <i class="codicon codicon-git-commit"></i>
-                <div class="scm-commit-info">
-                  <div class="scm-commit-msg">{{ commit.message }}</div>
-                  <div class="scm-commit-meta">{{ commit.hash.substring(0,7) }} · {{ formatCommitTime(commit.timestamp) }}</div>
+              <div v-for="commit in scmCommits.slice(0, 50)" :key="commit.oid" class="scm-commit-group">
+                <div class="scm-commit-entry" @click="toggleCommitExpand(commit)">
+                  <i :class="'codicon codicon-' + (commit.expanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle" style="font-size:12px; flex-shrink:0;"></i>
+                  <i class="codicon codicon-git-commit"></i>
+                  <div class="scm-commit-info">
+                    <div class="scm-commit-msg">{{ commit.message }}</div>
+                    <div class="scm-commit-meta">{{ commit.oid.substring(0,7) }} · {{ commit.author }} · {{ formatCommitTime(commit.timestamp) }}</div>
+                  </div>
                 </div>
+                <!-- Expanded commit: show changed files -->
+                <template v-if="commit.expanded">
+                  <div v-if="commit.loadingFiles" class="scm-commit-files-loading">
+                    <i class="codicon codicon-loading codicon-modifier-spin"></i> Loading files...
+                  </div>
+                  <div v-else-if="commit.files.length === 0" class="scm-commit-files-loading">
+                    No file changes found
+                  </div>
+                  <template v-else>
+                    <div
+                      v-for="file in commit.files"
+                      :key="commit.oid + '-' + file.path"
+                      class="scm-file-item scm-history-file"
+                      @click="showCommitFileDiff(commit, file.path)"
+                    >
+                      <i :class="'codicon codicon-' + getCodiconForFile(file.path.split('/').pop() || file.path)" class="file-codicon"></i>
+                      <span class="scm-file-name">{{ file.path }}</span>
+                      <span class="scm-file-status" :class="file.status">{{ file.status === 'added' ? 'A' : file.status === 'deleted' ? 'D' : 'M' }}</span>
+                      <i v-if="commit.loadingDiff === file.path" class="codicon codicon-loading codicon-modifier-spin" style="margin-left:4px;"></i>
+                    </div>
+                    <!-- Inline diff viewer -->
+                    <div v-if="historyDiffContent && commit.expanded" class="scm-diff-viewer">
+                      <div class="scm-diff-header">
+                        <span class="scm-diff-filename">{{ historyDiffContent.path }}</span>
+                        <button class="icon-btn" @click="historyDiffContent = null" title="Close diff">
+                          <i class="codicon codicon-close"></i>
+                        </button>
+                      </div>
+                      <pre class="scm-diff-content"><template v-for="(line, li) in historyDiffContent.patch.split('\n')" :key="li"><span :class="diffLineClass(line)">{{ line }}
+</span></template></pre>
+                    </div>
+                  </template>
+                </template>
               </div>
             </template>
           </div>
@@ -968,7 +1057,23 @@
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue';
 // Types need explicit imports; components and util functions are auto-imported by the shared Nuxt layer
 import type { PickerResult, ExtensionFilter } from '../../shared/components/FilesPicker.vue';
-import type { ReadonlyFS } from '../../shared/utils';
+import type { ReadonlyFS, GitLogEntry, GitDiffFile, GitFileDiff, GitAuth, GitAuthor } from '../../shared/utils';
+import {
+  gitInit,
+  gitClone,
+  gitAdd,
+  gitRemove,
+  gitCommit,
+  gitPush,
+  gitPull,
+  gitCurrentBranch,
+  gitLog,
+  gitStatusMatrix,
+  gitIsRepo,
+  gitDiffFiles,
+  gitDiffFileContent,
+  gitSetConfig,
+} from '../../shared/utils';
 import {
   extensionCatalog,
   loadExtensionState,
@@ -1022,17 +1127,15 @@ interface ScmFileEntry {
   statusLabel: string;
 }
 interface ScmCommitEntry {
-  hash: string;
+  oid: string;
   message: string;
   timestamp: number;
-  files: string[];
-}
-interface ScmState {
-  initialized: boolean;
-  branch: string;
-  commits: ScmCommitEntry[];
-  staged: string[];
-  snapshot: Record<string, string>;  // path → content hash (simplified: we store content)
+  author: string;
+  files: GitDiffFile[];       // populated lazily when expanding a commit
+  expanded: boolean;          // whether the commit detail is shown
+  loadingFiles: boolean;      // whether we're loading the file list
+  diffs: GitFileDiff[];       // populated lazily when viewing a file diff
+  loadingDiff: string | null; // path of the file whose diff is loading
 }
 interface TerminalInstance {
   id: number;
@@ -1042,14 +1145,7 @@ interface TerminalInstance {
 // ─── Constants ──────────────────────────────────────
 const SAVE_DELAY = 1000;
 const SETTINGS_FILE = 'home/.stark-code/settings.json'; // /home/.stark-code/settings.json in OPFS
-
-/** Returns the SCM storage path scoped to the current project folder. */
-function getScmStorageKey(): string {
-  if (projectRoot.value && projectRoot.value.length > 0) {
-    return normalizePath(projectRoot.value + '/.git/scm.json');
-  }
-  return 'home/.stark-code/scm.json'; // fallback when no project is open
-}
+const GIT_SETTINGS_FILE = 'home/.stark-code/git-settings.json';
 
 // ─── Shared OPFS FS ────────────────────────────────
 let opfsRoot: FileSystemDirectoryHandle | null = null;
@@ -1219,7 +1315,7 @@ let isTerminalResizing = false;
 let terminalResizeStartY = 0;
 let terminalResizeStartHeight = 0;
 
-// SCM (Source Control) state
+// SCM (Source Control) state — backed by isomorphic-git
 const scmInitialized = ref(false);
 const scmBranch = ref('main');
 const scmCommitMessage = ref('');
@@ -1229,7 +1325,22 @@ const scmCommits = ref<ScmCommitEntry[]>([]);
 const scmStagedExpanded = ref(true);
 const scmChangesExpanded = ref(true);
 const scmHistoryExpanded = ref(false);
-const scmSnapshot = ref<Record<string, string>>({}); // path → content at last commit
+const scmLoading = ref(false);
+// Clone dialog
+const showCloneDialog = ref(false);
+const cloneUrl = ref('');
+const cloneFolder = ref('');
+const cloneDepth = ref(20);
+const cloneInProgress = ref(false);
+const cloneProgressMsg = ref('');
+// Git auth / settings
+const gitUsername = ref('');
+const gitToken = ref('');
+const gitAuthorName = ref('');
+const gitAuthorEmail = ref('');
+const showGitSettings = ref(false);
+// Inline diff viewer for commit history
+const historyDiffContent = ref<GitFileDiff | null>(null);
 
 // Editor internals
 let editor: any = null;
@@ -1812,15 +1923,7 @@ async function openFolder() {
   scmCommits.value = [];
   scmStagedFiles.value = [];
   scmChangedFiles.value = [];
-  scmSnapshot.value = {};
-  const savedScm = await loadScmState();
-  if (savedScm && savedScm.initialized) {
-    scmInitialized.value = true;
-    scmBranch.value = savedScm.branch || 'main';
-    scmCommits.value = savedScm.commits || [];
-    scmSnapshot.value = savedScm.snapshot || {};
-    await refreshScm();
-  }
+  await detectGitRepo();
   notify(`Opened folder: ${projectRoot.value}`, 'success');
 }
 
@@ -2600,232 +2703,318 @@ async function closeAllTabs() {
   }
 }
 
-// ─── Source Control (SCM) ───────────────────────────
-async function loadScmState(): Promise<ScmState | null> {
-  if (!fs) return null;
+// ─── Source Control (SCM) — powered by isomorphic-git ─
+
+/** Load git settings (auth, author) from OPFS. */
+async function loadGitSettings() {
+  if (!fs) return;
   try {
-    const raw = await fs.readFile(getScmStorageKey());
-    return JSON.parse(raw);
+    const raw = await fs.readFile(GIT_SETTINGS_FILE);
+    const s = JSON.parse(raw);
+    gitUsername.value = s.username || '';
+    gitToken.value = s.token || '';
+    gitAuthorName.value = s.authorName || '';
+    gitAuthorEmail.value = s.authorEmail || '';
+  } catch { /* no saved settings */ }
+}
+
+/** Save git settings (auth, author) to OPFS. */
+async function saveGitSettings() {
+  if (!fs) return;
+  try {
+    await fs.mkdir('home/.stark-code', true);
+    await fs.writeFile(GIT_SETTINGS_FILE, JSON.stringify({
+      username: gitUsername.value,
+      token: gitToken.value,
+      authorName: gitAuthorName.value,
+      authorEmail: gitAuthorEmail.value,
+    }));
+  } catch { /* ignore */ }
+  notify('Git settings saved', 'success');
+  showGitSettings.value = false;
+}
+
+function getGitAuth(): GitAuth | undefined {
+  if (gitToken.value) {
+    return { username: gitUsername.value || 'x-access-token', password: gitToken.value };
+  }
+  return undefined;
+}
+
+function getGitAuthor(): GitAuthor {
+  return {
+    name: gitAuthorName.value || 'User',
+    email: gitAuthorEmail.value || 'user@example.com',
+  };
+}
+
+/** Detect if the current project folder is a git repo and load state. */
+async function detectGitRepo() {
+  if (!opfsRoot || !projectRoot.value) {
+    scmInitialized.value = false;
+    return;
+  }
+  try {
+    const isRepo = await gitIsRepo(opfsRoot, projectRoot.value);
+    scmInitialized.value = isRepo;
+    if (isRepo) {
+      scmBranch.value = await gitCurrentBranch(opfsRoot, projectRoot.value);
+      await refreshScmLog();
+      await refreshScm();
+    }
   } catch {
-    return null;
+    scmInitialized.value = false;
   }
 }
 
-async function saveScmState() {
-  if (!fs) return;
-  const state: ScmState = {
-    initialized: scmInitialized.value,
-    branch: scmBranch.value,
-    commits: scmCommits.value,
-    staged: scmStagedFiles.value.map(f => f.path),
-    snapshot: scmSnapshot.value,
-  };
-  try {
-    const scmKey = getScmStorageKey();
-    // Ensure parent directory exists (.git/ inside the project folder)
-    const lastSlash = scmKey.lastIndexOf('/');
-    if (lastSlash > 0) {
-      const parentDir = scmKey.substring(0, lastSlash);
-      await fs.mkdir(parentDir, true);
-    }
-    await fs.writeFile(scmKey, JSON.stringify(state));
-  } catch { /* ignore */ }
-}
-
+/** Initialize a new git repo in the current project folder. */
 async function initScm() {
-  if (!projectRoot.value || !fs) {
+  if (!projectRoot.value || !opfsRoot) {
     notify('Open a folder first to initialize a repository', 'error');
     return;
   }
-  scmInitialized.value = true;
-  scmBranch.value = 'main';
-  scmCommits.value = [];
-  scmSnapshot.value = {};
-
-  // Take initial snapshot of all files
-  await takeSnapshot();
-  // Create initial commit
-  const files = Object.keys(scmSnapshot.value);
-  const commit: ScmCommitEntry = {
-    hash: generateCommitId(),
-    message: 'Initial commit',
-    timestamp: Date.now(),
-    files,
-  };
-  scmCommits.value.unshift(commit);
-  await saveScmState();
-  notify('Initialized repository on branch: main', 'success');
-}
-
-async function takeSnapshot() {
-  if (!fs || !projectRoot.value) return;
-  scmSnapshot.value = {};
-  await snapshotDir(projectRoot.value);
-}
-
-async function snapshotDir(dirPath: string) {
-  if (!fs) return;
+  scmLoading.value = true;
   try {
-    const entries = await fs.readdirWithTypes(dirPath);
-    for (const entry of entries) {
-      const childPath = normalizePath(dirPath + '/' + entry.name);
-      // Skip .stark-code internal directory and .git directory
-      if (entry.name === '.stark-code' || entry.name === '.git') continue;
-      if (entry.isDirectory()) {
-        await snapshotDir(childPath);
-      } else {
-        try {
-          const content = await fs.readFile(childPath);
-          const relPath = childPath.startsWith(projectRoot.value!)
-            ? childPath.slice(projectRoot.value!.length + 1)
-            : childPath;
-          scmSnapshot.value[relPath] = content;
-        } catch { /* skip unreadable */ }
-      }
+    await gitInit(opfsRoot, projectRoot.value, 'main');
+    // Set author config if available
+    if (gitAuthorName.value) {
+      await gitSetConfig(opfsRoot, projectRoot.value, 'user.name', gitAuthorName.value);
     }
-  } catch { /* skip */ }
+    if (gitAuthorEmail.value) {
+      await gitSetConfig(opfsRoot, projectRoot.value, 'user.email', gitAuthorEmail.value);
+    }
+    scmInitialized.value = true;
+    scmBranch.value = 'main';
+    notify('Initialized git repository on branch: main', 'success');
+    await refreshScm();
+  } catch (err: any) {
+    notify('Failed to init repo: ' + (err.message || err), 'error');
+  } finally {
+    scmLoading.value = false;
+  }
 }
 
+/** Open the clone dialog. */
+function openCloneDialog() {
+  showCloneDialog.value = true;
+  cloneUrl.value = '';
+  cloneFolder.value = '';
+  cloneInProgress.value = false;
+  cloneProgressMsg.value = '';
+}
+
+/** Clone a remote repository. */
+async function performClone() {
+  if (!cloneUrl.value.trim() || !opfsRoot) return;
+  cloneInProgress.value = true;
+  cloneProgressMsg.value = 'Starting clone...';
+
+  // Derive folder name from URL if not specified
+  let targetDir = cloneFolder.value.trim();
+  if (!targetDir) {
+    const urlParts = cloneUrl.value.trim().replace(/\.git$/, '').split('/');
+    targetDir = urlParts[urlParts.length - 1] || 'repo';
+  }
+  const fullPath = normalizePath('/home/' + targetDir);
+
+  try {
+    await fs?.mkdir(fullPath, true);
+    await gitClone(
+      opfsRoot,
+      fullPath,
+      cloneUrl.value.trim(),
+      getGitAuth(),
+      undefined,
+      (msg) => { cloneProgressMsg.value = msg; },
+      cloneDepth.value,
+    );
+    projectRoot.value = fullPath;
+    await refreshTree();
+    showCloneDialog.value = false;
+    scmInitialized.value = true;
+    scmBranch.value = await gitCurrentBranch(opfsRoot, fullPath);
+    await refreshScmLog();
+    await refreshScm();
+    notify(`Cloned into ${fullPath}`, 'success');
+  } catch (err: any) {
+    notify('Clone failed: ' + (err.message || err), 'error');
+    cloneProgressMsg.value = 'Clone failed: ' + (err.message || err);
+  } finally {
+    cloneInProgress.value = false;
+  }
+}
+
+/** Refresh the git status matrix to find changed / staged files. */
 async function refreshScm() {
-  if (!scmInitialized.value || !fs || !projectRoot.value) return;
-
-  // Collect current files
-  const currentFiles: Record<string, string> = {};
-  await collectCurrentFiles(projectRoot.value, currentFiles);
-
-  const changed: ScmFileEntry[] = [];
-  const stagedPaths = new Set(scmStagedFiles.value.map(f => f.path));
-
-  // Check for modified and added files
-  for (const [relPath, content] of Object.entries(currentFiles)) {
-    if (relPath.startsWith('.stark-code/') || relPath.startsWith('.git/')) continue;
-    if (!(relPath in scmSnapshot.value)) {
-      const entry: ScmFileEntry = {
-        path: relPath,
-        name: relPath.split('/').pop() || relPath,
-        status: 'added',
-        statusLabel: 'A',
-      };
-      if (!stagedPaths.has(relPath)) {
-        changed.push(entry);
-      }
-    } else if (content !== scmSnapshot.value[relPath]) {
-      const entry: ScmFileEntry = {
-        path: relPath,
-        name: relPath.split('/').pop() || relPath,
-        status: 'modified',
-        statusLabel: 'M',
-      };
-      if (!stagedPaths.has(relPath)) {
-        changed.push(entry);
-      }
-    }
-  }
-
-  // Check for deleted files
-  for (const relPath of Object.keys(scmSnapshot.value)) {
-    if (!(relPath in currentFiles)) {
-      const entry: ScmFileEntry = {
-        path: relPath,
-        name: relPath.split('/').pop() || relPath,
-        status: 'deleted',
-        statusLabel: 'D',
-      };
-      if (!stagedPaths.has(relPath)) {
-        changed.push(entry);
-      }
-    }
-  }
-
-  // Update staged files - remove ones that are no longer changed
-  const updatedStaged: ScmFileEntry[] = [];
-  for (const staged of scmStagedFiles.value) {
-    if (staged.path.startsWith('.stark-code/')) continue;
-    const currentContent = currentFiles[staged.path];
-    const snapshotContent = scmSnapshot.value[staged.path];
-    if (staged.status === 'deleted' && !(staged.path in currentFiles)) {
-      updatedStaged.push(staged);
-    } else if (staged.status === 'added' && !(staged.path in scmSnapshot.value) && currentContent !== undefined) {
-      updatedStaged.push(staged);
-    } else if (staged.status === 'modified' && currentContent !== snapshotContent) {
-      updatedStaged.push(staged);
-    }
-  }
-
-  scmChangedFiles.value = changed;
-  scmStagedFiles.value = updatedStaged;
-}
-
-async function collectCurrentFiles(dirPath: string, result: Record<string, string>) {
-  if (!fs) return;
+  if (!scmInitialized.value || !opfsRoot || !projectRoot.value) return;
+  scmLoading.value = true;
   try {
-    const entries = await fs.readdirWithTypes(dirPath);
-    for (const entry of entries) {
-      const childPath = normalizePath(dirPath + '/' + entry.name);
-      if (entry.name === '.stark-code' || entry.name === '.git') continue;
-      if (entry.isDirectory()) {
-        await collectCurrentFiles(childPath, result);
-      } else {
-        try {
-          const content = await fs.readFile(childPath);
-          const relPath = childPath.startsWith(projectRoot.value!)
-            ? childPath.slice(projectRoot.value!.length + 1)
-            : childPath;
-          result[relPath] = content;
-        } catch { /* skip */ }
+    const matrix = await gitStatusMatrix(opfsRoot, projectRoot.value);
+    const changed: ScmFileEntry[] = [];
+    const staged: ScmFileEntry[] = [];
+
+    for (const [filepath, head, workdir, stage] of matrix) {
+      // Skip internal dirs
+      if (filepath.startsWith('.stark-code/')) continue;
+
+      // Determine status from the matrix values:
+      // [filepath, HEAD, WORKDIR, STAGE]
+      // HEAD:    0=absent, 1=present
+      // WORKDIR: 0=absent, 1=identical to HEAD, 2=different
+      // STAGE:   0=absent, 1=identical to HEAD, 2=different (staged), 3=different from both
+
+      // Staged changes (stage differs from HEAD)
+      if (stage === 2 || stage === 3) {
+        const status: ScmFileEntry['status'] =
+          head === 0 ? 'added' : workdir === 0 ? 'deleted' : 'modified';
+        staged.push({
+          path: filepath,
+          name: filepath.split('/').pop() || filepath,
+          status,
+          statusLabel: status === 'added' ? 'A' : status === 'deleted' ? 'D' : 'M',
+        });
+      }
+
+      // Unstaged changes (workdir differs from stage)
+      const isUnstaged =
+        (stage === 0 && workdir === 0 && head === 1) || // deleted but not staged
+        (workdir === 2 && stage !== 2) || // modified but not staged
+        (head === 0 && stage === 0 && workdir === 2); // new untracked file
+      if (isUnstaged) {
+        const status: ScmFileEntry['status'] =
+          head === 0 ? 'added' : workdir === 0 ? 'deleted' : 'modified';
+        changed.push({
+          path: filepath,
+          name: filepath.split('/').pop() || filepath,
+          status,
+          statusLabel: status === 'added' ? 'A' : status === 'deleted' ? 'D' : 'M',
+        });
       }
     }
-  } catch { /* skip */ }
-}
 
-function stageScmFile(path: string) {
-  const idx = scmChangedFiles.value.findIndex(f => f.path === path);
-  if (idx === -1) return;
-  const file = scmChangedFiles.value.splice(idx, 1)[0];
-  scmStagedFiles.value.push(file);
-}
-
-function unstageScmFile(path: string) {
-  const idx = scmStagedFiles.value.findIndex(f => f.path === path);
-  if (idx === -1) return;
-  const file = scmStagedFiles.value.splice(idx, 1)[0];
-  scmChangedFiles.value.push(file);
-}
-
-function stageAllScm() {
-  scmStagedFiles.value.push(...scmChangedFiles.value);
-  scmChangedFiles.value = [];
-}
-
-function unstageAllScm() {
-  scmChangedFiles.value.push(...scmStagedFiles.value);
-  scmStagedFiles.value = [];
-}
-
-async function discardScmFile(path: string) {
-  if (!fs || !projectRoot.value) return;
-  const fullPath = normalizePath(projectRoot.value + '/' + path);
-  if (path in scmSnapshot.value) {
-    await opfsSaveFile(fullPath, scmSnapshot.value[path]);
-  } else {
-    await opfsDeleteFile(fullPath);
+    scmChangedFiles.value = changed;
+    scmStagedFiles.value = staged;
+  } catch (err: any) {
+    // Might fail if .git is not fully initialized yet
+    console.warn('refreshScm error:', err);
+  } finally {
+    scmLoading.value = false;
   }
-  await refreshTree();
-  // Remove from changed list
-  const idx = scmChangedFiles.value.findIndex(f => f.path === path);
-  if (idx !== -1) scmChangedFiles.value.splice(idx, 1);
-  // Reload the file if it's open
-  if (currentFile.value === fullPath) {
-    const content = await opfsReadFile(fullPath);
-    if (editor && content !== null) {
-      isLoadingFile = true;
-      editor.setValue(content);
-      isLoadingFile = false;
+}
+
+/** Refresh the commit log. */
+async function refreshScmLog() {
+  if (!scmInitialized.value || !opfsRoot || !projectRoot.value) return;
+  try {
+    const logEntries = await gitLog(opfsRoot, projectRoot.value, 100);
+    scmCommits.value = logEntries.map((e) => ({
+      oid: e.oid,
+      message: e.message.split('\n')[0], // first line only
+      timestamp: e.author.timestamp * 1000,
+      author: e.author.name,
+      files: [],
+      expanded: false,
+      loadingFiles: false,
+      diffs: [],
+      loadingDiff: null,
+    }));
+  } catch {
+    // No commits yet — that's fine
+    scmCommits.value = [];
+  }
+}
+
+/** Stage a single file using git add. */
+async function stageScmFile(path: string) {
+  if (!opfsRoot || !projectRoot.value) return;
+  try {
+    await gitAdd(opfsRoot, projectRoot.value, path);
+    await refreshScm();
+  } catch (err: any) {
+    notify('Stage failed: ' + (err.message || err), 'error');
+  }
+}
+
+/** Unstage a single file (remove from index, re-add HEAD version). */
+async function unstageScmFile(path: string) {
+  if (!opfsRoot || !projectRoot.value) return;
+  try {
+    await gitRemove(opfsRoot, projectRoot.value, path);
+    // Re-add from working dir to restore it to unstaged state
+    // (git remove only removes from index, the file stays in workdir)
+    await refreshScm();
+  } catch (err: any) {
+    notify('Unstage failed: ' + (err.message || err), 'error');
+  }
+}
+
+/** Stage all changed files. */
+async function stageAllScm() {
+  if (!opfsRoot || !projectRoot.value) return;
+  try {
+    const paths = scmChangedFiles.value.map(f => f.path);
+    for (const p of paths) {
+      await gitAdd(opfsRoot, projectRoot.value, p);
     }
+    await refreshScm();
+  } catch (err: any) {
+    notify('Stage all failed: ' + (err.message || err), 'error');
   }
-  notify(`Discarded changes: ${path.split('/').pop()}`, 'info');
 }
 
+/** Unstage all staged files. */
+async function unstageAllScm() {
+  if (!opfsRoot || !projectRoot.value) return;
+  try {
+    const paths = scmStagedFiles.value.map(f => f.path);
+    for (const p of paths) {
+      await gitRemove(opfsRoot, projectRoot.value, p);
+    }
+    await refreshScm();
+  } catch (err: any) {
+    notify('Unstage all failed: ' + (err.message || err), 'error');
+  }
+}
+
+/** Discard changes for a single file (checkout from HEAD). */
+async function discardScmFile(path: string) {
+  if (!opfsRoot || !fs || !projectRoot.value) return;
+  const fullPath = normalizePath(projectRoot.value + '/' + path);
+  try {
+    // Try to read file from HEAD and restore it
+    const logEntries = await gitLog(opfsRoot, projectRoot.value, 1);
+    if (logEntries.length > 0) {
+      const headOid = logEntries[0].oid;
+      const { gitReadBlob } = await import('../../shared/utils');
+      const blob = await gitReadBlob(opfsRoot, projectRoot.value, headOid, path);
+      if (blob) {
+        await fs.writeFile(fullPath, new TextDecoder().decode(blob));
+      } else {
+        // File didn't exist in HEAD — delete it
+        await fs.unlink(fullPath);
+      }
+    } else {
+      // No commits yet, just delete the file
+      await fs.unlink(fullPath);
+    }
+    await refreshTree();
+    await refreshScm();
+    // Reload if it's the open file
+    if (currentFile.value === fullPath) {
+      const content = await opfsReadFile(fullPath);
+      if (editor && content !== null) {
+        isLoadingFile = true;
+        editor.setValue(content);
+        isLoadingFile = false;
+      }
+    }
+    notify(`Discarded changes: ${path.split('/').pop()}`, 'info');
+  } catch (err: any) {
+    notify('Discard failed: ' + (err.message || err), 'error');
+  }
+}
+
+/** Discard all unstaged changes. */
 async function discardAllScm() {
   if (!confirm('Discard ALL changes? This cannot be undone.')) return;
   for (const file of [...scmChangedFiles.value]) {
@@ -2833,52 +3022,114 @@ async function discardAllScm() {
   }
 }
 
+/** Create a commit from staged files. */
 async function commitScm() {
   if (!scmCommitMessage.value.trim() || scmStagedFiles.value.length === 0) return;
+  if (!opfsRoot || !projectRoot.value) return;
 
-  const commit: ScmCommitEntry = {
-    hash: generateCommitId(),
-    message: scmCommitMessage.value.trim(),
-    timestamp: Date.now(),
-    files: scmStagedFiles.value.map(f => f.path),
-  };
-
-  scmCommits.value.unshift(commit);
-
-  // Update snapshot with staged changes
-  for (const file of scmStagedFiles.value) {
-    if (file.status === 'deleted') {
-      delete scmSnapshot.value[file.path];
-    } else if (fs && projectRoot.value) {
-      const fullPath = normalizePath(projectRoot.value + '/' + file.path);
-      try {
-        const content = await fs.readFile(fullPath);
-        scmSnapshot.value[file.path] = content;
-      } catch { /* skip */ }
-    }
+  scmLoading.value = true;
+  try {
+    const oid = await gitCommit(
+      opfsRoot,
+      projectRoot.value,
+      scmCommitMessage.value.trim(),
+      getGitAuthor(),
+    );
+    const fileCount = scmStagedFiles.value.length;
+    scmCommitMessage.value = '';
+    await refreshScmLog();
+    await refreshScm();
+    notify(`Committed ${fileCount} file${fileCount !== 1 ? 's' : ''} (${oid.substring(0, 7)})`, 'success');
+  } catch (err: any) {
+    notify('Commit failed: ' + (err.message || err), 'error');
+  } finally {
+    scmLoading.value = false;
   }
-
-  const fileCount = scmStagedFiles.value.length;
-  scmStagedFiles.value = [];
-  scmCommitMessage.value = '';
-  await saveScmState();
-  notify(`Committed ${fileCount} file${fileCount !== 1 ? 's' : ''}: ${commit.message}`, 'success');
 }
 
+/** Push commits to remote. */
+async function pushScm() {
+  if (!opfsRoot || !projectRoot.value) return;
+  scmLoading.value = true;
+  try {
+    await gitPush(opfsRoot, projectRoot.value, getGitAuth());
+    notify('Pushed to remote', 'success');
+  } catch (err: any) {
+    notify('Push failed: ' + (err.message || err), 'error');
+  } finally {
+    scmLoading.value = false;
+  }
+}
+
+/** Pull from remote. */
+async function pullScm() {
+  if (!opfsRoot || !projectRoot.value) return;
+  scmLoading.value = true;
+  try {
+    await gitPull(opfsRoot, projectRoot.value, getGitAuth(), getGitAuthor());
+    await refreshScmLog();
+    await refreshScm();
+    await refreshTree();
+    notify('Pulled from remote', 'success');
+  } catch (err: any) {
+    notify('Pull failed: ' + (err.message || err), 'error');
+  } finally {
+    scmLoading.value = false;
+  }
+}
+
+/** Open a file from the SCM panel (just opens the file in the editor). */
 async function openScmDiff(file: ScmFileEntry) {
   if (!projectRoot.value || !monacoModule || !editor) return;
   const fullPath = normalizePath(projectRoot.value + '/' + file.path);
-  // For now, just open the file
   await openFile(fullPath);
 }
 
-function generateCommitId(): string {
-  const chars = '0123456789abcdef';
-  let hash = '';
-  for (let i = 0; i < 40; i++) {
-    hash += chars[Math.floor(Math.random() * chars.length)];
+/** Toggle expand/collapse of a commit in history to show its changed files. */
+async function toggleCommitExpand(commit: ScmCommitEntry) {
+  if (commit.expanded) {
+    commit.expanded = false;
+    return;
   }
-  return hash;
+  commit.expanded = true;
+  // Load files if not yet loaded
+  if (commit.files.length === 0 && !commit.loadingFiles) {
+    commit.loadingFiles = true;
+    try {
+      if (!opfsRoot || !projectRoot.value) return;
+      // Find the parent commit
+      const idx = scmCommits.value.findIndex(c => c.oid === commit.oid);
+      const parentOid = idx < scmCommits.value.length - 1 ? scmCommits.value[idx + 1]?.oid : undefined;
+      const files = await gitDiffFiles(opfsRoot, projectRoot.value, commit.oid, parentOid);
+      commit.files = files;
+    } catch (err: any) {
+      console.warn('Failed to load commit files:', err);
+    } finally {
+      commit.loadingFiles = false;
+    }
+  }
+}
+
+/** Load and display the diff for a specific file in a commit. */
+async function showCommitFileDiff(commit: ScmCommitEntry, filePath: string) {
+  // If already showing this diff, toggle it off
+  if (historyDiffContent.value && historyDiffContent.value.path === filePath
+    && commit.loadingDiff === null) {
+    historyDiffContent.value = null;
+    return;
+  }
+  if (!opfsRoot || !projectRoot.value) return;
+  commit.loadingDiff = filePath;
+  try {
+    const idx = scmCommits.value.findIndex(c => c.oid === commit.oid);
+    const parentOid = idx < scmCommits.value.length - 1 ? scmCommits.value[idx + 1]?.oid : undefined;
+    const diff = await gitDiffFileContent(opfsRoot, projectRoot.value, filePath, commit.oid, parentOid);
+    historyDiffContent.value = diff;
+  } catch (err: any) {
+    notify('Failed to load diff: ' + (err.message || err), 'error');
+  } finally {
+    commit.loadingDiff = null;
+  }
 }
 
 function formatCommitTime(timestamp: number): string {
@@ -2893,6 +3144,15 @@ function formatCommitTime(timestamp: number): string {
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 30) return `${diffDays}d ago`;
   return date.toLocaleDateString();
+}
+
+/** Return CSS class for a diff line (unified diff format). */
+function diffLineClass(line: string): string {
+  if (line.startsWith('+++') || line.startsWith('---')) return 'diff-meta';
+  if (line.startsWith('@@')) return 'diff-hunk';
+  if (line.startsWith('+')) return 'diff-add';
+  if (line.startsWith('-')) return 'diff-del';
+  return 'diff-ctx';
 }
 
 // ─── Git File Decorations ───────────────────────────
@@ -3380,14 +3640,9 @@ onMounted(async () => {
   await refreshExtensionState();
   // Load persisted editor settings (font size, theme, tab size, etc.)
   await loadEditorSettings();
-  // Load SCM state
-  const savedScm = await loadScmState();
-  if (savedScm && savedScm.initialized) {
-    scmInitialized.value = true;
-    scmBranch.value = savedScm.branch || 'main';
-    scmCommits.value = savedScm.commits || [];
-    scmSnapshot.value = savedScm.snapshot || {};
-  }
+  // Load SCM state — detect git repo in current project
+  await loadGitSettings();
+  await detectGitRepo();
   window.addEventListener('keydown', handleKeydown);
 });
 
@@ -4577,14 +4832,6 @@ kbd {
   color: #888;
 }
 
-.scm-commit-entry {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 4px 12px 4px 28px;
-  font-size: 12px;
-}
-
 .scm-commit-entry .codicon { font-size: 14px; color: #888; flex-shrink: 0; margin-top: 2px; }
 
 .scm-commit-info { flex: 1; min-width: 0; }
@@ -4600,6 +4847,123 @@ kbd {
   color: #666;
   font-size: 11px;
 }
+
+/* ─── Git Settings & Clone ──────────────────────── */
+.scm-settings-panel, .scm-clone-dialog {
+  padding: 8px 12px;
+  border-bottom: 1px solid #3c3c3c;
+}
+.scm-settings-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #cccccc;
+  margin-bottom: 8px;
+}
+.scm-settings-label {
+  font-size: 11px;
+  color: #888;
+  display: block;
+  margin-bottom: 2px;
+  margin-top: 6px;
+}
+.scm-settings-input {
+  width: 100%;
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #3c3c3c;
+  outline: none;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.scm-settings-input:focus { border-color: #007acc; }
+
+.scm-clone-progress {
+  font-size: 11px;
+  color: #888;
+  margin-top: 6px;
+  word-break: break-all;
+}
+
+.scm-btn-row {
+  display: flex;
+  gap: 4px;
+}
+.scm-push-btn, .scm-pull-btn {
+  flex: 0 0 auto !important;
+  padding: 5px 8px !important;
+  background: #2d5a2d !important;
+}
+.scm-push-btn:hover { background: #3a6e3a !important; }
+.scm-pull-btn { background: #2d4a5a !important; }
+.scm-pull-btn:hover { background: #3a5e6e !important; }
+.scm-loading {
+  margin-left: auto;
+  color: #888;
+}
+
+/* ─── Commit History Expandable ──────────────────── */
+.scm-commit-group {
+  border-bottom: 1px solid #2a2d2e;
+}
+.scm-commit-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 12px 4px 16px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.scm-commit-entry:hover { background: #2a2d2e; }
+.scm-commit-files-loading {
+  padding: 4px 12px 4px 44px;
+  font-size: 11px;
+  color: #888;
+}
+.scm-history-file {
+  padding-left: 44px !important;
+}
+
+/* ─── Inline Diff Viewer ──────────────────────── */
+.scm-diff-viewer {
+  border-top: 1px solid #3c3c3c;
+  background: #1a1a2e;
+  max-height: 300px;
+  overflow: auto;
+}
+.scm-diff-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: #252540;
+  font-size: 11px;
+  color: #888;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.scm-diff-filename {
+  flex: 1;
+  font-weight: 600;
+  color: #cccccc;
+}
+.scm-diff-content {
+  margin: 0;
+  padding: 4px 8px;
+  font-family: 'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  tab-size: 4;
+}
+.diff-add { color: #22c55e; background: rgba(34, 197, 94, 0.08); display: inline-block; width: 100%; }
+.diff-del { color: #e06c75; background: rgba(224, 108, 117, 0.08); display: inline-block; width: 100%; }
+.diff-hunk { color: #61afef; }
+.diff-meta { color: #888; }
+.diff-ctx { color: #666; }
 
 /* ─── Explorer Sections ────────────────────────── */
 .explorer-section {

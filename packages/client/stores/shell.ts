@@ -114,7 +114,10 @@ export const useShellStore = defineStore('shell', () => {
 
   /* ── Workspaces ── */
   const workspaces = ref<Workspace[]>([
-    { id: 'ws-1', name: 'Workspace 1' },
+    { id: 'ws-1', name: '1' },
+    { id: 'ws-2', name: '2' },
+    { id: 'ws-3', name: '3' },
+    { id: 'ws-4', name: '4' },
   ]);
   const activeWorkspaceId = ref('ws-1');
 
@@ -257,6 +260,7 @@ export const useShellStore = defineStore('shell', () => {
     win.zIndex = nextZIndex++;
     win.minimized = false;
     focusedWindowId.value = id;
+    hideStartMenu();
   }
 
   function minimizeWindow(id: string) {

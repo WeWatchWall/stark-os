@@ -18,17 +18,15 @@
           <!-- Current workspace -->
           <div class="status-row">
             <span class="status-label">Workspace</span>
-            <div class="ws-chips">
+            <div class="ws-grid">
               <button
                 v-for="ws in shell.workspaces"
                 :key="ws.id"
-                class="ws-chip"
+                class="ws-cell"
                 :class="{ active: ws.id === shell.activeWorkspaceId }"
                 @click="shell.switchWorkspace(ws.id)"
-              >
-                {{ ws.name }}
-              </button>
-              <button class="ws-chip add" @click="shell.addWorkspace()" aria-label="Add workspace">＋</button>
+                :title="'Workspace ' + ws.name"
+              />
             </div>
           </div>
 
@@ -58,7 +56,7 @@
             <button class="action-btn" @click="$emit('signout')">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1-2-2h4" />
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                 <polyline points="16 17 21 12 16 7" />
                 <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
@@ -171,30 +169,28 @@ function setMode(mode: 'desktop' | 'mobile') {
 .status-badge.connecting .badge-dot { background: #f59e0b; animation: pulse .8s infinite; }
 .status-badge.disconnected .badge-dot { background: #ef4444; }
 
-/* Workspace chips */
-.ws-chips {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+/* Workspace grid */
+.ws-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 16px);
+  grid-template-rows: repeat(2, 16px);
+  gap: 2px;
 }
-.ws-chip {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
-  color: #94a3b8;
-  font-size: 0.68rem;
-  padding: 3px 10px;
+.ws-cell {
+  width: 16px;
+  height: 16px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 2px;
+  padding: 0;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.ws-chip:hover { background: rgba(255,255,255,0.1); color: #e2e8f0; }
-.ws-chip.active {
-  background: rgba(59,130,246,0.25);
-  border-color: rgba(59,130,246,0.4);
-  color: #fff;
+.ws-cell:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); }
+.ws-cell.active {
+  background: rgba(59,130,246,0.5);
+  border-color: rgba(59,130,246,0.7);
 }
-.ws-chip.add { font-size: 0.8rem; padding: 3px 8px; }
 
 /* Toggle group */
 .toggle-group {

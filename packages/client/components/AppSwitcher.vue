@@ -30,12 +30,6 @@
                 <span class="card-title">{{ win.title }}</span>
                 <button class="card-close-btn" @click.stop="shell.closeWindow(win.id)" aria-label="Close window">✕</button>
               </div>
-              <div class="card-body">
-                <div class="card-preview">
-                  <span class="preview-icon">{{ win.minimized ? '─' : '▪' }}</span>
-                  <span class="preview-label">{{ win.minimized ? 'Minimized' : snapLabel(win) }}</span>
-                </div>
-              </div>
               <div class="card-footer">
                 <button
                   v-for="snap in snapOptions"
@@ -45,6 +39,13 @@
                   @click.stop="setSnap(win.id, snap.value)"
                 >
                   {{ snap.icon }}
+                </button>
+                <button
+                  class="snap-btn minimize-btn"
+                  :class="{ active: win.minimized }"
+                  @click.stop="shell.minimizeWindow(win.id)"
+                >
+                  ─
                 </button>
               </div>
             </div>
@@ -58,16 +59,16 @@
 
           <!-- Workspace switcher at bottom -->
           <div class="workspace-bar">
-            <button
-              v-for="ws in shell.workspaces"
-              :key="ws.id"
-              class="ws-chip"
-              :class="{ active: ws.id === shell.activeWorkspaceId }"
-              @click="shell.switchWorkspace(ws.id)"
-            >
-              {{ ws.name }}
-            </button>
-            <button class="ws-chip ws-add" @click="shell.addWorkspace()" aria-label="Add workspace">＋</button>
+            <div class="ws-grid">
+              <button
+                v-for="ws in shell.workspaces"
+                :key="ws.id"
+                class="ws-cell"
+                :class="{ active: ws.id === shell.activeWorkspaceId }"
+                @click="shell.switchWorkspace(ws.id)"
+                :title="'Workspace ' + ws.name"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -77,7 +78,7 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
-import { useShellStore, type ShellWindow, type MobileSnap } from '~/stores/shell';
+import { useShellStore, type MobileSnap } from '~/stores/shell';
 
 const shell = useShellStore();
 
@@ -95,14 +96,6 @@ const snapOptions = computed(() => {
     { value: 'half-second' as const, icon: '➡' },
   ];
 });
-
-function snapLabel(win: ShellWindow): string {
-  if (!win.mobileSnap || win.mobileSnap === 'full') return 'Full Screen';
-  if (shell.isPortrait) {
-    return win.mobileSnap === 'half-first' ? 'Top Half' : 'Bottom Half';
-  }
-  return win.mobileSnap === 'half-first' ? 'Left Half' : 'Right Half';
-}
 
 function selectWindow(id: string) {
   shell.focusWindow(id);
@@ -209,11 +202,27 @@ function cardSwipeStyle(id: string) {
 /* ── Card Grid ── */
 .card-grid {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.card-grid::-webkit-scrollbar {
+  width: 6px;
+}
+.card-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+.card-grid::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+.card-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
 }
 
 /* ── Window Card ── */
@@ -225,6 +234,7 @@ function cardSwipeStyle(id: string) {
   cursor: pointer;
   transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.15s;
   touch-action: pan-y;
+  flex-shrink: 0;
 }
 .window-card:active {
   transform: scale(0.98);
@@ -279,20 +289,6 @@ function cardSwipeStyle(id: string) {
 }
 .card-close-btn:hover { background: rgba(220,38,38,0.3); color: #fca5a5; }
 
-.card-body {
-  padding: 0 12px 8px;
-}
-.card-preview {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #64748b;
-  font-size: 0.7rem;
-}
-.preview-icon {
-  font-size: 0.75rem;
-}
-
 .card-footer {
   display: flex;
   gap: 4px;
@@ -339,33 +335,28 @@ function cardSwipeStyle(id: string) {
 /* ── Workspace bar ── */
 .workspace-bar {
   display: flex;
-  gap: 6px;
+  justify-content: center;
   padding: 10px 16px 14px;
   border-top: 1px solid rgba(255,255,255,0.06);
-  overflow-x: auto;
-  justify-content: center;
 }
-.ws-chip {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 16px;
-  color: #94a3b8;
-  font-size: 0.7rem;
-  padding: 5px 14px;
+.ws-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 18px);
+  grid-template-rows: repeat(2, 18px);
+  gap: 3px;
+}
+.ws-cell {
+  width: 18px;
+  height: 18px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 3px;
+  padding: 0;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.ws-chip:hover { background: rgba(255,255,255,0.1); color: #e2e8f0; }
-.ws-chip.active {
-  background: rgba(59,130,246,0.25);
-  border-color: rgba(59,130,246,0.4);
-  color: #fff;
-}
-.ws-chip.ws-add {
-  font-size: 0.85rem;
-  padding: 5px 10px;
-}
+.ws-cell:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); }
+.ws-cell.active { background: rgba(59,130,246,0.5); border-color: rgba(59,130,246,0.7); }
 
 /* ── Transition ── */
 .switcher-fade-enter-active,

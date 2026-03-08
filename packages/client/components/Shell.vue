@@ -20,6 +20,14 @@
         v-show="win.workspaceId === shell.activeWorkspaceId"
       />
 
+      <!-- Dismiss overlay: catches clicks outside the start menu (including over iframes) -->
+      <div
+        v-if="shell.startMenuVisible"
+        class="start-menu-dismiss-overlay"
+        @mousedown="shell.hideStartMenu()"
+        @touchstart.passive="shell.hideStartMenu()"
+      />
+
       <!-- Start Menu surface (no window chrome) -->
       <div
         class="start-menu-panel"
@@ -28,6 +36,7 @@
           'mobile-start': shell.layoutMode === 'mobile',
         }"
         @mousedown.stop
+        @touchstart.stop
       >
         <div :id="shell.startMenuContainerId" class="start-menu-surface" />
       </div>
@@ -35,6 +44,12 @@
       <!-- Desktop grid surface (full-size background, behind windows) -->
       <div class="desktop-grid-surface">
         <div :id="shell.desktopContainerId" class="desktop-grid-inner" />
+        <!-- Focus overlay: prevents desktop iframe from capturing mouse when a window is focused -->
+        <div
+          v-if="shell.focusedWindowId !== null"
+          class="desktop-focus-overlay"
+          @mousedown="onDesktopOverlayClick"
+        />
       </div>
 
       <!-- Desktop watermark (always visible, behind windows) -->
@@ -80,6 +95,11 @@ function onDesktopClick(e: MouseEvent) {
   if ((e.target as HTMLElement).classList.contains('desktop')) {
     shell.clearFocus();
   }
+}
+
+function onDesktopOverlayClick() {
+  shell.clearFocus();
+  shell.hideStartMenu();
 }
 
 /** Hide start menu when signalled by the start-menu app (same-origin CustomEvent) */
@@ -167,9 +187,21 @@ onUnmounted(() => {
   display: block;
   background: transparent;
 }
+.desktop-focus-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
 .watermark {
   width: 260px;
   height: auto;
+}
+
+/* ── Start Menu dismiss overlay (catches clicks over iframes) ── */
+.start-menu-dismiss-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 99997;
 }
 
 /* ── Start Menu panel (no window chrome) ── */

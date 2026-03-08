@@ -176,9 +176,9 @@ let touchDragSourceIndex: number | null = null;
 let touchStartTimer: ReturnType<typeof setTimeout> | null = null;
 let isTouchDragging = false;
 
-// Touch tap detection for folder open (double-tap)
-let lastTapIndex: number | null = null;
-let lastTapTime = 0;
+// Touch tap detection for folder open
+// Debounce guard to prevent double-open
+let lastLaunchTime = 0;
 
 // ── Grid slot computation ──
 
@@ -493,17 +493,9 @@ function onTouchEnd(index: number): void {
     }
   }
 
-  // Detect double-tap on non-drag touch (folder open)
+  // Single tap to open folder on mobile (debounce prevents double-open)
   if (!isTouchDragging) {
-    const now = Date.now();
-    if (lastTapIndex === index && now - lastTapTime < 400) {
-      onDblClick(index);
-      lastTapIndex = null;
-      lastTapTime = 0;
-    } else {
-      lastTapIndex = index;
-      lastTapTime = now;
-    }
+    onDblClick(index);
   }
 
   touchDragGhost.value = null;
@@ -515,8 +507,11 @@ function onTouchEnd(index: number): void {
 // ── Double-click / tap to open folder ──
 
 function onDblClick(index: number): void {
+  const now = Date.now();
+  if (now - lastLaunchTime < 1000) return; // debounce to prevent double-open
   const item = displaySlots.value[index];
   if (!item || !item.isDirectory) return;
+  lastLaunchTime = now;
   launchFilesApp('/home/desktop/' + item.name);
 }
 

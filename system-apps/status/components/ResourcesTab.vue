@@ -140,10 +140,18 @@ interface PerNodeHistory {
 
 const MAX_HISTORY = 60; // keep last 60 samples (60 seconds at 1s interval)
 
-/** Distinct colors for per-node chart lines */
-const NODE_COLORS = [
-  '#f59e0b', '#a78bfa', '#6366f1', '#ec4899', '#22c55e',
-  '#3b82f6', '#ef4444', '#14b8a6', '#f97316', '#8b5cf6',
+/** Distinct colors for per-node chart lines (border + fill pairs) */
+const NODE_COLORS: Array<{ border: string; bg: string }> = [
+  { border: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+  { border: '#a78bfa', bg: 'rgba(167,139,250,0.1)' },
+  { border: '#6366f1', bg: 'rgba(99,102,241,0.1)' },
+  { border: '#ec4899', bg: 'rgba(236,72,153,0.1)' },
+  { border: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
+  { border: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+  { border: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+  { border: '#14b8a6', bg: 'rgba(20,184,166,0.1)' },
+  { border: '#f97316', bg: 'rgba(249,115,22,0.1)' },
+  { border: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
 ];
 
 /* ── State ── */
@@ -248,12 +256,12 @@ function makePerNodeChartData(metric: 'cpu' | 'memory' | 'storage' | 'podCap') {
   const datasets = names.map((name, idx) => {
     const history = nodeHistories.value.get(name);
     const data = history ? [...history[metric]] : [];
-    const color = NODE_COLORS[idx % NODE_COLORS.length];
+    const colorPair = NODE_COLORS[idx % NODE_COLORS.length];
     return {
       label: name,
       data,
-      borderColor: color,
-      backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+      borderColor: colorPair.border,
+      backgroundColor: colorPair.bg,
       fill: false,
     };
   });
@@ -327,6 +335,12 @@ async function fetchResources() {
     if (timeLabels.value.length > MAX_HISTORY) timeLabels.value.shift();
 
     // Maintain stable ordering — add new nodes at end, keep existing order
+    // Also prune nodes that no longer exist
+    const activeNodeNames = new Set(nodes.map((n) => n.name));
+    nodeNames.value = nodeNames.value.filter((name) => activeNodeNames.has(name));
+    for (const [name] of nodeHistories.value) {
+      if (!activeNodeNames.has(name)) nodeHistories.value.delete(name);
+    }
     const currentNames = new Set(nodeNames.value);
     for (const n of nodes) {
       if (!currentNames.has(n.name)) {

@@ -949,6 +949,7 @@ import {
   type ExtensionState,
   type ExtensionCategory,
 } from '~/composables/useExtensions';
+import { saveFile, loadFile } from '~/composables/useOpfsStorage';
 import { initializeVscodeServices } from '~/composables/useVscodeServices';
 
 // ─── Types ──────────────────────────────────────────
@@ -1866,8 +1867,14 @@ async function initEditor(content: string, filename: string, path: string) {
   // Monaco Editor — now backed by VS Code services
   monacoModule = await import('monaco-editor');
 
+  // Configure the editor worker for syntax checking, validation, and diagnostics.
+  // The ?worker&inline suffix tells Vite to bundle the worker as an inline blob,
+  // which is required for single-bundle deployment (no separate .js worker files).
+  const editorWorkerModule = await import('@codingame/monaco-vscode-api/workers/editor.worker?worker&inline');
   (self as any).MonacoEnvironment = {
-    getWorker() { return null as any; },
+    getWorker() {
+      return new editorWorkerModule.default();
+    },
   };
 
   let model = fileModels.get(path);
@@ -1879,18 +1886,19 @@ async function initEditor(content: string, filename: string, path: string) {
 
   editor = monacoModule.editor.create(monacoContainer.value!, {
     model,
-    theme: 'vs-dark',
+    theme: currentTheme.value,
     automaticLayout: true,
-    // Editor settings
-    minimap: { enabled: true },
-    fontSize: 14,
+    // Editor settings — use persisted values (loaded from OPFS on mount)
+    minimap: { enabled: minimapEnabled.value },
+    fontSize: settingsFontSize.value,
     fontFamily: "'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
     fontLigatures: true,
-    lineNumbers: 'on',
+    lineNumbers: lineNumbers.value,
     scrollBeyondLastLine: false,
     wordWrap: wordWrapEnabled.value ? 'on' : 'off',
     tabSize: editorTabSize.value,
-    renderWhitespace: 'selection',
+    renderWhitespace: renderWhitespace.value,
+    cursorStyle: cursorStyle.value,
     bracketPairColorization: { enabled: true },
     guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
     smoothScrolling: true,
@@ -3297,6 +3305,8 @@ onMounted(async () => {
     fs = buildOpfsFS(opfsRoot);
   }
   await refreshExtensionState();
+  // Load persisted editor settings (font size, theme, tab size, etc.)
+  await loadEditorSettings();
   // Load SCM state
   const savedScm = await loadScmState();
   if (savedScm && savedScm.initialized) {

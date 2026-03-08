@@ -631,6 +631,252 @@ export function applyExtension(
     };
   }
 
-  // Language and keymap extensions: show notification (no runtime effect for these)
+  // Error Lens — show inline diagnostics (errors/warnings) at the end of each line
+  if (extId === 'other-error-lens') {
+    if (!editor || !monaco) return null;
+    const decorationCollection = editor.createDecorationsCollection([]);
+    const updateDecorations = () => {
+      const model = editor.getModel();
+      if (!model) return;
+      const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+      const newDecorations = markers.map((m: any) => {
+        const isError = m.severity === 8; // MarkerSeverity.Error
+        const colorClass = isError ? 'error-lens-error' : 'error-lens-warning';
+        return {
+          range: new monaco.Range(m.startLineNumber, 1, m.startLineNumber, 1),
+          options: {
+            isWholeLine: true,
+            className: colorClass,
+            after: {
+              content: `  ${m.message}`,
+              inlineClassName: `error-lens-inline ${colorClass}-text`,
+            },
+            overviewRuler: {
+              color: isError ? '#f44747' : '#e8a838',
+              position: 4, // OverviewRulerLane.Full
+            },
+          },
+        };
+      });
+      decorationCollection.set(newDecorations);
+    };
+    // Update when markers change
+    const disposable = monaco.editor.onDidChangeMarkers(() => updateDecorations());
+    updateDecorations();
+    // Inject CSS for error lens styling
+    const styleId = 'error-lens-styles';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        .error-lens-error { background: rgba(244, 71, 71, 0.1) !important; }
+        .error-lens-warning { background: rgba(232, 168, 56, 0.1) !important; }
+        .error-lens-inline { font-style: italic; opacity: 0.7; font-size: 0.9em; }
+        .error-lens-error-text { color: #f44747 !important; }
+        .error-lens-warning-text { color: #e8a838 !important; }
+      `;
+      document.head.appendChild(style);
+    }
+    return () => {
+      disposable.dispose();
+      decorationCollection.clear();
+    };
+  }
+
+  // TODO Highlight — highlight TODO, FIXME, HACK, NOTE comments
+  if (extId === 'other-todo-highlight') {
+    if (!editor || !monaco) return null;
+    const decorationCollection = editor.createDecorationsCollection([]);
+    const todoPattern = /\b(TODO|FIXME|HACK|NOTE|XXX|BUG)\b/gi;
+    const colorMap: Record<string, string> = {
+      'TODO': '#ff8c00',
+      'FIXME': '#f44747',
+      'HACK': '#e8a838',
+      'NOTE': '#569cd6',
+      'XXX': '#e8a838',
+      'BUG': '#f44747',
+    };
+    const updateDecorations = () => {
+      const model = editor.getModel();
+      if (!model) return;
+      const text = model.getValue();
+      const newDecorations: any[] = [];
+      let match;
+      todoPattern.lastIndex = 0;
+      while ((match = todoPattern.exec(text)) !== null) {
+        const pos = model.getPositionAt(match.index);
+        const endPos = model.getPositionAt(match.index + match[0].length);
+        const keyword = match[0].toUpperCase();
+        const color = colorMap[keyword] || '#ff8c00';
+        newDecorations.push({
+          range: new monaco.Range(pos.lineNumber, pos.column, endPos.lineNumber, endPos.column),
+          options: {
+            inlineClassName: `todo-highlight-${keyword.toLowerCase()}`,
+            overviewRuler: { color, position: 1 },
+          },
+        });
+      }
+      decorationCollection.set(newDecorations);
+    };
+    const disposable = editor.onDidChangeModelContent(() => updateDecorations());
+    updateDecorations();
+    // Inject CSS for TODO highlight styling
+    const styleId = 'todo-highlight-styles';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = Object.entries(colorMap).map(([k, c]) =>
+        `.todo-highlight-${k.toLowerCase()} { background: ${c}33; color: ${c}; font-weight: bold; border-radius: 2px; }`
+      ).join('\n');
+      document.head.appendChild(style);
+    }
+    return () => {
+      disposable.dispose();
+      decorationCollection.clear();
+    };
+  }
+
+  // Language extensions: configure language-specific editor defaults
+  if (extId === 'lang-python') {
+    // Register Python-specific completions and configuration
+    const disposable = monaco.languages.registerCompletionItemProvider('python', {
+      provideCompletionItems: (_model: any, position: any) => {
+        const range = {
+          startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
+          startColumn: position.column, endColumn: position.column,
+        };
+        return {
+          suggestions: [
+            { label: 'def', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'def ${1:function_name}(${2:params}):\n\t${3:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Define function', range },
+            { label: 'class', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'class ${1:ClassName}:\n\tdef __init__(self${2:, params}):\n\t\t${3:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Define class', range },
+            { label: 'ifmain', kind: monaco.languages.CompletionItemKind.Snippet, insertText: "if __name__ == '__main__':\n\t${1:pass}", insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Main guard', range },
+            { label: 'for', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'for ${1:item} in ${2:iterable}:\n\t${3:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'For loop', range },
+            { label: 'with', kind: monaco.languages.CompletionItemKind.Snippet, insertText: "with open('${1:file}', '${2:r}') as ${3:f}:\n\t${4:pass}", insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'With statement', range },
+            { label: 'try', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'try:\n\t${1:pass}\nexcept ${2:Exception} as ${3:e}:\n\t${4:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Try/except', range },
+            { label: 'lambda', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'lambda ${1:x}: ${2:x}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Lambda function', range },
+            { label: 'list_comp', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '[${1:expr} for ${2:item} in ${3:iterable}]', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'List comprehension', range },
+          ],
+        };
+      },
+    });
+    return () => disposable.dispose();
+  }
+
+  if (extId === 'lang-html-css') {
+    // Register CSS class name completions for HTML
+    const disposable = monaco.languages.registerCompletionItemProvider('html', {
+      triggerCharacters: ['"', "'", ' '],
+      provideCompletionItems: (model: any, position: any) => {
+        const textUntilPosition = model.getValueInRange({
+          startLineNumber: position.lineNumber, startColumn: 1,
+          endLineNumber: position.lineNumber, endColumn: position.column,
+        });
+        // Only suggest inside class="" or id="" attributes
+        if (!/(class|id)=["'][^"']*$/i.test(textUntilPosition)) return { suggestions: [] };
+        const range = {
+          startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
+          startColumn: position.column, endColumn: position.column,
+        };
+        // Scan document for existing CSS classes/IDs
+        const fullText = model.getValue();
+        const classMatches = [...fullText.matchAll(/class=["']([^"']+)["']/g)].flatMap((m: any) => m[1].split(/\s+/));
+        const unique = [...new Set(classMatches)].filter(Boolean);
+        return {
+          suggestions: unique.map((cls: string) => ({
+            label: cls,
+            kind: monaco.languages.CompletionItemKind.Value,
+            insertText: cls,
+            documentation: `CSS class: ${cls}`,
+            range,
+          })),
+        };
+      },
+    });
+    return () => disposable.dispose();
+  }
+
+  if (extId === 'lang-json') {
+    // JSON: configure diagnostics for validation
+    if (monaco.languages.json?.jsonDefaults) {
+      monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+        validate: true,
+        allowComments: true,
+        trailingCommas: 'warning',
+        schemaValidation: 'warning',
+      });
+    }
+    return () => {
+      if (monaco.languages.json?.jsonDefaults) {
+        monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+          validate: true,
+          allowComments: false,
+        });
+      }
+    };
+  }
+
+  if (extId === 'lang-markdown') {
+    // Register Markdown-specific completions
+    const disposable = monaco.languages.registerCompletionItemProvider('markdown', {
+      provideCompletionItems: (_model: any, position: any) => {
+        const range = {
+          startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
+          startColumn: position.column, endColumn: position.column,
+        };
+        return {
+          suggestions: [
+            { label: 'h1', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '# ${1:Heading}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Heading 1', range },
+            { label: 'h2', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '## ${1:Heading}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Heading 2', range },
+            { label: 'h3', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '### ${1:Heading}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Heading 3', range },
+            { label: 'link', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '[${1:text}](${2:url})', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Markdown link', range },
+            { label: 'image', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '![${1:alt}](${2:url})', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Markdown image', range },
+            { label: 'code', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '```${1:language}\n${2}\n```', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Code block', range },
+            { label: 'table', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '| ${1:Header} | ${2:Header} |\n| --- | --- |\n| ${3:Cell} | ${4:Cell} |', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Table', range },
+            { label: 'task', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '- [ ] ${1:Task}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Task list item', range },
+          ],
+        };
+      },
+    });
+    return () => disposable.dispose();
+  }
+
+  // Keymap extensions: apply key rebinding configurations
+  if (extId === 'keymap-vim') {
+    // Emulate basic Vim-style cursor line highlight and status
+    if (editor) {
+      editor.updateOptions({
+        cursorStyle: 'block',
+        cursorBlinking: 'solid',
+        renderLineHighlight: 'all',
+      });
+    }
+    return () => {
+      if (editor) {
+        editor.updateOptions({
+          cursorStyle: 'line',
+          cursorBlinking: 'smooth',
+        });
+      }
+    };
+  }
+
+  if (extId === 'keymap-sublime') {
+    // Sublime keybindings: configure editor for multi-cursor and selection
+    if (editor) {
+      editor.updateOptions({
+        multiCursorModifier: 'alt',
+        cursorSmoothCaretAnimation: 'on',
+        smoothScrolling: true,
+      });
+    }
+    return () => {
+      if (editor) {
+        editor.updateOptions({
+          multiCursorModifier: 'ctrlCmd',
+        });
+      }
+    };
+  }
+
   return null;
 }

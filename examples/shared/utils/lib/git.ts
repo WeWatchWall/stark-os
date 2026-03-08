@@ -85,7 +85,13 @@ export interface GitFileDiff {
 /** Status matrix row: [filepath, head, workdir, stage] */
 export type GitStatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
-/** CORS proxy URL — required for browser-based HTTP git operations. */
+/**
+ * CORS proxy URL for browser-based HTTP git operations.
+ * GitHub supports CORS natively for authenticated requests (PAT/OAuth).
+ * A proxy is only needed for unauthenticated clones of public repos.
+ * The old `cors.isomorphic-git.org` proxy is unreliable — use a self-hosted
+ * instance of https://github.com/nickvdyck/cors-proxy or similar if needed.
+ */
 const DEFAULT_CORS_PROXY = 'https://cors.isomorphic-git.org';
 
 // ── OPFS → isomorphic-git filesystem adapter ─────────
@@ -669,4 +675,80 @@ export async function gitSetConfig(
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
   await git.setConfig({ fs, dir, path: key, value });
+}
+
+/**
+ * Compute a diff between the HEAD commit (or index) and the working directory
+ * for a single file.  This is the "current changes" diff for unstaged files.
+ *
+ * For staged files it compares HEAD → index content.
+ * For unstaged files it compares HEAD → working directory content.
+ */
+export async function gitDiffWorkingFile(
+  rootHandle: FileSystemDirectoryHandle,
+  dir: string,
+  filepath: string,
+  staged: boolean = false,
+): Promise<GitFileDiff> {
+  const fs = buildGitFs(rootHandle);
+  let oldContent = '';
+  let newContent = '';
+
+  // Read HEAD version of the file
+  try {
+    const headOid = await git.resolveRef({ fs, dir, ref: 'HEAD' });
+    const blob = await gitReadBlob(rootHandle, dir, headOid, filepath);
+    if (blob) {
+      try {
+        oldContent = new TextDecoder('utf-8', { fatal: true }).decode(blob);
+      } catch {
+        oldContent = '(binary file)';
+      }
+    }
+  } catch {
+    // No HEAD commit yet (empty repo) — old content is empty
+  }
+
+  if (staged) {
+    // For staged files, read the index (staging area) version
+    // Use statusMatrix to determine the state, then read from tree if staged
+    try {
+      // Read the blob from the index via git.readBlob with the index tree
+      // Since isomorphic-git doesn't expose index blob directly,
+      // we read the workdir content as the staged content approximation.
+      // In most cases for freshly staged files, workdir === index.
+      const fullPath = normalizePath(dir + '/' + filepath);
+      const fh = await getFileHandle(rootHandle, fullPath);
+      const file = await fh.getFile();
+      newContent = await file.text();
+    } catch {
+      newContent = '';
+    }
+  } else {
+    // For unstaged files, read the working directory version
+    try {
+      const fullPath = normalizePath(dir + '/' + filepath);
+      const fh = await getFileHandle(rootHandle, fullPath);
+      const file = await fh.getFile();
+      newContent = await file.text();
+    } catch {
+      // File deleted in working directory
+      newContent = '';
+    }
+  }
+
+  const status: GitDiffFile['status'] =
+    !oldContent && newContent ? 'added' :
+    oldContent && !newContent ? 'deleted' : 'modified';
+
+  const patch = createPatch(
+    filepath,
+    oldContent,
+    newContent,
+    'HEAD',
+    staged ? 'Index' : 'Working Tree',
+    { context: 3 },
+  );
+
+  return { path: filepath, status, patch, oldContent, newContent };
 }

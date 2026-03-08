@@ -751,7 +751,10 @@
       </div>
 
       <!-- Editor -->
-      <div v-show="currentFile" id="monaco-container" ref="monacoContainer"></div>
+      <div v-show="currentFile && !currentTabIsDiff" id="monaco-container" ref="monacoContainer"></div>
+
+      <!-- Diff Editor (shown when current tab is a diff tab) -->
+      <div v-show="currentFile && currentTabIsDiff" id="diff-container" ref="diffEditorContainer"></div>
 
       <!-- Welcome page -->
       <div v-if="!currentFile" class="welcome">
@@ -1073,6 +1076,7 @@ import {
   gitReadBlob,
   gitDiffFiles,
   gitDiffFileContent,
+  gitDiffWorkingFile,
   gitSetConfig,
 } from '../../shared/utils';
 import {
@@ -1093,10 +1097,14 @@ import { initializeVscodeServices } from '~/composables/useVscodeServices';
 // ─── Types ──────────────────────────────────────────
 interface Tab {
   name: string;
-  path: string;  // full OPFS path
+  path: string;  // full OPFS path; diff tabs use 'diff:<realpath>' prefix
   modified: boolean;
   pinned: boolean;
   order: number;
+  isDiff?: boolean;       // true when this tab shows a diff view
+  diffOld?: string;       // original content for diff view
+  diffNew?: string;       // modified content for diff view
+  diffTitle?: string;     // display title (e.g. "file.ts (Working Tree)")
 }
 interface SearchResult {
   file: string;
@@ -1154,6 +1162,8 @@ let fs: ReadonlyFS | null = null;
 
 // ─── State ──────────────────────────────────────────
 const monacoContainer = ref<HTMLElement | null>(null);
+const diffEditorContainer = ref<HTMLElement | null>(null);
+let diffEditorInstance: any = null;  // Monaco diff editor instance
 const paletteInput = ref<HTMLInputElement | null>(null);
 const sidebarSearchInput = ref<HTMLInputElement | null>(null);
 const renameInput = ref<HTMLInputElement | null>(null);

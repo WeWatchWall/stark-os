@@ -66,6 +66,7 @@ export {
   gitReadBlob,
   gitDiffFiles,
   gitDiffFileContent,
+  gitDiffWorkingFile,
   gitListRemotes,
   gitSetConfig,
   type GitAuthor,

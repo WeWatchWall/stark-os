@@ -359,7 +359,7 @@
           <input v-model="gitAuthorName" class="scm-settings-input" placeholder="Your Name" />
           <label class="scm-settings-label">Author Email</label>
           <input v-model="gitAuthorEmail" class="scm-settings-input" placeholder="you@example.com" />
-          <label class="scm-settings-label">GitHub Username</label>
+          <label class="scm-settings-label">GitHub Username (or 'x-access-token' for PAT-only auth)</label>
           <input v-model="gitUsername" class="scm-settings-input" placeholder="username" />
           <label class="scm-settings-label">Personal Access Token</label>
           <input v-model="gitToken" class="scm-settings-input" type="password" placeholder="ghp_..." />
@@ -1070,6 +1070,7 @@ import {
   gitLog,
   gitStatusMatrix,
   gitIsRepo,
+  gitReadBlob,
   gitDiffFiles,
   gitDiffFileContent,
   gitSetConfig,
@@ -2845,6 +2846,19 @@ async function performClone() {
 }
 
 /** Refresh the git status matrix to find changed / staged files. */
+/** Determine SCM status label from matrix row values. */
+function scmStatusFromMatrix(head: number, workdir: number, stage: number, forStaged: boolean): ScmFileEntry['status'] {
+  if (forStaged) {
+    if (head === 0) return 'added';
+    if (workdir === 0 && stage === 0) return 'deleted';
+    return 'modified';
+  }
+  // Unstaged
+  if (head === 0 && stage === 0) return 'added';
+  if (workdir === 0) return 'deleted';
+  return 'modified';
+}
+
 async function refreshScm() {
   if (!scmInitialized.value || !opfsRoot || !projectRoot.value) return;
   scmLoading.value = true;
@@ -2857,16 +2871,28 @@ async function refreshScm() {
       // Skip internal dirs
       if (filepath.startsWith('.stark-code/')) continue;
 
-      // Determine status from the matrix values:
+      // isomorphic-git statusMatrix semantics:
       // [filepath, HEAD, WORKDIR, STAGE]
       // HEAD:    0=absent, 1=present
-      // WORKDIR: 0=absent, 1=identical to HEAD, 2=different
-      // STAGE:   0=absent, 1=identical to HEAD, 2=different (staged), 3=different from both
+      // WORKDIR: 0=absent, 1=identical to HEAD, 2=different from HEAD
+      // STAGE:   0=absent, 1=identical to HEAD, 2=identical to WORKDIR, 3=different from both
 
-      // Staged changes (stage differs from HEAD)
-      if (stage === 2 || stage === 3) {
-        const status: ScmFileEntry['status'] =
-          head === 0 ? 'added' : workdir === 0 ? 'deleted' : 'modified';
+      // Skip unchanged files: [*, 1, 1, 1] = unmodified
+      if (head === 1 && workdir === 1 && stage === 1) continue;
+      // Skip absent-everywhere: [*, 0, 0, 0]
+      if (head === 0 && workdir === 0 && stage === 0) continue;
+
+      // ── Staged changes (index ≠ HEAD) ──
+      // stage=2: index matches workdir, differs from HEAD → new or modified staged
+      // stage=3: index differs from both HEAD and workdir → partially staged
+      // stage=0 && head=1: file removed from index → staged deletion
+      const isStaged =
+        stage === 2 ||
+        stage === 3 ||
+        (stage === 0 && head === 1);
+
+      if (isStaged) {
+        const status = scmStatusFromMatrix(head, workdir, stage, true);
         staged.push({
           path: filepath,
           name: filepath.split('/').pop() || filepath,
@@ -2875,14 +2901,17 @@ async function refreshScm() {
         });
       }
 
-      // Unstaged changes (workdir differs from stage)
-      const isUnstaged =
-        (stage === 0 && workdir === 0 && head === 1) || // deleted but not staged
-        (workdir === 2 && stage !== 2) || // modified but not staged
-        (head === 0 && stage === 0 && workdir === 2); // new untracked file
-      if (isUnstaged) {
-        const status: ScmFileEntry['status'] =
-          head === 0 ? 'added' : workdir === 0 ? 'deleted' : 'modified';
+      // ── Unstaged changes (workdir ≠ index) ──
+      // stage=1 && workdir≠1: index=HEAD but workdir changed → unstaged mod/del
+      // stage=0 && workdir=2 && head=0: file in workdir only → untracked
+      // stage=3: workdir has additional changes beyond what's staged
+      const hasUnstaged =
+        (stage === 1 && workdir !== 1) ||
+        (stage === 0 && workdir === 2 && head === 0) ||
+        stage === 3;
+
+      if (hasUnstaged) {
+        const status = scmStatusFromMatrix(head, workdir, stage, false);
         changed.push({
           path: filepath,
           name: filepath.split('/').pop() || filepath,
@@ -2985,7 +3014,6 @@ async function discardScmFile(path: string) {
     const logEntries = await gitLog(opfsRoot, projectRoot.value, 1);
     if (logEntries.length > 0) {
       const headOid = logEntries[0].oid;
-      const { gitReadBlob } = await import('../../shared/utils');
       const blob = await gitReadBlob(opfsRoot, projectRoot.value, headOid, path);
       if (blob) {
         await fs.writeFile(fullPath, new TextDecoder().decode(blob));

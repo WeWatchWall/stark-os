@@ -425,10 +425,11 @@ export async function gitIsRepo(
   rootHandle: FileSystemDirectoryHandle,
   dir: string,
 ): Promise<boolean> {
+  const fs = buildGitFs(rootHandle);
   try {
-    const fs = buildGitFs(rootHandle);
-    await git.findRoot({ fs, filepath: dir });
-    return true;
+    // Check if .git directory exists at the given path
+    const entries = await fs.promises.readdir(dir);
+    return entries.includes('.git');
   } catch {
     return false;
   }
@@ -465,13 +466,14 @@ export async function gitDiffFiles(
   const fs = buildGitFs(rootHandle);
   const results: GitDiffFile[] = [];
 
+  const trees = parentOid
+    ? [git.TREE({ ref: parentOid }), git.TREE({ ref: commitOid })]
+    : [git.TREE({ ref: commitOid })];
+
   await git.walk({
     fs,
     dir,
-    trees: [
-      parentOid ? git.TREE({ ref: parentOid }) : null!,
-      git.TREE({ ref: commitOid }),
-    ].filter(Boolean),
+    trees,
     map: async (filepath, entries) => {
       if (!entries || filepath === '.' || filepath === '.git') return undefined;
 
@@ -530,13 +532,21 @@ export async function gitDiffFileContent(
   if (parentOid) {
     const oldBlob = await gitReadBlob(rootHandle, dir, parentOid, filepath);
     if (oldBlob) {
-      try { oldContent = new TextDecoder('utf-8', { fatal: true }).decode(oldBlob); } catch { oldContent = '(binary file)'; }
+      try {
+        oldContent = new TextDecoder('utf-8', { fatal: true }).decode(oldBlob);
+      } catch {
+        oldContent = '(binary file)';
+      }
     }
   }
 
   const newBlob = await gitReadBlob(rootHandle, dir, commitOid, filepath);
   if (newBlob) {
-    try { newContent = new TextDecoder('utf-8', { fatal: true }).decode(newBlob); } catch { newContent = '(binary file)'; }
+    try {
+      newContent = new TextDecoder('utf-8', { fatal: true }).decode(newBlob);
+    } catch {
+      newContent = '(binary file)';
+    }
   }
 
   const status: GitDiffFile['status'] =

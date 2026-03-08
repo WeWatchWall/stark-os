@@ -25,10 +25,6 @@ function vscodeAssetInlinePlugin(): Plugin {
     name: 'vscode-asset-inline',
     enforce: 'pre',
 
-    resolveId() {
-      return null; // Let Vite resolve everything normally; we inline in transform()
-    },
-
     // Transform the code that uses new URL() patterns to inline the assets.
     // This catches references BEFORE Vite's own asset handling processes them.
     transform(code, id) {
@@ -207,9 +203,10 @@ export default defineNuxtConfig({
       // Target modern browsers for smaller output
       target: 'esnext',
 
-      // Inline all assets up to 500KB as base64 data URIs
-      // Covers: @vscode/codicons TTF (~123KB), onig.wasm (~466KB),
-      // tmLanguage.json (~252KB)
+      // Inline standard assets (fonts, images) up to 500KB as base64 data URIs.
+      // The VS Code WASM/JSON/HTML assets are handled separately by the
+      // vscodeAssetInlinePlugin above, so this limit primarily covers
+      // @vscode/codicons TTF font (~123KB) and other small assets.
       assetsInlineLimit: 500 * 1024,
 
       rollupOptions: {

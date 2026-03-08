@@ -75,13 +75,7 @@ async function doInitialize(): Promise<void> {
     ...getConfigurationServiceOverride(),
     ...getKeybindingsServiceOverride(),
     ...getModelServiceOverride(),
-    ...getEditorServiceOverride(
-      // Open handler — called when the editor wants to open a resource
-      async (model, _options, _sideBySide) => {
-        // Return undefined to let the default handler process it
-        return undefined;
-      }
-    ),
+    ...getEditorServiceOverride(),
     ...getLifecycleServiceOverride(),
   });
 

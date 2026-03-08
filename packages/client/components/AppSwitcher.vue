@@ -30,12 +30,6 @@
                 <span class="card-title">{{ win.title }}</span>
                 <button class="card-close-btn" @click.stop="shell.closeWindow(win.id)" aria-label="Close window">✕</button>
               </div>
-              <div class="card-body">
-                <div class="card-preview">
-                  <span class="preview-icon">{{ win.minimized ? '─' : '▪' }}</span>
-                  <span class="preview-label">{{ win.minimized ? 'Minimized' : snapLabel(win) }}</span>
-                </div>
-              </div>
               <div class="card-footer">
                 <button
                   v-for="snap in snapOptions"
@@ -84,7 +78,7 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
-import { useShellStore, type ShellWindow, type MobileSnap } from '~/stores/shell';
+import { useShellStore, type MobileSnap } from '~/stores/shell';
 
 const shell = useShellStore();
 
@@ -102,14 +96,6 @@ const snapOptions = computed(() => {
     { value: 'half-second' as const, icon: '➡' },
   ];
 });
-
-function snapLabel(win: ShellWindow): string {
-  if (!win.mobileSnap || win.mobileSnap === 'full') return 'Full Screen';
-  if (shell.isPortrait) {
-    return win.mobileSnap === 'half-first' ? 'Top Half' : 'Bottom Half';
-  }
-  return win.mobileSnap === 'half-first' ? 'Left Half' : 'Right Half';
-}
 
 function selectWindow(id: string) {
   shell.focusWindow(id);
@@ -216,6 +202,7 @@ function cardSwipeStyle(id: string) {
 /* ── Card Grid ── */
 .card-grid {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;
@@ -232,6 +219,7 @@ function cardSwipeStyle(id: string) {
   cursor: pointer;
   transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.15s;
   touch-action: pan-y;
+  flex-shrink: 0;
 }
 .window-card:active {
   transform: scale(0.98);
@@ -285,20 +273,6 @@ function cardSwipeStyle(id: string) {
   transition: background 0.12s, color 0.12s;
 }
 .card-close-btn:hover { background: rgba(220,38,38,0.3); color: #fca5a5; }
-
-.card-body {
-  padding: 0 12px 8px;
-}
-.card-preview {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #64748b;
-  font-size: 0.7rem;
-}
-.preview-icon {
-  font-size: 0.75rem;
-}
 
 .card-footer {
   display: flex;

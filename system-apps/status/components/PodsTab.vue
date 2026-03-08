@@ -31,6 +31,8 @@
       groupRowsBy="groupKey"
       sortField="groupKey"
       :sortOrder="1"
+      expandableRowGroups
+      v-model:expandedRowGroups="expandedGroups"
       scrollable
       scrollHeight="flex"
       :rowHover="true"
@@ -53,7 +55,7 @@
               size="small"
               text
               :loading="deletingNodes.has(data.nodeId)"
-              @click="deleteNode(data.nodeId, data.nodeName)"
+              @click.stop="deleteNode(data.nodeId, data.nodeName)"
               class="node-delete-btn"
             />
           </div>
@@ -149,6 +151,7 @@ const refreshing = ref(false);
 const hasData = ref(false);
 const errorMsg = ref('');
 const allPods = ref<PodRow[]>([]);
+const expandedGroups = ref<string[]>([]);
 const stoppingPods = ref<Set<string>>(new Set());
 const deletingNodes = ref<Set<string>>(new Set());
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -264,6 +267,20 @@ async function refresh() {
     });
 
     allPods.value = rows;
+
+    // Auto-expand new groups (keep user's collapsed state for existing ones)
+    const allGroupKeys = [...new Set(rows.map((r) => r.groupKey))];
+    const currentExpanded = new Set(expandedGroups.value);
+    for (const key of allGroupKeys) {
+      if (!currentExpanded.has(key) && !hasData.value) {
+        currentExpanded.add(key);
+      }
+    }
+    // On first load expand all groups
+    if (!hasData.value) {
+      expandedGroups.value = allGroupKeys;
+    }
+
     hasData.value = true;
   } catch (err: unknown) {
     console.error('Failed to load pods:', err);

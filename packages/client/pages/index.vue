@@ -168,7 +168,14 @@ function resolveInitialNodeName(): string {
   } catch {
     // Fall through to default
   }
-  return `browser-${Math.random().toString(36).slice(2, 8)}`;
+  const chars = 'abcdefghijklmnopqrstuvwxyz';
+  const len = 5 + Math.floor(Math.random() * 4); // 5-8 characters
+  let suffix = '';
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  for (let i = 0; i < len; i++) {
+    suffix += chars[bytes[i] % chars.length];
+  }
+  return `browser-${suffix}`;
 }
 
 const connectionState = ref<ConnectionState>('disconnected');

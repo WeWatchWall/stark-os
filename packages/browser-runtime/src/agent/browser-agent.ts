@@ -209,6 +209,8 @@ export class BrowserAgent {
   private ws: WebSocket | null = null;
   private nodeId: string | null = null;
   private connectionId: string | null = null;
+  /** Mutable current node name (may differ from config.nodeName after rename) */
+  private currentNodeName: string;
   private state: ConnectionState = 'disconnected';
   private heartbeatTimer: number | null = null;
   private metricsTimer: number | null = null;
@@ -271,6 +273,7 @@ export class BrowserAgent {
     };
 
     this.authToken = config.authToken ?? '';
+    this.currentNodeName = config.nodeName;
     this.logger = createBrowserLogger('browser-agent', debug);
     
     // Initialize state store for persistent storage
@@ -343,7 +346,7 @@ export class BrowserAgent {
    * Get the current node name
    */
   getNodeName(): string {
-    return this.config.nodeName;
+    return this.currentNodeName;
   }
 
   /**
@@ -359,26 +362,28 @@ export class BrowserAgent {
       throw new Error('Node must be registered to rename');
     }
 
-    const oldName = this.config.nodeName;
+    const oldName = this.currentNodeName;
 
     const response = await this.sendRequest<{ node: Node }>('node:rename', {
       nodeId: this.nodeId,
       name: newName,
     });
 
-    // Update the in-memory config
-    (this.config as { nodeName: string }).nodeName = newName;
+    // Update the mutable current name
+    this.currentNodeName = newName;
 
     // Update localStorage: remove old entry and save new one
     if (this.config.persistState) {
+      // Preserve the original registeredAt from the old entry
+      const oldEntry = this.stateStore.getNode(oldName);
       this.stateStore.removeNode(oldName);
       const registeredNode: RegisteredBrowserNode = {
         nodeId: this.nodeId,
         name: newName,
         orchestratorUrl: this.config.orchestratorUrl,
-        registeredAt: new Date().toISOString(),
+        registeredAt: oldEntry?.registeredAt ?? new Date().toISOString(),
         registeredBy: response.node.registeredBy!,
-        lastStarted: new Date().toISOString(),
+        lastStarted: oldEntry?.lastStarted ?? new Date().toISOString(),
       };
       this.stateStore.saveNode(registeredNode);
       this.logger.info('Updated persisted node name', { oldName, newName, nodeId: this.nodeId });
@@ -1451,7 +1456,7 @@ export class BrowserAgent {
         this.authRetryCount++;
         this.logger.info('Credentials are invalid, clearing stored credentials and retrying...');
         this.stateStore.clearCredentials();
-        this.stateStore.removeNode(this.config.nodeName);
+        this.stateStore.removeNode(this.currentNodeName);
         this.authToken = '';
         this.nodeId = null;
         this.emit('credentials_invalid', error);
@@ -1471,10 +1476,10 @@ export class BrowserAgent {
    */
   private async register(): Promise<void> {
     this.state = 'registering';
-    this.logger.info('Registering node', { nodeName: this.config.nodeName });
+    this.logger.info('Registering node', { nodeName: this.currentNodeName });
 
     const registerInput: RegisterNodeInput = {
-      name: this.config.nodeName,
+      name: this.currentNodeName,
       runtimeType: this.config.runtimeType,
       capabilities: this.config.capabilities,
       allocatable: this.config.allocatable,
@@ -1492,14 +1497,14 @@ export class BrowserAgent {
       if (this.config.persistState) {
         const registeredNode: RegisteredBrowserNode = {
           nodeId: this.nodeId,
-          name: this.config.nodeName,
+          name: this.currentNodeName,
           orchestratorUrl: this.config.orchestratorUrl,
           registeredAt: new Date().toISOString(),
           registeredBy: response.node.registeredBy!,
           lastStarted: new Date().toISOString(),
         };
         this.stateStore.saveNode(registeredNode);
-        this.logger.info('Persisted node registration', { nodeName: this.config.nodeName, nodeId: this.nodeId });
+        this.logger.info('Persisted node registration', { nodeName: this.currentNodeName, nodeId: this.nodeId });
       }
 
       this.state = 'registered';
@@ -1510,7 +1515,7 @@ export class BrowserAgent {
       await this.ensureNodeLogManager();
       this.logger.info('Node registered', {
         nodeId: this.nodeId,
-        nodeName: this.config.nodeName,
+        nodeName: this.currentNodeName,
       });
 
       // Start heartbeat and metrics collection
@@ -1521,14 +1526,14 @@ export class BrowserAgent {
       const errorObj = error as { code?: string; message?: string };
       if (errorObj.code === 'CONFLICT') {
         this.logger.info('Node already exists, attempting to look up and reconnect', {
-          nodeName: this.config.nodeName,
+          nodeName: this.currentNodeName,
         });
 
         // Try to look up the existing node by name via HTTP API
         try {
           const httpUrl = this.getHttpBaseUrl();
 
-          const lookupResponse = await fetch(`${httpUrl}/api/nodes/name/${encodeURIComponent(this.config.nodeName)}`, {
+          const lookupResponse = await fetch(`${httpUrl}/api/nodes/name/${encodeURIComponent(this.currentNodeName)}`, {
             headers: {
               'Authorization': `Bearer ${this.authToken}`,
             },
@@ -1544,14 +1549,14 @@ export class BrowserAgent {
             this.nodeId = lookupResult.data.node.id;
             this.logger.info('Found existing node, attempting reconnect', {
               nodeId: this.nodeId,
-              nodeName: this.config.nodeName,
+              nodeName: this.currentNodeName,
             });
 
             // Save the node registration locally for future restarts
             if (this.config.persistState) {
               const registeredNode: RegisteredBrowserNode = {
                 nodeId: this.nodeId,
-                name: this.config.nodeName,
+                name: this.currentNodeName,
                 orchestratorUrl: this.config.orchestratorUrl,
                 registeredAt: new Date().toISOString(),
                 registeredBy: lookupResult.data.node.registeredBy,
@@ -1581,7 +1586,7 @@ export class BrowserAgent {
    */
   private async reconnect(): Promise<void> {
     this.state = 'registering';
-    this.logger.info('Reconnecting node', { nodeId: this.nodeId, nodeName: this.config.nodeName });
+    this.logger.info('Reconnecting node', { nodeId: this.nodeId, nodeName: this.currentNodeName });
 
     try {
       // Get the list of pods we currently have running locally.
@@ -1604,7 +1609,7 @@ export class BrowserAgent {
 
       // Update the lastStarted timestamp in persisted state
       if (this.config.persistState) {
-        this.stateStore.updateLastStarted(this.config.nodeName);
+        this.stateStore.updateLastStarted(this.currentNodeName);
       }
 
       this.state = 'registered';
@@ -1615,7 +1620,7 @@ export class BrowserAgent {
       await this.ensureNodeLogManager();
       this.logger.info('Node reconnected', {
         nodeId: this.nodeId,
-        nodeName: this.config.nodeName,
+        nodeName: this.currentNodeName,
       });
 
       // Start heartbeat and metrics collection
@@ -1641,7 +1646,7 @@ export class BrowserAgent {
         
         // Remove the stale node registration from storage
         if (this.config.persistState) {
-          this.stateStore.removeNode(this.config.nodeName);
+          this.stateStore.removeNode(this.currentNodeName);
         }
         
         await this.register();

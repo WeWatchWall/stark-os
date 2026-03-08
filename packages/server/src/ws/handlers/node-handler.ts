@@ -683,26 +683,28 @@ export async function handleNodeRename(
     return;
   }
 
-  // Check if the new name is already taken in the same namespace
-  const existsResult = await nodeQueries.nodeExists(payload.name, nodeResult.data.namespace);
-  if (existsResult.error) {
-    sendResponse(
-      ws,
-      'node:rename:error',
-      { code: 'INTERNAL_ERROR', message: 'Failed to check node name availability' },
-      correlationId,
-    );
-    return;
-  }
+  // Check if the new name is already taken in the same namespace (skip if same name)
+  if (payload.name !== nodeResult.data.name) {
+    const existsResult = await nodeQueries.nodeExists(payload.name, nodeResult.data.namespace);
+    if (existsResult.error) {
+      sendResponse(
+        ws,
+        'node:rename:error',
+        { code: 'INTERNAL_ERROR', message: 'Failed to check node name availability' },
+        correlationId,
+      );
+      return;
+    }
 
-  if (existsResult.data) {
-    sendResponse(
-      ws,
-      'node:rename:error',
-      { code: 'CONFLICT', message: `Node name ${payload.name} already exists in namespace ${nodeResult.data.namespace}` },
-      correlationId,
-    );
-    return;
+    if (existsResult.data) {
+      sendResponse(
+        ws,
+        'node:rename:error',
+        { code: 'CONFLICT', message: `Node name ${payload.name} already exists in namespace ${nodeResult.data.namespace}` },
+        correlationId,
+      );
+      return;
+    }
   }
 
   // Perform the rename

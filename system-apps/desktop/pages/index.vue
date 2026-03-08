@@ -177,8 +177,6 @@ let touchStartTimer: ReturnType<typeof setTimeout> | null = null;
 let isTouchDragging = false;
 
 // Touch tap detection for folder open
-let lastTapIndex: number | null = null;
-let lastTapTime = 0;
 // Debounce guard to prevent double-open
 let lastLaunchTime = 0;
 
@@ -495,19 +493,9 @@ function onTouchEnd(index: number): void {
     }
   }
 
-  // Detect double-tap on non-drag touch (folder open)
+  // Single tap to open folder on mobile (debounce prevents double-open)
   if (!isTouchDragging) {
-    const now = Date.now();
-    if (lastTapIndex === index && now - lastTapTime < 400) {
-      // Ignore rapid second tap — the first tap already opened the folder
-      lastTapIndex = null;
-      lastTapTime = 0;
-    } else {
-      lastTapIndex = index;
-      lastTapTime = now;
-      // Single tap to open on mobile
-      onDblClick(index);
-    }
+    onDblClick(index);
   }
 
   touchDragGhost.value = null;

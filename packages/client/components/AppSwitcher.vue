@@ -41,7 +41,7 @@
                   v-for="snap in snapOptions"
                   :key="snap.value"
                   class="snap-btn"
-                  :class="{ active: win.mobileSnap === snap.value && !win.minimized }"
+                  :class="{ active: win.mobileSnap === snap.value }"
                   @click.stop="setSnap(win.id, snap.value)"
                 >
                   {{ snap.icon }}

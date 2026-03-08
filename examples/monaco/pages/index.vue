@@ -536,13 +536,13 @@
             <span>No changes detected</span>
           </div>
           <!-- Commit history -->
-          <div v-if="scmCommits.length > 0" class="scm-section">
+          <div v-if="scmCommits.length > 0" class="scm-section scm-history-section">
             <div class="scm-section-header" @click="scmHistoryExpanded = !scmHistoryExpanded">
               <i :class="'codicon codicon-' + (scmHistoryExpanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle"></i>
               <span class="scm-section-title">Commit History</span>
               <span class="scm-section-count">{{ scmCommits.length }}</span>
             </div>
-            <template v-if="scmHistoryExpanded">
+            <div v-if="scmHistoryExpanded" class="scm-history-list">
               <div v-for="commit in scmCommits.slice(0, 50)" :key="commit.oid" class="scm-commit-group">
                 <div class="scm-commit-entry" @click="toggleCommitExpand(commit)">
                   <i :class="'codicon codicon-' + (commit.expanded ? 'chevron-down' : 'chevron-right')" class="tree-toggle" style="font-size:12px; flex-shrink:0;"></i>
@@ -575,7 +575,7 @@
                   </template>
                 </template>
               </div>
-            </template>
+            </div>
           </div>
         </div>
       </template>
@@ -3326,6 +3326,15 @@ function showDiffEditor(tab: Tab) {
   const newContent = tab.diffNew || '';
   const fileName = tab.diffTitle || tab.name;
 
+  // Dispose previous models before creating new ones
+  if (diffEditorInstance) {
+    const prev = diffEditorInstance.getModel();
+    if (prev) {
+      prev.original?.dispose();
+      prev.modified?.dispose();
+    }
+  }
+
   if (!diffEditorInstance) {
     diffEditorInstance = monacoModule.editor.createDiffEditor(diffEditorContainer.value, {
       automaticLayout: true,
@@ -3341,6 +3350,10 @@ function showDiffEditor(tab: Tab) {
   diffEditorInstance.setModel({ original: originalModel, modified: modifiedModel });
   // Re-apply the current theme globally so the diff editor inherits it
   monacoModule.editor.setTheme(currentTheme.value);
+  // Force layout after the container becomes visible via v-show
+  requestAnimationFrame(() => {
+    diffEditorInstance?.layout();
+  });
 }
 
 /** Dispose the diff editor models when leaving a diff tab. */
@@ -4227,6 +4240,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  background: #1e1e1e;
 }
 
 /* ─── Tab Bar ──────────────────────────────────── */
@@ -4992,8 +5006,9 @@ kbd {
 
 .scm-scroll-area {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .scm-commit-area {
@@ -5269,6 +5284,27 @@ kbd {
 .branch-delete-btn { opacity: 0; }
 
 /* ─── Commit History Expandable ──────────────────── */
+.scm-history-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.scm-history-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* VS Code–style thin scrollbar for commit history */
+.scm-history-list::-webkit-scrollbar { width: 6px; }
+.scm-history-list::-webkit-scrollbar-track { background: transparent; }
+.scm-history-list::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.4);
+  border-radius: 3px;
+}
+.scm-history-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 121, 121, 0.7);
+}
 .scm-commit-group {
   border-bottom: 1px solid #2a2d2e;
 }

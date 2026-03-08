@@ -85,14 +85,9 @@ export interface GitFileDiff {
 /** Status matrix row: [filepath, head, workdir, stage] */
 export type GitStatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
-/**
- * CORS proxy URL for browser-based HTTP git operations.
- * GitHub supports CORS natively for authenticated requests (PAT/OAuth),
- * so the proxy is ONLY needed for unauthenticated clones of public repos.
- * When auth is provided, corsProxy is omitted so isomorphic-git talks
- * directly to the remote (no 401/403 from the proxy).
- */
-const DEFAULT_CORS_PROXY = 'https://cors.isomorphic-git.org';
+// No CORS proxy — GitHub supports CORS natively for both
+// authenticated AND unauthenticated requests.  The old
+// cors.isomorphic-git.org proxy is unreliable and causes 401/403 errors.
 
 // ── OPFS → isomorphic-git filesystem adapter ─────────
 
@@ -353,15 +348,12 @@ export async function gitClone(
   depth?: number,
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
-  // Skip CORS proxy when auth is provided — GitHub supports CORS natively
-  // for authenticated requests. The proxy causes 401/403 errors.
-  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
   await git.clone({
     fs,
     http,
     dir,
     url,
-    ...(proxy ? { corsProxy: proxy } : {}),
+    ...(corsProxy ? { corsProxy } : {}),
     singleBranch: false,
     depth: depth ?? 20,
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
@@ -420,13 +412,12 @@ export async function gitPush(
   remote = 'origin',
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
-  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
   await git.push({
     fs,
     http,
     dir,
     remote,
-    ...(proxy ? { corsProxy: proxy } : {}),
+    ...(corsProxy ? { corsProxy } : {}),
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
   });
 }
@@ -443,13 +434,12 @@ export async function gitPull(
   remote = 'origin',
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
-  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
   await git.pull({
     fs,
     http,
     dir,
     remote,
-    ...(proxy ? { corsProxy: proxy } : {}),
+    ...(corsProxy ? { corsProxy } : {}),
     singleBranch: true,
     author: author || { name: 'User', email: 'user@example.com' },
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
@@ -798,13 +788,12 @@ export async function gitFetch(
   remote = 'origin',
 ): Promise<void> {
   const fs = buildGitFs(rootHandle);
-  const proxy = corsProxy ?? (auth ? undefined : DEFAULT_CORS_PROXY);
   await git.fetch({
     fs,
     http,
     dir,
     remote,
-    ...(proxy ? { corsProxy: proxy } : {}),
+    ...(corsProxy ? { corsProxy } : {}),
     onAuth: auth ? () => ({ username: auth.username, password: auth.password }) : undefined,
   });
 }

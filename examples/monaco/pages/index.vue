@@ -475,7 +475,7 @@
               <button class="scm-commit-btn" :disabled="!scmCommitMessage.trim() || scmStagedFiles.length === 0 || scmLoading" @click="commitScm" style="flex:1;">
                 <i class="codicon codicon-check"></i> Commit
               </button>
-              <button class="scm-commit-btn scm-push-btn" :disabled="scmLoading" @click="pushScm" title="Push to Remote">
+              <button class="scm-commit-btn scm-push-btn" disabled title="Feature is disabled" style="opacity:0.4;cursor:not-allowed;">
                 <i class="codicon codicon-cloud-upload"></i>
               </button>
               <button class="scm-commit-btn scm-pull-btn" :disabled="scmLoading" @click="pullScm" title="Pull from Remote">
@@ -1950,6 +1950,8 @@ function getOrCreateTab(path: string): Tab {
 
 async function switchToTab(path: string) {
   if (currentFile.value === path) return;
+  // Cancel any pending auto-save before switching tabs
+  if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
   const tab = openTabs.value.find(t => t.path === path);
   if (tab?.isDiff) {
     // Switching to a diff tab
@@ -1959,7 +1961,7 @@ async function switchToTab(path: string) {
     disposeDiffModels();
     currentFile.value = path;
     await nextTick();
-    showDiffEditor(tab);
+    await showDiffEditor(tab);
   } else {
     // Switching to a regular file tab — clean up diff editor
     disposeDiffModels();
@@ -2070,6 +2072,10 @@ async function saveAsFile() {
 }
 
 async function openFile(path: string) {
+  // Cancel any pending auto-save before switching files to prevent the
+  // timer from firing while currentFile has changed but the model hasn't
+  if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+
   if (currentFile.value && editor) {
     await saveCurrentFile();
   }
@@ -2247,6 +2253,17 @@ function scheduleSave() {
 
 async function saveCurrentFile() {
   if (!currentFile.value || !editor) return;
+  // Never save diff tabs — they are read-only views, not real files
+  if (currentFile.value.startsWith('diff:') || currentFile.value.startsWith('commit:')) return;
+  // Guard: only save when the editor's model matches the current file to
+  // prevent writing stale content to the wrong path during tab switches
+  const model = editor.getModel();
+  if (model) {
+    const modelPath = model.uri.path;
+    if (modelPath && modelPath !== '/' && !currentFile.value.endsWith(modelPath)) {
+      return;
+    }
+  }
   try {
     saveStatus.value = 'saving';
     const content = editor.getValue();
@@ -3311,17 +3328,35 @@ async function openDiffTab(key: string, title: string, oldContent: string, newCo
     tab.diffTitle = title;
   }
   // Save current file before switching
+  if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
   if (currentFile.value && editor && !currentTabIsDiff.value) {
     await saveCurrentFile();
   }
   currentFile.value = diffPath;
   await nextTick();
-  showDiffEditor(tab);
+  await showDiffEditor(tab);
 }
 
 /** Create / update the Monaco diff editor for the given diff tab. */
-function showDiffEditor(tab: Tab) {
-  if (!monacoModule || !diffEditorContainer.value) return;
+async function showDiffEditor(tab: Tab) {
+  if (!diffEditorContainer.value) return;
+
+  // Ensure Monaco is loaded (handles the case where diff is opened first)
+  if (!monacoModule) {
+    try {
+      await initializeVscodeServices();
+    } catch (e) {
+      console.warn('VS Code services initialization failed:', e);
+    }
+    monacoModule = await import('monaco-editor');
+    const editorWorkerModule = await import('@codingame/monaco-vscode-api/workers/editor.worker?worker&inline');
+    (self as any).MonacoEnvironment = {
+      getWorker() {
+        return new editorWorkerModule.default();
+      },
+    };
+  }
+
   const oldContent = tab.diffOld || '';
   const newContent = tab.diffNew || '';
   const fileName = tab.diffTitle || tab.name;
@@ -3337,7 +3372,6 @@ function showDiffEditor(tab: Tab) {
 
   if (!diffEditorInstance) {
     diffEditorInstance = monacoModule.editor.createDiffEditor(diffEditorContainer.value, {
-      theme: currentTheme.value,
       automaticLayout: true,
       readOnly: true,
       renderSideBySide: true,
@@ -3349,8 +3383,6 @@ function showDiffEditor(tab: Tab) {
   const originalModel = monacoModule.editor.createModel(oldContent, getLanguage(fileName));
   const modifiedModel = monacoModule.editor.createModel(newContent, getLanguage(fileName));
   diffEditorInstance.setModel({ original: originalModel, modified: modifiedModel });
-  // Re-apply the current theme globally so the diff editor inherits it
-  monacoModule.editor.setTheme(currentTheme.value);
   // Force layout after the container becomes visible via v-show
   requestAnimationFrame(() => {
     diffEditorInstance?.layout();

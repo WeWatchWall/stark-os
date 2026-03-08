@@ -13,6 +13,7 @@ import { getPackQueriesAdmin } from '../supabase/packs.js';
 import { getVolumeQueries } from '../supabase/volumes.js';
 import { getConnectionManager } from '../services/connection-service.js';
 import { getIngressManager } from '../services/ingress-manager.js';
+import { getServiceController } from '../services/service-controller.js';
 import { getServiceNetworkMetaStore } from '@stark-o/shared';
 import {
   authMiddleware,
@@ -234,6 +235,14 @@ async function createService(req: Request, res: Response): Promise<void> {
       });
     }
 
+    // Trigger reactive reconciliation so pods are created immediately
+    const serviceController = getServiceController();
+    if (serviceController.isActive()) {
+      serviceController.triggerReconcile().catch((err) => {
+        requestLogger.error('Failed to trigger reconcile after service create', err instanceof Error ? err : undefined);
+      });
+    }
+
     sendSuccess(res, { service: result.data }, 201);
   } catch (error) {
     requestLogger.error('Unexpected error creating service', error instanceof Error ? error : undefined);
@@ -418,6 +427,14 @@ async function updateService(req: Request, res: Response): Promise<void> {
       correlationId,
     });
 
+    // Trigger reactive reconciliation so changes take effect immediately
+    const serviceController = getServiceController();
+    if (serviceController.isActive()) {
+      serviceController.triggerReconcile().catch((err) => {
+        requestLogger.error('Failed to trigger reconcile after service update', err instanceof Error ? err : undefined);
+      });
+    }
+
     sendSuccess(res, { service: result.data });
   } catch (error) {
     requestLogger.error('Unexpected error updating service', error instanceof Error ? error : undefined);
@@ -475,6 +492,14 @@ async function scaleService(req: Request, res: Response): Promise<void> {
       replicas,
       correlationId,
     });
+
+    // Trigger reactive reconciliation so scaling takes effect immediately
+    const serviceController = getServiceController();
+    if (serviceController.isActive()) {
+      serviceController.triggerReconcile().catch((err) => {
+        requestLogger.error('Failed to trigger reconcile after service scale', err instanceof Error ? err : undefined);
+      });
+    }
 
     sendSuccess(res, { service: result.data });
   } catch (error) {
@@ -538,6 +563,14 @@ async function deleteService(req: Request, res: Response): Promise<void> {
       serviceId: id,
       correlationId,
     });
+
+    // Trigger reactive reconciliation to clean up associated pods immediately
+    const serviceController = getServiceController();
+    if (serviceController.isActive()) {
+      serviceController.triggerReconcile().catch((err) => {
+        requestLogger.error('Failed to trigger reconcile after service delete', err instanceof Error ? err : undefined);
+      });
+    }
 
     sendSuccess(res, { deleted: true });
   } catch (error) {

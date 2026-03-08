@@ -27,7 +27,7 @@ const logger = createServiceLogger({
  * Scheduler service configuration
  */
 export interface SchedulerServiceConfig {
-  /** Interval between scheduling runs in milliseconds (default: 5000) */
+  /** Fallback interval between scheduling runs in milliseconds (default: 30000). Primary scheduling is reactive via triggerSchedule(). */
   scheduleInterval?: number;
   /** Maximum pods to schedule per run (default: 10) */
   maxPodsPerRun?: number;
@@ -39,7 +39,7 @@ export interface SchedulerServiceConfig {
  * Default scheduler configuration
  */
 const DEFAULT_CONFIG: Required<SchedulerServiceConfig> = {
-  scheduleInterval: 5000,
+  scheduleInterval: 30_000,
   maxPodsPerRun: 10,
   autoStart: true,
 };
@@ -73,6 +73,12 @@ export class SchedulerService {
   private lastScheduleAt = 0;
   /** Minimum gap in ms between scheduling cycles triggered externally */
   private static readonly SCHEDULE_DEBOUNCE_MS = 1000;
+  /**
+   * Timer for deferred schedule when a trigger is debounced.
+   * Ensures the pending schedule runs after the debounce window
+   * instead of waiting for the next polling interval.
+   */
+  private debouncedScheduleTimer: NodeJS.Timeout | null = null;
 
   constructor(config: SchedulerServiceConfig = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -131,6 +137,11 @@ export class SchedulerService {
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
       this.intervalTimer = null;
+    }
+
+    if (this.debouncedScheduleTimer) {
+      clearTimeout(this.debouncedScheduleTimer);
+      this.debouncedScheduleTimer = null;
     }
 
     logger.info('Scheduler service stopped');
@@ -467,8 +478,9 @@ export class SchedulerService {
   /**
    * Trigger an immediate scheduling cycle (reactive trigger).
    * Debounced: if a scheduling cycle completed within SCHEDULE_DEBOUNCE_MS,
-   * the call is coalesced into a pending flag so the next cycle picks it up
-   * instead of racing with the just-finished cycle.
+   * the call is deferred to run after the debounce window expires instead of
+   * running immediately. This avoids racing with the just-finished cycle
+   * while still ensuring the trigger is handled promptly.
    */
   async triggerSchedule(): Promise<void> {
     if (!this.isRunning) {
@@ -476,11 +488,26 @@ export class SchedulerService {
     }
     const elapsed = Date.now() - this.lastScheduleAt;
     if (elapsed < SchedulerService.SCHEDULE_DEBOUNCE_MS) {
-      logger.debug('Debouncing triggerSchedule — recent cycle completed', {
+      logger.debug('Debouncing triggerSchedule — scheduling deferred cycle', {
         elapsedMs: elapsed,
         debounceMs: SchedulerService.SCHEDULE_DEBOUNCE_MS,
       });
       this.pendingSchedule = true;
+
+      // Schedule a deferred cycle after the debounce window expires.
+      // Without this, the pending flag would only be consumed when the next
+      // polling interval fires (up to scheduleInterval ms away).
+      if (!this.debouncedScheduleTimer) {
+        const delay = SchedulerService.SCHEDULE_DEBOUNCE_MS - elapsed;
+        this.debouncedScheduleTimer = setTimeout(() => {
+          this.debouncedScheduleTimer = null;
+          if (this.pendingSchedule && this.isRunning) {
+            this.runSchedulingCycle().catch((err) => {
+              logger.error('Error in deferred scheduling cycle', err instanceof Error ? err : undefined);
+            });
+          }
+        }, delay);
+      }
       return;
     }
     await this.runSchedulingCycle();

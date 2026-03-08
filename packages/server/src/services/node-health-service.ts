@@ -14,6 +14,8 @@
 
 import { createServiceLogger } from '@stark-o/shared';
 import { getNodeQueries, getPodQueriesAdmin, emitNodeEvent } from '../supabase/index.js';
+import { getServiceController } from './service-controller.js';
+import { getSchedulerService } from './scheduler-service.js';
 
 /**
  * Logger for node health service
@@ -330,6 +332,26 @@ export class NodeHealthService {
             detectedBy: 'node-health-service',
           },
         }, { useAdmin: true });
+
+        // Trigger reactive reconciliation — revoked pods may need replacement on other nodes
+        const serviceController = getServiceController();
+        if (serviceController.isActive()) {
+          serviceController.triggerReconcile().catch((err) => {
+            logger.error('Failed to trigger reconcile after node lease expiry', err instanceof Error ? err : undefined, {
+              nodeId: node.id,
+            });
+          });
+        }
+
+        // Trigger reactive scheduling — pending pods may now need different nodes
+        const scheduler = getSchedulerService();
+        if (scheduler.isActive()) {
+          scheduler.triggerSchedule().catch((err) => {
+            logger.error('Failed to trigger scheduler after node lease expiry', err instanceof Error ? err : undefined, {
+              nodeId: node.id,
+            });
+          });
+        }
       }
     }
 

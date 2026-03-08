@@ -16,6 +16,7 @@ import {
   restartPodWithHistory,
 } from '../../supabase/pod-history-service.js';
 import { getPodQueries, getPodQueriesAdmin } from '../../supabase/pods.js';
+import { getServiceController } from '../../services/service-controller.js';
 
 /**
  * Logger for pod handler
@@ -296,6 +297,15 @@ export async function handlePodStop(
   }
 
   requestLogger.info('Pod stopped successfully', { podId: payload.podId });
+
+  // Trigger reactive reconciliation — the pod's service may now be under-replicated
+  const serviceController = getServiceController();
+  if (serviceController.isActive()) {
+    serviceController.triggerReconcile().catch((err) => {
+      requestLogger.error('Failed to trigger reconcile after pod stop', err instanceof Error ? err : undefined);
+    });
+  }
+
   sendResponse(ws, 'pod:stop:ack', {
     podId: payload.podId,
     status: 'stopped',
@@ -346,6 +356,15 @@ export async function handlePodFail(
   }
 
   requestLogger.warn('Pod marked as failed', { podId: payload.podId, message: errorMessage });
+
+  // Trigger reactive reconciliation — the pod's service may need a replacement
+  const serviceController = getServiceController();
+  if (serviceController.isActive()) {
+    serviceController.triggerReconcile().catch((err) => {
+      requestLogger.error('Failed to trigger reconcile after pod fail', err instanceof Error ? err : undefined);
+    });
+  }
+
   sendResponse(ws, 'pod:fail:ack', {
     podId: payload.podId,
     status: 'failed',
@@ -396,6 +415,15 @@ export async function handlePodEvict(
   }
 
   requestLogger.info('Pod evicted successfully', { podId: payload.podId, reason: evictionReason });
+
+  // Trigger reactive reconciliation — the evicted pod may need rescheduling
+  const serviceController = getServiceController();
+  if (serviceController.isActive()) {
+    serviceController.triggerReconcile().catch((err) => {
+      requestLogger.error('Failed to trigger reconcile after pod evict', err instanceof Error ? err : undefined);
+    });
+  }
+
   sendResponse(ws, 'pod:evict:ack', {
     podId: payload.podId,
     status: 'evicted',

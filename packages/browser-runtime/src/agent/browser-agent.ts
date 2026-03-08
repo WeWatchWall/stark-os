@@ -711,6 +711,8 @@ export class BrowserAgent {
             this.emit('pod:deployed', { podId: deployPayload.podId });
             this.logger.info('Pod deployed successfully', { podId: deployPayload.podId });
             await this.logToPodManager(deployPayload.podId, 'info', 'Pod deployed successfully');
+            // Send fresh metrics immediately so the server has up-to-date resource info
+            void this.sendMetrics();
             // Send success response if there's a correlationId
             if (message.correlationId) {
               this.send({
@@ -761,6 +763,8 @@ export class BrowserAgent {
             this.emit('pod:stopped', { podId: stopPayload.podId });
             this.logger.info('Pod stopped successfully', { podId: stopPayload.podId });
             await this.logToPodManager(stopPayload.podId, 'info', 'Pod stopped successfully');
+            // Send fresh metrics immediately so the server has up-to-date resource info
+            void this.sendMetrics();
             if (message.correlationId) {
               this.send({
                 type: 'pod:stop:success',

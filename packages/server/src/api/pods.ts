@@ -14,6 +14,7 @@ import { getNodeQueries } from '../supabase/nodes.js';
 import { getVolumeQueries } from '../supabase/volumes.js';
 import { sendToNode, getConnectionManager } from '../services/connection-service.js';
 import { getSchedulerService } from '../services/scheduler-service.js';
+import { getServiceController } from '../services/service-controller.js';
 import {
   authMiddleware,
   abilityMiddleware,
@@ -678,6 +679,15 @@ async function deletePod(req: Request, res: Response): Promise<void> {
     }
 
     logger.info('Pod deleted successfully', { podId: id, userId, previousStatus });
+
+    // Trigger reactive reconciliation — the deleted pod's service may now be under-replicated
+    const serviceController = getServiceController();
+    if (serviceController.isActive()) {
+      serviceController.triggerReconcile().catch((err) => {
+        logger.error('Failed to trigger reconcile after pod delete', err instanceof Error ? err : undefined);
+      });
+    }
+
     sendSuccess(res, { message: 'Pod stopped and deleted' });
   } catch (error) {
     logger.error('Error deleting pod', error instanceof Error ? error : undefined, {

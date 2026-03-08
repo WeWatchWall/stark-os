@@ -489,7 +489,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
 
       // Create scheduler service for pod scheduling
       schedulerService = getSchedulerService({
-        scheduleInterval: 5000,
+        scheduleInterval: 30_000,  // Fallback interval; primary scheduling is reactive
         maxPodsPerRun: 10,
         autoStart: false, // We'll start it after the server is listening
       });
@@ -499,7 +499,7 @@ export function createServer(config: Partial<ServerConfig> = {}): ServerInstance
 
       // Create service controller for reconciling services
       serviceController = getServiceController({
-        reconcileInterval: 10000,
+        reconcileInterval: 60_000,  // Fallback interval; primary reconciliation is reactive
         autoStart: false, // We'll start it after the server is listening
       });
 

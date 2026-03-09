@@ -27,10 +27,10 @@
           <button class="menu-trigger" @click.stop="toggleMenu('view')">View</button>
           <div v-if="openMenu === 'view'" class="menu-items">
             <button class="menu-item" @click="wordWrap = !wordWrap; closeMenus()">
-              <span>{{ wordWrap ? '✓' : '\u2003' }} Word Wrap</span>
+              <span>{{ checkMark(wordWrap) }} Word Wrap</span>
             </button>
             <button class="menu-item" @click="showLineNumbers = !showLineNumbers; closeMenus()">
-              <span>{{ showLineNumbers ? '✓' : '\u2003' }} Line Numbers</span>
+              <span>{{ checkMark(showLineNumbers) }} Line Numbers</span>
             </button>
             <div class="menu-sep"></div>
             <button class="menu-item" @click="toggleFind(); closeMenus()">
@@ -194,6 +194,11 @@ const saveDefaultName = computed(() => {
 });
 
 /* ── Menu helpers ── */
+
+/** Returns a checkmark or an em-space (for alignment) based on a boolean toggle. */
+function checkMark(on: boolean): string {
+  return on ? '✓' : '\u2003';
+}
 
 function toggleMenu(name: string) {
   openMenu.value = openMenu.value === name ? null : name;

@@ -16,7 +16,7 @@
       </div>
 
       <!-- Floating add-files button (visible when player is active) -->
-      <button v-if="webampReady" class="fab" @click.stop="showFab = !showFab" title="Add music">＋</button>
+      <button v-if="webampReady" class="fab" @click.stop="showFab = !showFab" title="Add music">+</button>
       <div v-if="webampReady && showFab" class="fab-menu" @click.stop>
         <button class="fab-item" @click="openFilePicker(); showFab = false">Open Files</button>
         <button class="fab-item" @click="openFolderPicker(); showFab = false">Open Folder</button>

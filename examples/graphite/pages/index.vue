@@ -98,7 +98,7 @@ const exportExtensions = [
   { label: 'All Files', extensions: ['*'] },
 ];
 
-const exportAccept = '.svg,.png,.jpg,.jpeg,.graphite,.bmp,.gif,.webp,.pdf';
+const exportAccept = '.svg,.png,.jpg,.jpeg,.graphite';
 
 const saveStatusText = computed(() => {
   switch (saveStatus.value) {

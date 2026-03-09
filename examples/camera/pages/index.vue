@@ -298,10 +298,11 @@ async function startCamera() {
   }
 
   try {
+    const videoSize = { width: { ideal: 1280 }, height: { ideal: 720 } };
     const constraints: MediaStreamConstraints = {
       video: selectedInput.value
-        ? { deviceId: { exact: selectedInput.value }, width: { ideal: 1280 }, height: { ideal: 720 } }
-        : { facingMode: facingMode.value, width: { ideal: 1280 }, height: { ideal: 720 } },
+        ? { deviceId: { exact: selectedInput.value }, ...videoSize }
+        : { facingMode: facingMode.value, ...videoSize },
       audio: true,
     };
 
@@ -354,7 +355,8 @@ function takePhoto() {
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth || 640;
   canvas.height = video.videoHeight || 480;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
 
   // Mirror if front-facing
   if (facingMode.value === 'user') {

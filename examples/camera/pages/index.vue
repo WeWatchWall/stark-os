@@ -145,9 +145,6 @@
               <span class="cap-meta">{{ formatSize(cap.size) }}</span>
             </div>
             <div class="cap-actions">
-              <button v-if="cap.type === 'video'" class="cap-btn" @click.stop="playCapture(idx)" :title="playingIndex === idx ? 'Stop' : 'Play'">
-                {{ playingIndex === idx ? '⏹' : '▶' }}
-              </button>
               <button class="cap-btn" @click.stop="saveCapture(idx)" title="Save to OPFS">💾</button>
               <button class="cap-btn" @click.stop="deleteCapture(idx)" title="Delete">🗑</button>
             </div>
@@ -213,7 +210,6 @@ const selectedInput = ref('');
 const videoInputs = ref<MediaDeviceInfo[]>([]);
 const captures = ref<Capture[]>([]);
 const selectedIndex = ref(-1);
-const playingIndex = ref(-1);
 const showFlash = ref(false);
 const saveStatus = ref<'saved' | 'saving' | 'idle'>('idle');
 const showSavePicker = ref(false);
@@ -225,15 +221,14 @@ let mediaStream: MediaStream | null = null;
 let mediaRecorder: MediaRecorder | null = null;
 let chunks: Blob[] = [];
 let recordTimer: ReturnType<typeof setInterval> | null = null;
-let playAudio: HTMLVideoElement | null = null;
 let opfsRoot: FileSystemDirectoryHandle | null = null;
-let savingCaptureIdx = -1;
+const savingCaptureIdx = ref(-1);
 
 const hasResolutionOptions = computed(() => false);
 
 const savingExtensions = computed(() => {
-  if (savingCaptureIdx >= 0 && savingCaptureIdx < captures.value.length) {
-    const cap = captures.value[savingCaptureIdx];
+  if (savingCaptureIdx.value >= 0 && savingCaptureIdx.value < captures.value.length) {
+    const cap = captures.value[savingCaptureIdx.value];
     if (cap.type === 'photo') {
       return [{ label: 'JPEG Image', extensions: ['.jpg'] }, { label: 'PNG Image', extensions: ['.png'] }];
     }
@@ -459,41 +454,20 @@ function selectCapture(idx: number) {
   reviewItem.value = captures.value[idx];
 }
 
-function playCapture(idx: number) {
-  if (playingIndex.value === idx) {
-    playAudio?.pause();
-    playAudio = null;
-    playingIndex.value = -1;
-    return;
-  }
-
-  if (playAudio) {
-    playAudio.pause();
-    playAudio = null;
-  }
-
-  const cap = captures.value[idx];
-  playAudio = document.createElement('video');
-  playAudio.src = cap.objectUrl;
-  playAudio.onended = () => { playingIndex.value = -1; };
-  playAudio.play();
-  playingIndex.value = idx;
-}
-
 /* ── Save / Delete ── */
 
 function saveCapture(idx?: number) {
   const i = idx ?? selectedIndex.value;
   if (i < 0 || i >= captures.value.length) return;
-  savingCaptureIdx = i;
+  savingCaptureIdx.value = i;
   const cap = captures.value[i];
   saveDefaultName.value = cap.name.replace(/\.[^.]+$/, '');
   showSavePicker.value = true;
 }
 
 async function onSaveSelected(result: { paths: string[] }) {
-  if (!opfsRoot || result.paths.length === 0 || savingCaptureIdx < 0) return;
-  const cap = captures.value[savingCaptureIdx];
+  if (!opfsRoot || result.paths.length === 0 || savingCaptureIdx.value < 0) return;
+  const cap = captures.value[savingCaptureIdx.value];
   if (!cap) return;
 
   try {
@@ -511,11 +485,6 @@ async function onSaveSelected(result: { paths: string[] }) {
 }
 
 function deleteCapture(idx: number) {
-  if (playingIndex.value === idx) {
-    playAudio?.pause();
-    playAudio = null;
-    playingIndex.value = -1;
-  }
   URL.revokeObjectURL(captures.value[idx].objectUrl);
   captures.value.splice(idx, 1);
   if (selectedIndex.value >= captures.value.length) {
@@ -527,8 +496,6 @@ function deleteCapture(idx: number) {
 }
 
 function clearAll() {
-  if (playAudio) { playAudio.pause(); playAudio = null; }
-  playingIndex.value = -1;
   captures.value.forEach(c => URL.revokeObjectURL(c.objectUrl));
   captures.value = [];
   selectedIndex.value = -1;
@@ -548,7 +515,6 @@ onBeforeUnmount(() => {
     mediaStream.getTracks().forEach(t => t.stop());
     mediaStream = null;
   }
-  if (playAudio) playAudio.pause();
   captures.value.forEach(c => URL.revokeObjectURL(c.objectUrl));
 });
 </script>

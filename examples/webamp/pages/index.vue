@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
 
 interface Track {
   name: string;
@@ -136,6 +136,8 @@ async function initWebamp(tracks: Track[]) {
     if (target) {
       await webampInstance.renderWhenReady(target);
       webampReady.value = true;
+      // Start observing for scale adjustments
+      nextTick(() => updateWebampScale());
     }
   } catch (e) {
     console.error('Failed to initialize Webamp:', e);
@@ -207,6 +209,38 @@ async function onFolderSelected(result: { paths: string[] }) {
   }
 }
 
+/* ── Dynamic scaling ── */
+
+let resizeObserver: ResizeObserver | null = null;
+
+function updateWebampScale() {
+  const container = webampContainer.value;
+  if (!container) return;
+  const webampEl = container.querySelector('#webamp') as HTMLElement | null;
+  if (!webampEl) return;
+
+  // Measure Webamp's natural size (reset scale first)
+  webampEl.style.transform = 'none';
+  const rect = webampEl.getBoundingClientRect();
+  const naturalW = rect.width;
+  const naturalH = rect.height;
+  if (naturalW === 0 || naturalH === 0) return;
+
+  const containerW = container.clientWidth;
+  const containerH = container.clientHeight;
+
+  // Scale to fill container with some padding, cap at 3x
+  const scaleX = (containerW - 32) / naturalW;
+  const scaleY = (containerH - 32) / naturalH;
+  const scale = Math.min(scaleX, scaleY, 3);
+
+  if (scale > 1) {
+    webampEl.style.transform = `scale(${scale.toFixed(3)})`;
+  } else {
+    webampEl.style.transform = 'none';
+  }
+}
+
 /* ── Initial args ── */
 
 function getInitialPaths(): string[] {
@@ -224,6 +258,14 @@ function getInitialPaths(): string[] {
 
 onMounted(async () => {
   opfsRoot = await getStarkOpfsRoot();
+
+  // Watch for container resizes to rescale Webamp
+  if (webampContainer.value) {
+    resizeObserver = new ResizeObserver(() => {
+      if (webampReady.value) updateWebampScale();
+    });
+    resizeObserver.observe(webampContainer.value);
+  }
 
   const initialPaths = getInitialPaths();
   if (initialPaths.length > 0) {
@@ -262,6 +304,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
   if (webampInstance) {
     try { webampInstance.dispose(); } catch { /* ignore */ }
   }
@@ -292,6 +338,7 @@ onBeforeUnmount(() => {
 
 .webamp-area :deep(#webamp) {
   position: relative !important;
+  transform-origin: center center;
 }
 
 /* Splash / loading screen */

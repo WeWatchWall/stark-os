@@ -1,11 +1,16 @@
 <template>
-  <div class="graphite">
-    <!-- Top bar -->
+  <div class="graphite" @click="closeMenus">
+    <!-- Top bar with dropdown menu -->
     <div class="top-bar">
       <div class="top-left">
         <span class="app-title">🎨 Graphite</span>
-        <button class="bar-btn" @click="importFile" title="Import a file from OPFS into Graphite">Import</button>
-        <button class="bar-btn" @click="exportFile" title="Export the current document to OPFS">Export</button>
+        <div class="menu-dropdown">
+          <button class="menu-trigger" @click.stop="showFileMenu = !showFileMenu">File</button>
+          <div v-if="showFileMenu" class="menu-items">
+            <button class="menu-item" @click="importFile(); showFileMenu = false">Import from OPFS…</button>
+            <button class="menu-item" @click="saveToOpfs(); showFileMenu = false">Save to OPFS…</button>
+          </div>
+        </div>
       </div>
       <div class="top-right">
         <span class="status-text" :class="saveStatus">{{ saveStatusText }}</span>
@@ -42,20 +47,20 @@
     <FilesPicker
       v-model:visible="showExportPicker"
       mode="save"
-      title="Export from Graphite"
+      title="Save to OPFS"
       :extensions="exportExtensions"
       :initialPath="exportInitialPath"
       :defaultFileName="exportDefaultName"
       @select="onExportSelected"
       @cancel="showExportPicker = false"
     />
-    <!-- Hidden file input for import into Graphite via drag -->
+    <!-- Hidden file input for picking local files to save to OPFS -->
     <input
-      ref="hiddenInput"
+      ref="localFileInput"
       type="file"
       class="hidden-input"
-      :accept="importAccept"
-      @change="onHiddenFileChange"
+      :accept="exportAccept"
+      @change="onLocalFilePicked"
     />
   </div>
 </template>
@@ -67,17 +72,17 @@ const GRAPHITE_URL = 'https://editor.graphite.rs/';
 
 const graphiteUrl = ref(GRAPHITE_URL);
 const iframeEl = ref<HTMLIFrameElement | null>(null);
-const hiddenInput = ref<HTMLInputElement | null>(null);
+const localFileInput = ref<HTMLInputElement | null>(null);
 const iframeLoaded = ref(false);
 const saveStatus = ref<'saved' | 'saving' | 'idle'>('idle');
 const showImportPicker = ref(false);
 const showExportPicker = ref(false);
+const showFileMenu = ref(false);
 const exportDefaultName = ref('export');
 const exportInitialPath = ref('/home');
 
 let opfsRoot: FileSystemDirectoryHandle | null = null;
-let pendingImportBlob: Blob | null = null;
-let pendingImportName: string = '';
+let pendingLocalFile: File | null = null;
 
 const importExtensions = [
   { label: 'Images', extensions: ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.bmp', '.gif'] },
@@ -88,10 +93,12 @@ const importExtensions = [
 const exportExtensions = [
   { label: 'SVG', extensions: ['.svg'] },
   { label: 'PNG', extensions: ['.png'] },
+  { label: 'JPEG', extensions: ['.jpg', '.jpeg'] },
   { label: 'Graphite', extensions: ['.graphite'] },
+  { label: 'All Files', extensions: ['*'] },
 ];
 
-const importAccept = '.png,.jpg,.jpeg,.svg,.webp,.bmp,.gif,.graphite';
+const exportAccept = '.svg,.png,.jpg,.jpeg,.graphite,.bmp,.gif,.webp,.pdf';
 
 const saveStatusText = computed(() => {
   switch (saveStatus.value) {
@@ -100,6 +107,10 @@ const saveStatusText = computed(() => {
     default: return '';
   }
 });
+
+function closeMenus() {
+  showFileMenu.value = false;
+}
 
 /* ── Import: OPFS → Graphite (via simulated drag-and-drop) ── */
 
@@ -116,13 +127,8 @@ async function onImportSelected(result: { paths: string[] }) {
     const file = await fh.getFile();
     const name = path.split('/').pop() || 'import';
 
-    // Store for use in the hidden input flow
-    pendingImportBlob = new Blob([await file.arrayBuffer()], { type: file.type || guessMime(name) });
-    pendingImportName = name;
-
-    // Attempt to send file to Graphite iframe via postMessage
-    // The Graphite editor may accept file drops programmatically
-    sendFileToGraphite(pendingImportBlob, pendingImportName);
+    const blob = new Blob([await file.arrayBuffer()], { type: file.type || guessMime(name) });
+    sendFileToGraphite(blob, name);
   } catch (e) {
     console.warn('Failed to import file:', e);
   }
@@ -132,7 +138,6 @@ function sendFileToGraphite(blob: Blob, name: string) {
   const iframe = iframeEl.value;
   if (!iframe?.contentWindow) return;
 
-  // Create a File object and try to trigger Graphite's drop handler
   const file = new File([blob], name, { type: blob.type });
 
   try {
@@ -157,67 +162,57 @@ function sendFileToGraphite(blob: Blob, name: string) {
       cancelable: true,
     });
 
-    // Focus iframe and dispatch the event
     iframe.focus();
     setTimeout(() => {
       try {
         iframe.contentDocument?.body.dispatchEvent(dropEvent);
       } catch {
-        // Cross-origin — expected; message-based approach used instead
-        console.info('Cross-origin iframe: file sent via postMessage. Drag-drop into the editor manually if needed.');
+        // Cross-origin — expected
       }
     }, 100);
-  } catch (e) {
-    console.info('Import via postMessage sent. You may also drag files directly into the editor.');
+  } catch {
+    // Import attempt sent
   }
 }
 
-function onHiddenFileChange() {
-  // Fallback for manual file selection
-  const files = hiddenInput.value?.files;
-  if (!files || files.length === 0) return;
+/* ── Save to OPFS: pick a local file (e.g. downloaded from Graphite) → save to OPFS ── */
 
-  const file = files[0];
-  sendFileToGraphite(file, file.name);
-
-  // Reset input
-  if (hiddenInput.value) hiddenInput.value.value = '';
+function saveToOpfs() {
+  // Open native file picker so the user can select a file they exported/downloaded from Graphite
+  localFileInput.value?.click();
 }
 
-/* ── Export: Save content to OPFS ── */
+function onLocalFilePicked() {
+  const files = localFileInput.value?.files;
+  if (!files || files.length === 0) return;
 
-function exportFile() {
+  pendingLocalFile = files[0];
+  // Suggest a filename from the picked file
+  exportDefaultName.value = pendingLocalFile.name.replace(/\.[^.]+$/, '');
+  // Now show OPFS save location picker
   showExportPicker.value = true;
+
+  // Reset input so the same file can be selected again
+  if (localFileInput.value) localFileInput.value.value = '';
 }
 
 async function onExportSelected(result: { paths: string[] }) {
-  if (!opfsRoot || result.paths.length === 0) return;
+  if (!opfsRoot || result.paths.length === 0 || !pendingLocalFile) return;
 
   const path = result.paths[0];
-  const ext = path.split('.').pop()?.toLowerCase() || '';
 
   try {
     saveStatus.value = 'saving';
-
-    // Request export from Graphite via postMessage
-    const iframe = iframeEl.value;
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.postMessage({
-        type: 'graphite-export-request',
-        format: ext,
-        path,
-      }, '*');
-    }
-
-    // Since cross-origin postMessage export may not be supported by Graphite,
-    // provide instructions
-    console.info(`Export requested. If the editor does not respond, use Graphite's built-in File > Export, then import the result.`);
-
-    // For now, mark as saved (the user can use Graphite's built-in export)
+    const arrayBuffer = await pendingLocalFile.arrayBuffer();
+    const fh = await getFileHandle(opfsRoot, path, true);
+    const writable = await fh.createWritable();
+    await writable.write(new Uint8Array(arrayBuffer));
+    await writable.close();
     saveStatus.value = 'saved';
+    pendingLocalFile = null;
     setTimeout(() => { saveStatus.value = 'idle'; }, 3000);
   } catch (e) {
-    console.warn('Failed to export:', e);
+    console.warn('Failed to save to OPFS:', e);
     saveStatus.value = 'idle';
   }
 }
@@ -254,20 +249,15 @@ function guessMime(name: string): string {
 onMounted(async () => {
   opfsRoot = await getStarkOpfsRoot();
 
-  // Listen for iframe load
   if (iframeEl.value) {
     iframeEl.value.addEventListener('load', () => {
       iframeLoaded.value = true;
     });
   }
 
-  // Listen for messages from Graphite iframe
-  window.addEventListener('message', onMessage);
-
   // Load initial file if provided via args
   const initialPaths = getInitialPaths();
   if (initialPaths.length > 0 && opfsRoot) {
-    // Wait for iframe to load, then import the file
     const waitForLoad = () => {
       if (iframeLoaded.value) {
         onImportSelected({ paths: [initialPaths[0]] });
@@ -277,32 +267,6 @@ onMounted(async () => {
     };
     waitForLoad();
   }
-});
-
-function onMessage(event: MessageEvent) {
-  // Handle responses from Graphite (if it sends export data back)
-  if (event.data?.type === 'graphite-export-response' && event.data.data) {
-    saveExportData(event.data.data, event.data.path);
-  }
-}
-
-async function saveExportData(data: ArrayBuffer, path: string) {
-  if (!opfsRoot || !path) return;
-  try {
-    saveStatus.value = 'saving';
-    const fh = await getFileHandle(opfsRoot, path, true);
-    const writable = await fh.createWritable();
-    await writable.write(new Uint8Array(data));
-    await writable.close();
-    saveStatus.value = 'saved';
-  } catch (e) {
-    console.warn('Failed to save export:', e);
-    saveStatus.value = 'idle';
-  }
-}
-
-onBeforeUnmount(() => {
-  window.removeEventListener('message', onMessage);
 });
 </script>
 
@@ -320,25 +284,31 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: 0 8px;
   background: #2d2d2d;
   border-bottom: 1px solid #3c3c3c;
   flex-shrink: 0;
+  height: 30px;
 }
 
 .top-left, .top-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
 }
 
 .app-title {
   font-weight: 600;
   font-size: 13px;
-  margin-right: 8px;
+  margin-right: 6px;
 }
 
-.bar-btn {
+/* Dropdown menu */
+.menu-dropdown {
+  position: relative;
+}
+
+.menu-trigger {
   background: none;
   border: 1px solid transparent;
   color: #ccc;
@@ -347,7 +317,34 @@ onBeforeUnmount(() => {
   cursor: pointer;
   border-radius: 3px;
 }
-.bar-btn:hover { background: #3c3c3c; }
+.menu-trigger:hover { background: #3c3c3c; }
+
+.menu-items {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #2d2d2d;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  padding: 4px 0;
+  z-index: 200;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #ccc;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.menu-item:hover { background: #094771; color: #fff; }
 
 .status-text {
   font-size: 11px;

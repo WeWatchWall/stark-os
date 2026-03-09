@@ -1,11 +1,16 @@
 <template>
-  <div class="gallery">
+  <div class="gallery" @click="closeMenus">
     <!-- Top bar -->
     <div class="top-bar">
       <div class="top-left">
         <span class="app-title">🖼️ Gallery</span>
-        <button class="bar-btn" @click="openFilePicker">Open Files</button>
-        <button class="bar-btn" @click="openFolderPicker">Open Folder</button>
+        <div class="menu-dropdown">
+          <button class="menu-trigger" @click.stop="showFileMenu = !showFileMenu">File</button>
+          <div v-if="showFileMenu" class="menu-items">
+            <button class="menu-item" @click="openFilePicker(); showFileMenu = false">Open Files…</button>
+            <button class="menu-item" @click="openFolderPicker(); showFileMenu = false">Open Folder…</button>
+          </div>
+        </div>
       </div>
       <div class="top-right">
         <button v-if="viewMode === 'viewer'" class="bar-btn" @click="viewMode = 'grid'">← Back to Grid</button>
@@ -128,9 +133,14 @@ const zoom = ref(1);
 const rotation = ref(0);
 const showFilePicker = ref(false);
 const showFolderPicker = ref(false);
+const showFileMenu = ref(false);
 const videoEl = ref<HTMLVideoElement | null>(null);
 
 let opfsRoot: FileSystemDirectoryHandle | null = null;
+
+function closeMenus() {
+  showFileMenu.value = false;
+}
 
 const currentItem = computed(() => mediaItems.value[currentIndex.value] || null);
 
@@ -349,23 +359,67 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: 0 8px;
   background: #2d2d2d;
   border-bottom: 1px solid #3c3c3c;
   flex-shrink: 0;
+  height: 30px;
 }
 
 .top-left, .top-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .app-title {
   font-weight: 600;
   font-size: 13px;
-  margin-right: 8px;
+  margin-right: 4px;
 }
+
+/* Dropdown menu */
+.menu-dropdown {
+  position: relative;
+}
+
+.menu-trigger {
+  background: none;
+  border: 1px solid transparent;
+  color: #ccc;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.menu-trigger:hover { background: #3c3c3c; }
+
+.menu-items {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #2d2d2d;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  padding: 4px 0;
+  z-index: 200;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #ccc;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.menu-item:hover { background: #094771; color: #fff; }
 
 .bar-btn {
   background: none;

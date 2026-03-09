@@ -1,18 +1,45 @@
 <template>
-  <div class="notepad">
+  <div class="notepad" @click="closeMenus">
     <!-- Menu Bar -->
     <div class="menu-bar">
       <div class="menu-left">
         <span class="app-title">📝 Notepad</span>
-        <button class="menu-btn" @click="openFilePicker">Open</button>
-        <button class="menu-btn" @click="saveFile">Save</button>
-        <button class="menu-btn" @click="saveAsFile">Save As</button>
-        <button class="menu-btn" @click="newFile">New</button>
+        <!-- File menu -->
+        <div class="menu-dropdown">
+          <button class="menu-trigger" @click.stop="toggleMenu('file')">File</button>
+          <div v-if="openMenu === 'file'" class="menu-items">
+            <button class="menu-item" @click="newFile(); closeMenus()">
+              <span>New</span><span class="shortcut">Ctrl+N</span>
+            </button>
+            <button class="menu-item" @click="openFilePicker(); closeMenus()">
+              <span>Open…</span><span class="shortcut">Ctrl+O</span>
+            </button>
+            <button class="menu-item" @click="saveFile(); closeMenus()">
+              <span>Save</span><span class="shortcut">Ctrl+S</span>
+            </button>
+            <button class="menu-item" @click="saveAsFile(); closeMenus()">
+              <span>Save As…</span>
+            </button>
+          </div>
+        </div>
+        <!-- View menu -->
+        <div class="menu-dropdown">
+          <button class="menu-trigger" @click.stop="toggleMenu('view')">View</button>
+          <div v-if="openMenu === 'view'" class="menu-items">
+            <button class="menu-item" @click="wordWrap = !wordWrap; closeMenus()">
+              <span>{{ wordWrap ? '✓' : '\u2003' }} Word Wrap</span>
+            </button>
+            <button class="menu-item" @click="showLineNumbers = !showLineNumbers; closeMenus()">
+              <span>{{ showLineNumbers ? '✓' : '\u2003' }} Line Numbers</span>
+            </button>
+            <div class="menu-sep"></div>
+            <button class="menu-item" @click="toggleFind(); closeMenus()">
+              <span>Find &amp; Replace</span><span class="shortcut">Ctrl+H</span>
+            </button>
+          </div>
+        </div>
       </div>
       <div class="menu-right">
-        <button class="menu-btn icon-btn" :class="{ active: wordWrap }" title="Word Wrap" @click="wordWrap = !wordWrap">↩</button>
-        <button class="menu-btn icon-btn" :class="{ active: showLineNumbers }" title="Line Numbers" @click="showLineNumbers = !showLineNumbers">#</button>
-        <button class="menu-btn icon-btn" :class="{ active: showFindBar }" title="Find & Replace (Ctrl+H)" @click="toggleFind">🔍</button>
         <span class="status-text" :class="saveStatus">{{ saveStatusText }}</span>
       </div>
     </div>
@@ -112,6 +139,7 @@ const cursorCol = ref(1);
 
 const showOpenPicker = ref(false);
 const showSavePicker = ref(false);
+const openMenu = ref<string | null>(null);
 
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const lineNumbersEl = ref<HTMLElement | null>(null);
@@ -164,6 +192,16 @@ const saveDefaultName = computed(() => {
   }
   return 'untitled.txt';
 });
+
+/* ── Menu helpers ── */
+
+function toggleMenu(name: string) {
+  openMenu.value = openMenu.value === name ? null : name;
+}
+
+function closeMenus() {
+  openMenu.value = null;
+}
 
 /* ── Find/Replace ── */
 
@@ -444,27 +482,32 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: 0 8px;
   background: #2d2d2d;
   border-bottom: 1px solid #3c3c3c;
   flex-shrink: 0;
-  gap: 8px;
+  height: 30px;
 }
 
 .menu-left, .menu-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .app-title {
   font-weight: 600;
   font-size: 13px;
-  margin-right: 8px;
+  margin-right: 6px;
   white-space: nowrap;
 }
 
-.menu-btn {
+/* Dropdown menus */
+.menu-dropdown {
+  position: relative;
+}
+
+.menu-trigger {
   background: none;
   border: 1px solid transparent;
   color: #ccc;
@@ -472,16 +515,50 @@ onBeforeUnmount(() => {
   font-size: 12px;
   cursor: pointer;
   border-radius: 3px;
-  white-space: nowrap;
 }
-.menu-btn:hover { background: #3c3c3c; }
-.menu-btn.active { background: #094771; border-color: #007acc; }
+.menu-trigger:hover { background: #3c3c3c; }
 
-.icon-btn {
-  width: 28px;
-  padding: 3px 0;
-  text-align: center;
+.menu-items {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #2d2d2d;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  padding: 4px 0;
+  z-index: 200;
+  min-width: 200px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
 }
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #ccc;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  gap: 24px;
+}
+.menu-item:hover { background: #094771; color: #fff; }
+
+.menu-sep {
+  height: 1px;
+  background: #3c3c3c;
+  margin: 4px 0;
+}
+
+.shortcut {
+  font-size: 11px;
+  color: #888;
+}
+.menu-item:hover .shortcut { color: #bbb; }
 
 .status-text {
   font-size: 11px;

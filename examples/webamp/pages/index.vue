@@ -1,44 +1,26 @@
 <template>
-  <div class="webamp-app">
-    <!-- Top bar -->
-    <div class="top-bar">
-      <div class="top-left">
-        <span class="app-title">🎵 Webamp</span>
-        <button class="bar-btn" @click="openFilePicker">Open Files</button>
-        <button class="bar-btn" @click="openFolderPicker">Open Folder</button>
-      </div>
-      <div class="top-right">
-        <span class="track-info" v-if="currentTrack">{{ currentTrack.name }}</span>
-      </div>
-    </div>
-
-    <!-- Webamp container -->
-    <div class="webamp-container" ref="webampContainer">
+  <div class="webamp-app" @click="closeMenus">
+    <!-- Webamp player area (fills the screen) -->
+    <div class="webamp-area" ref="webampContainer">
       <div id="webamp-target"></div>
-      <div v-if="!webampReady" class="loading-state">
-        <div class="loading-icon">🎵</div>
-        <p>Loading Webamp...</p>
-        <p class="loading-hint">Open audio files to start playing music</p>
-      </div>
-    </div>
 
-    <!-- Playlist panel -->
-    <div class="playlist-panel" v-if="playlist.length > 0">
-      <div class="playlist-header">
-        <span>Playlist ({{ playlist.length }} tracks)</span>
-        <button class="bar-btn" @click="clearPlaylist">Clear</button>
-      </div>
-      <div class="playlist-list">
-        <div
-          v-for="(track, idx) in playlist"
-          :key="idx"
-          class="playlist-item"
-          :class="{ active: currentTrackIndex === idx }"
-          @dblclick="playTrack(idx)"
-        >
-          <span class="track-num">{{ idx + 1 }}.</span>
-          <span class="track-name">{{ track.name }}</span>
+      <!-- Loading / empty state with integrated file open buttons -->
+      <div v-if="!webampReady" class="splash">
+        <div class="splash-icon">🎵</div>
+        <p class="splash-title">Webamp</p>
+        <p class="splash-hint">Drop audio files here or use the buttons below</p>
+        <div class="splash-actions">
+          <button class="splash-btn" @click.stop="openFilePicker">Open Files</button>
+          <button class="splash-btn" @click.stop="openFolderPicker">Open Folder</button>
         </div>
+      </div>
+
+      <!-- Floating add-files button (visible when player is active) -->
+      <button v-if="webampReady" class="fab" @click.stop="showFab = !showFab" title="Add music">＋</button>
+      <div v-if="webampReady && showFab" class="fab-menu" @click.stop>
+        <button class="fab-item" @click="openFilePicker(); showFab = false">Open Files</button>
+        <button class="fab-item" @click="openFolderPicker(); showFab = false">Open Folder</button>
+        <button class="fab-item" @click="clearPlaylist(); showFab = false">Clear Playlist</button>
       </div>
     </div>
 
@@ -85,13 +67,14 @@ const playlist = ref<Track[]>([]);
 const currentTrackIndex = ref(-1);
 const showFilePicker = ref(false);
 const showFolderPicker = ref(false);
+const showFab = ref(false);
 
 let webampInstance: any = null;
 let opfsRoot: FileSystemDirectoryHandle | null = null;
 
-const currentTrack = computed(() =>
-  currentTrackIndex.value >= 0 ? playlist.value[currentTrackIndex.value] : null
-);
+function closeMenus() {
+  showFab.value = false;
+}
 
 function getMimeType(name: string): string {
   const lower = name.toLowerCase();
@@ -177,11 +160,6 @@ async function addTracksToWebamp(tracks: Track[]) {
     // If appendTracks is not available, reinitialize
     await initWebamp([...playlist.value]);
   }
-}
-
-function playTrack(idx: number) {
-  currentTrackIndex.value = idx;
-  // Webamp manages its own playlist internally
 }
 
 function clearPlaylist() {
@@ -293,128 +271,106 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .webamp-app {
-  display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100vh;
   background: #1a1a2e;
   color: #d4d4d4;
-}
-
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  background: #2d2d2d;
-  border-bottom: 1px solid #3c3c3c;
-  flex-shrink: 0;
-}
-
-.top-left, .top-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.app-title {
-  font-weight: 600;
-  font-size: 13px;
-  margin-right: 8px;
-}
-
-.bar-btn {
-  background: none;
-  border: 1px solid transparent;
-  color: #ccc;
-  padding: 3px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  border-radius: 3px;
-}
-.bar-btn:hover { background: #3c3c3c; }
-
-.track-info {
-  font-size: 12px;
-  color: #aaa;
-  max-width: 300px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  position: relative;
 }
 
-/* Webamp container */
-.webamp-container {
-  flex: 1;
+/* Player area fills everything */
+.webamp-area {
+  width: 100%;
+  height: 100%;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: auto;
-  min-height: 300px;
 }
 
-.webamp-container :deep(#webamp) {
+.webamp-area :deep(#webamp) {
   position: relative !important;
 }
 
-.loading-state {
+/* Splash / loading screen */
+.splash {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  color: #666;
+  gap: 10px;
+  color: #888;
+  user-select: none;
 }
-.loading-icon { font-size: 48px; }
-.loading-hint { font-size: 12px; color: #555; }
+.splash-icon { font-size: 64px; }
+.splash-title { font-size: 22px; font-weight: 600; color: #bbb; }
+.splash-hint { font-size: 12px; color: #666; }
 
-/* Playlist panel */
-.playlist-panel {
-  max-height: 200px;
+.splash-actions {
   display: flex;
-  flex-direction: column;
-  border-top: 1px solid #3c3c3c;
-  background: #252526;
+  gap: 10px;
+  margin-top: 8px;
 }
 
-.playlist-header {
+.splash-btn {
+  background: #2d2d3d;
+  border: 1px solid #444;
+  color: #ccc;
+  padding: 8px 20px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.splash-btn:hover { background: #3a3a4e; border-color: #007acc; }
+
+/* Floating action button */
+.fab {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #007acc;
+  color: #fff;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  border-bottom: 1px solid #333;
-  flex-shrink: 0;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  z-index: 100;
+  transition: background 0.15s;
+}
+.fab:hover { background: #0098ff; }
+
+.fab-menu {
+  position: absolute;
+  bottom: 62px;
+  right: 16px;
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 4px 0;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  min-width: 140px;
 }
 
-.playlist-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.playlist-list::-webkit-scrollbar { width: 6px; }
-.playlist-list::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
-
-.playlist-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+.fab-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #ccc;
+  padding: 6px 14px;
   font-size: 12px;
   cursor: pointer;
-}
-.playlist-item:hover { background: #2a2d2e; }
-.playlist-item.active { background: #094771; }
-
-.track-num {
-  color: #666;
-  min-width: 20px;
-}
-
-.track-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: left;
   white-space: nowrap;
 }
+.fab-item:hover { background: #094771; color: #fff; }
 </style>

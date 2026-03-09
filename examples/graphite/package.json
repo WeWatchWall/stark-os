@@ -1,7 +1,7 @@
 {
   "name": "graphite-example",
   "version": "0.0.1",
-  "description": "Graphics editor inspired by Graphite with OPFS persistence",
+  "description": "Graphics editor powered by Graphite with OPFS bridge",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,11 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "vue": "^3.5.0"
+    "vue": "^3.5.0",
+    "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
+    "@stark-o/shared": "link:../../packages/shared",
+    "buffer": "^6.0.3",
+    "isomorphic-git": "^1.37.2"
   },
   "devDependencies": {
     "nuxt": "^3.15.0",

@@ -20,7 +20,7 @@ export default defineNuxtConfig({
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: 'Graphics editor with OPFS persistence' }
+        { name: 'description', content: 'Graphics editor powered by Graphite with OPFS bridge' }
       ]
     },
     baseURL: '/'
@@ -48,6 +48,17 @@ export default defineNuxtConfig({
           manualChunks: undefined,
         },
       },
+    },
+    resolve: {
+      alias: {
+        // isomorphic-git references the Node.js `buffer` built-in, which Vite
+        // externalizes by default.  Point it at the npm `buffer` polyfill so
+        // `Buffer` is available in the browser.
+        buffer: 'buffer/',
+      },
+    },
+    optimizeDeps: {
+      include: ['buffer'],
     },
   },
 

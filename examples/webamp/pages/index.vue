@@ -212,6 +212,9 @@ async function onFolderSelected(result: { paths: string[] }) {
 /* ── Dynamic scaling ── */
 
 let resizeObserver: ResizeObserver | null = null;
+let scaleTimer: ReturnType<typeof setTimeout> | null = null;
+let cachedNaturalW = 0;
+let cachedNaturalH = 0;
 
 function updateWebampScale() {
   const container = webampContainer.value;
@@ -219,19 +222,21 @@ function updateWebampScale() {
   const webampEl = container.querySelector('#webamp') as HTMLElement | null;
   if (!webampEl) return;
 
-  // Measure Webamp's natural size (reset scale first)
-  webampEl.style.transform = 'none';
-  const rect = webampEl.getBoundingClientRect();
-  const naturalW = rect.width;
-  const naturalH = rect.height;
-  if (naturalW === 0 || naturalH === 0) return;
+  // Measure natural size once and cache it
+  if (cachedNaturalW === 0 || cachedNaturalH === 0) {
+    webampEl.style.transform = 'none';
+    const rect = webampEl.getBoundingClientRect();
+    cachedNaturalW = rect.width;
+    cachedNaturalH = rect.height;
+    if (cachedNaturalW === 0 || cachedNaturalH === 0) return;
+  }
 
   const containerW = container.clientWidth;
   const containerH = container.clientHeight;
 
   // Scale to fill container with some padding, cap at 3x
-  const scaleX = (containerW - 32) / naturalW;
-  const scaleY = (containerH - 32) / naturalH;
+  const scaleX = (containerW - 32) / cachedNaturalW;
+  const scaleY = (containerH - 32) / cachedNaturalH;
   const scale = Math.min(scaleX, scaleY, 3);
 
   if (scale > 1) {
@@ -239,6 +244,11 @@ function updateWebampScale() {
   } else {
     webampEl.style.transform = 'none';
   }
+}
+
+function debouncedScale() {
+  if (scaleTimer) clearTimeout(scaleTimer);
+  scaleTimer = setTimeout(updateWebampScale, 100);
 }
 
 /* ── Initial args ── */
@@ -262,7 +272,7 @@ onMounted(async () => {
   // Watch for container resizes to rescale Webamp
   if (webampContainer.value) {
     resizeObserver = new ResizeObserver(() => {
-      if (webampReady.value) updateWebampScale();
+      if (webampReady.value) debouncedScale();
     });
     resizeObserver.observe(webampContainer.value);
   }
@@ -304,6 +314,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (scaleTimer) clearTimeout(scaleTimer);
   if (resizeObserver) {
     resizeObserver.disconnect();
     resizeObserver = null;

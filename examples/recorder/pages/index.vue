@@ -155,6 +155,14 @@ function formatRecSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/* ── Timestamp helper ── */
+
+function formatTimestamp(): string {
+  const now = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
 /* ── Audio input enumeration ── */
 
 async function enumerateInputs() {
@@ -262,8 +270,7 @@ async function startRecording() {
       const mType = format.value === 'webm' ? 'audio/webm' : 'audio/wav';
       const blob = new Blob(chunks, { type: mType });
       const objectUrl = URL.createObjectURL(blob);
-      const now = new Date();
-      const timestamp = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+      const timestamp = formatTimestamp();
       recordings.value.push({
         name: `recording_${timestamp}${ext}`,
         blob,

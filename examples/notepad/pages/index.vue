@@ -593,7 +593,7 @@ onBeforeUnmount(() => {
 
 .editor-textarea.word-wrap {
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .editor-textarea::-webkit-scrollbar { width: 8px; height: 8px; }

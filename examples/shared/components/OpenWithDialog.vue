@@ -60,6 +60,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { commonExtension, browserCompatiblePacks } from '../utils/lib/intents';
 import type { IntentPackInfo } from '../utils/lib/intents';
 
 /* ── Props ── */
@@ -99,25 +100,13 @@ const selectedPack = ref('');
 
 /**
  * If all files share the same extension, return it; otherwise empty string.
- * Determines whether the "set as default" checkbox is shown.
+ * Determines whether the "Always" button is shown.
  */
-const singleExtension = computed(() => {
-  const exts = new Set(
-    props.filenames
-      .map((f) => {
-        const dot = f.lastIndexOf('.');
-        return dot >= 0 ? f.slice(dot + 1).toLowerCase() : '';
-      })
-      .filter(Boolean),
-  );
-  return exts.size === 1 ? [...exts][0] : '';
-});
+const singleExtension = computed(() => commonExtension(props.filenames));
 
 /** Packs filtered to browser/universal only. */
 const filteredPacks = computed(() =>
-  props.packs
-    .filter((p) => p.runtimeTag === 'browser' || p.runtimeTag === 'universal')
-    .sort((a, b) => a.name.localeCompare(b.name)),
+  browserCompatiblePacks(props.packs).sort((a, b) => a.name.localeCompare(b.name)),
 );
 
 /* ── Watchers ── */

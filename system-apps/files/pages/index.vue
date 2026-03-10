@@ -417,7 +417,10 @@ function onTouchStart(item: FileItem, event: TouchEvent): void {
   }, LONG_PRESS_MS);
 
   // Detect movement to cancel long-press
-  const onMove = () => { touchMoved = true; cancelLongPress(); document.removeEventListener('touchmove', onMove); };
+  const onMove = () => {
+    touchMoved = true;
+    cancelLongPress();
+  };
   document.addEventListener('touchmove', onMove, { once: true });
 }
 

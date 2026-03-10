@@ -82,3 +82,16 @@ export {
   type GitFileDiff,
   type GitStatusRow,
 } from './lib/git';
+
+export {
+  loadIntents,
+  saveIntents,
+  getExtension,
+  resolveIntent,
+  commonExtension,
+  setDefaultIntent,
+  browserCompatiblePacks,
+  type IntentMapping,
+  type IntentStore,
+  type IntentPackInfo,
+} from './lib/intents';

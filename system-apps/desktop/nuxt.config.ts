@@ -3,6 +3,9 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: false },
 
+  // Extend the shared Nuxt layer (auto-imports components and utils)
+  extends: ['../../examples/shared'],
+
   // Generate static files for production
   ssr: false,
 

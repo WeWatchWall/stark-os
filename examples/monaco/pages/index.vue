@@ -1103,7 +1103,8 @@
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue';
 // Types need explicit imports; components and util functions are auto-imported by the shared Nuxt layer
 import type { PickerResult, ExtensionFilter } from '../../shared/components/FilesPicker.vue';
-import type { ReadonlyFS, GitLogEntry, GitDiffFile, GitFileDiff, GitAuth, GitAuthor } from '../../shared/utils';
+import type { ReadonlyFS } from '../../shared/utils';
+import type { GitLogEntry, GitDiffFile, GitFileDiff, GitAuth, GitAuthor } from '../../shared/utils/git';
 import {
   gitInit,
   gitClone,
@@ -1127,7 +1128,7 @@ import {
   gitDeleteBranch,
   gitMerge,
   gitSetConfig,
-} from '../../shared/utils';
+} from '../../shared/utils/git';
 import {
   extensionCatalog,
   loadExtensionState,

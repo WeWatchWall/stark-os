@@ -8,6 +8,8 @@
  * so it persists across sessions and is shared by all system apps.
  */
 
+import { createStarkAPI } from '@stark-o/browser-runtime';
+
 import {
   getStarkOpfsRoot,
   getDirectoryHandle,
@@ -35,6 +37,16 @@ export interface IntentPackInfo {
   name: string;
   runtimeTag: 'node' | 'browser' | 'universal';
   description?: string;
+}
+
+/**
+ * Result returned by {@link openFilesWithIntent} when the intent cannot be
+ * resolved automatically and the caller should show the "Open With" dialog.
+ */
+export interface OpenWithNeeded {
+  resolved: false;
+  filenames: string[];
+  filePaths: string[];
 }
 
 /* ── Constants ── */
@@ -208,4 +220,103 @@ export function browserCompatiblePacks(packs: IntentPackInfo[]): IntentPackInfo[
   return packs.filter(
     (p) => p.runtimeTag === 'browser' || p.runtimeTag === 'universal',
   );
+}
+
+/* ── Runtime helpers (shared by files & desktop system-apps) ── */
+
+/**
+ * Read the current browser node ID from the pack execution context.
+ * The executor sets `__STARK_ENV__` on the parent window for main-thread packs.
+ */
+export function getBrowserNodeId(): string | null {
+  try {
+    const env = (window.parent as Record<string, unknown>).__STARK_ENV__ as
+      Record<string, string> | undefined;
+    return env?.STARK_NODE_ID ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Launch a pack (program) on the current browser node with file paths as args.
+ */
+export async function launchPack(packName: string, filePaths: string[]): Promise<void> {
+  const api = createStarkAPI();
+  const browserNodeId = getBrowserNodeId();
+  const opts: { args: string[]; nodeId?: string } = { args: filePaths };
+  if (browserNodeId) opts.nodeId = browserNodeId;
+  await api.pod.create(packName, opts);
+}
+
+/**
+ * Load the list of registered packs from the orchestrator API.
+ * Returns only the fields needed by the intent / "Open With" system.
+ */
+export async function loadPackList(): Promise<IntentPackInfo[]> {
+  try {
+    const api = createStarkAPI();
+    const result = (await api.pack.list()) as {
+      packs: Array<{ name: string; runtimeTag: 'node' | 'browser' | 'universal'; description?: string }>;
+    };
+    return (result.packs ?? []).map((p) => ({
+      name: p.name,
+      runtimeTag: p.runtimeTag,
+      description: p.description,
+    }));
+  } catch (err) {
+    console.warn('intents: failed to load pack list:', err);
+    return [];
+  }
+}
+
+/**
+ * Attempt to open files using the intent system.
+ *
+ * - If all files share a common extension that has a default mapping, the
+ *   associated pack is launched immediately and `{ resolved: true }` is returned.
+ * - Otherwise `{ resolved: false, filenames, filePaths }` is returned so the
+ *   caller can show the "Open With" dialog.
+ */
+export async function openFilesWithIntent(
+  store: IntentStore,
+  filenames: string[],
+  filePaths: string[],
+): Promise<{ resolved: true } | OpenWithNeeded> {
+  if (filenames.length === 0) return { resolved: true };
+
+  const ext = commonExtension(filenames);
+  const packName = ext ? resolveIntent(store, ext) : undefined;
+
+  if (packName) {
+    await launchPack(packName, filePaths);
+    return { resolved: true };
+  }
+
+  return { resolved: false, filenames, filePaths };
+}
+
+/**
+ * Handle the result of the "Open With" dialog.
+ * If `setDefault` is true, updates the intent store for the shared extension.
+ * Returns the (possibly updated) intent store.
+ */
+export async function handleOpenWithSelection(
+  store: IntentStore,
+  packName: string,
+  filenames: string[],
+  filePaths: string[],
+  setDefault: boolean,
+): Promise<IntentStore> {
+  let updated = store;
+
+  if (setDefault) {
+    const ext = commonExtension(filenames);
+    if (ext) {
+      updated = await setDefaultIntent(store, ext, packName);
+    }
+  }
+
+  await launchPack(packName, filePaths);
+  return updated;
 }

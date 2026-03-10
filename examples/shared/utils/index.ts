@@ -91,7 +91,13 @@ export {
   commonExtension,
   setDefaultIntent,
   browserCompatiblePacks,
+  getBrowserNodeId,
+  launchPack,
+  loadPackList,
+  openFilesWithIntent,
+  handleOpenWithSelection,
   type IntentMapping,
   type IntentStore,
   type IntentPackInfo,
+  type OpenWithNeeded,
 } from './lib/intents';

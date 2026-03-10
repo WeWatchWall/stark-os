@@ -1,5 +1,11 @@
 <template>
-  <div class="files-app">
+  <div
+    class="files-app"
+    tabindex="0"
+    @keydown="onKeyDown"
+    @click="onBackgroundClick"
+    @contextmenu.prevent
+  >
     <!-- Toolbar -->
     <div class="toolbar">
       <div class="nav-buttons">
@@ -66,15 +72,19 @@
     </div>
 
     <!-- Content area -->
-    <div class="content">
+    <div class="content" @contextmenu.prevent="onContentContext($event)">
       <!-- Icons view -->
       <div v-if="viewMode === 'icons'" class="icons-grid">
         <div
           v-for="item in sortedItems"
           :key="item.name"
           class="icon-cell"
+          :class="{ selected: isSelected(item) }"
+          @click.stop="onItemClick(item, $event)"
           @dblclick="onItemActivate(item)"
-          @touchend="onTouchActivate(item, $event)"
+          @contextmenu.prevent.stop="onItemContext(item, $event)"
+          @touchstart="onTouchStart(item, $event)"
+          @touchend="onTouchEnd(item, $event)"
         >
           <div class="icon-wrapper" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
@@ -92,8 +102,12 @@
           v-for="item in sortedItems"
           :key="item.name"
           class="list-row"
+          :class="{ selected: isSelected(item) }"
+          @click.stop="onItemClick(item, $event)"
           @dblclick="onItemActivate(item)"
-          @touchend="onTouchActivate(item, $event)"
+          @contextmenu.prevent.stop="onItemContext(item, $event)"
+          @touchstart="onTouchStart(item, $event)"
+          @touchend="onTouchEnd(item, $event)"
         >
           <div class="list-icon" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
@@ -116,8 +130,12 @@
           v-for="item in sortedItems"
           :key="item.name"
           class="details-row"
+          :class="{ selected: isSelected(item) }"
+          @click.stop="onItemClick(item, $event)"
           @dblclick="onItemActivate(item)"
-          @touchend="onTouchActivate(item, $event)"
+          @contextmenu.prevent.stop="onItemContext(item, $event)"
+          @touchstart="onTouchStart(item, $event)"
+          @touchend="onTouchEnd(item, $event)"
         >
           <span class="details-col col-name">
             <span class="details-icon" :style="{ color: getColor(item) }">
@@ -144,17 +162,38 @@
         {{ errorMsg }}
       </div>
     </div>
+
+    <!-- Context menu -->
+    <div
+      v-if="ctxMenu.show"
+      class="ctx-menu"
+      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+    >
+      <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
+    </div>
+
+    <!-- Open With dialog (from shared layer, auto-registered by Nuxt) -->
+    <OpenWithDialog
+      :visible="owDialog.show"
+      :filenames="owDialog.filenames"
+      :packs="owDialog.packs"
+      :loading="owDialog.loading"
+      @select="onOpenWithSelect"
+      @cancel="owDialog.show = false"
+      @update:visible="owDialog.show = $event"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
-import type { FileItem } from '../../../examples/shared/utils';
+import type { FileItem, IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';
 const REFRESH_INTERVAL_MS = 5000;
+const LONG_PRESS_MS = 500;
 
 /* ── Icon helpers (using shared utilities) ── */
 
@@ -166,7 +205,7 @@ function getColor(item: FileItem): string {
   return getIconColor(item.name, item.isDirectory);
 }
 
-/* ── OPFS root ── */
+/* ── State ── */
 
 const currentPath = ref(DEFAULT_PATH);
 const addressBarValue = ref(DEFAULT_PATH);
@@ -179,8 +218,28 @@ const viewMode = ref<'icons' | 'list' | 'details'>('icons');
 const history = ref<string[]>([DEFAULT_PATH]);
 const historyIndex = ref(0);
 
-// Touch support: detect tap (not long-press/scroll)
+// Selection model
+const selectedNames = ref<Set<string>>(new Set());
+
+// Intent store (loaded once)
+let intentStore: IntentStore = { defaults: {} };
+
+// Context menu
+const ctxMenu = reactive({ show: false, x: 0, y: 0 });
+
+// Open With dialog
+const owDialog = reactive({
+  show: false,
+  filenames: [] as string[],
+  filePaths: [] as string[],
+  packs: [] as IntentPackInfo[],
+  loading: false,
+});
+
+// Touch support
 let lastTapTime = 0;
+let touchLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+let touchMoved = false;
 
 const canGoBack = computed(() => historyIndex.value > 0);
 const canGoForward = computed(() => historyIndex.value < history.value.length - 1);
@@ -192,6 +251,41 @@ const sortedItems = computed(() => {
     return a.name.localeCompare(b.name);
   });
 });
+
+/* ── Selection helpers ── */
+
+function isSelected(item: FileItem): boolean {
+  return selectedNames.value.has(item.name);
+}
+
+function clearSelection(): void {
+  selectedNames.value = new Set();
+}
+
+function onItemClick(item: FileItem, event: MouseEvent): void {
+  ctxMenu.show = false;
+  if (event.ctrlKey || event.metaKey) {
+    // Toggle selection
+    const next = new Set(selectedNames.value);
+    if (next.has(item.name)) next.delete(item.name);
+    else next.add(item.name);
+    selectedNames.value = next;
+  } else {
+    selectedNames.value = new Set([item.name]);
+  }
+}
+
+function onBackgroundClick(): void {
+  ctxMenu.show = false;
+  clearSelection();
+}
+
+/** Get the list of selected non-directory file items. */
+function selectedFileItems(): FileItem[] {
+  return items.value.filter(
+    (i) => selectedNames.value.has(i.name) && !i.isDirectory,
+  );
+}
 
 /* ── OPFS root ── */
 
@@ -223,6 +317,7 @@ async function readDir(path: string): Promise<void> {
 /* ── Navigation ── */
 
 function navigateTo(path: string, addToHistory = true): void {
+  clearSelection();
   const normalized = normalizePath(path);
   if (addToHistory) {
     // Trim forward history when navigating to a new path
@@ -257,25 +352,159 @@ function navigateToAddressBar(): void {
   if (val) navigateTo(val);
 }
 
-/* ── Item activation (dblclick / tap) ── */
+/* ── Intent-based file opening ── */
+
+async function openFiles(fileItems: FileItem[]): Promise<void> {
+  if (fileItems.length === 0) return;
+
+  const filePaths = fileItems.map((f) =>
+    normalizePath(currentPath.value + '/' + f.name),
+  );
+  const filenames = fileItems.map((f) => f.name);
+
+  const result = await openFilesWithIntent(intentStore, filenames, filePaths);
+  if (!result.resolved) {
+    showOpenWithDialog(result.filenames, result.filePaths);
+  }
+}
+
+/* ── Item activation (dblclick / Enter / tap) ── */
 
 function onItemActivate(item: FileItem): void {
   if (item.isDirectory) {
     navigateTo(currentPath.value + '/' + item.name);
+  } else {
+    // Open file(s) via intent system
+    const selected = selectedFileItems();
+    // If the activated item is in the selection, open all selected files
+    if (selected.length > 0 && selectedNames.value.has(item.name)) {
+      openFiles(selected);
+    } else {
+      openFiles([item]);
+    }
   }
 }
 
-function onTouchActivate(item: FileItem, event: TouchEvent): void {
-  // Detect single tap (quick touch, not a scroll/long-press)
+/* ── Keyboard ── */
+
+function onKeyDown(event: KeyboardEvent): void {
+  if (event.key === 'Enter') {
+    const selected = items.value.filter((i) => selectedNames.value.has(i.name));
+    if (selected.length === 1 && selected[0].isDirectory) {
+      navigateTo(currentPath.value + '/' + selected[0].name);
+    } else {
+      const files = selected.filter((i) => !i.isDirectory);
+      if (files.length > 0) openFiles(files);
+    }
+  }
+}
+
+/* ── Touch: single-tap opens (mobile), long-press → context menu ── */
+
+function onTouchStart(item: FileItem, event: TouchEvent): void {
+  touchMoved = false;
+  const touch = event.touches[0];
+  const tx = touch.clientX;
+  const ty = touch.clientY;
+
+  touchLongPressTimer = setTimeout(() => {
+    touchLongPressTimer = null;
+    // Long-press: select item and show context menu
+    if (!selectedNames.value.has(item.name)) {
+      selectedNames.value = new Set([item.name]);
+    }
+    showContextMenu(tx, ty);
+  }, LONG_PRESS_MS);
+
+  // Detect movement to cancel long-press
+  const onMove = () => { touchMoved = true; cancelLongPress(); document.removeEventListener('touchmove', onMove); };
+  document.addEventListener('touchmove', onMove, { once: true });
+}
+
+function onTouchEnd(item: FileItem, event: TouchEvent): void {
+  cancelLongPress();
+  if (touchMoved) return;
+
+  // Single-tap detection (double-tap on desktop, single-tap on mobile opens)
   const now = Date.now();
   const elapsed = now - lastTapTime;
   lastTapTime = now;
 
-  // If this is a second tap within 400ms, treat as double-tap
   if (elapsed < 400) {
+    // Double-tap: activate
+    event.preventDefault();
+    onItemActivate(item);
+  } else {
+    // Single tap: select the item
+    selectedNames.value = new Set([item.name]);
+    // On mobile a single tap also opens (after a brief moment)
     event.preventDefault();
     onItemActivate(item);
   }
+}
+
+function cancelLongPress(): void {
+  if (touchLongPressTimer) {
+    clearTimeout(touchLongPressTimer);
+    touchLongPressTimer = null;
+  }
+}
+
+/* ── Context menu (right-click / long-press) ── */
+
+function showContextMenu(x: number, y: number): void {
+  ctxMenu.x = x;
+  ctxMenu.y = y;
+  ctxMenu.show = true;
+}
+
+function onItemContext(item: FileItem, event: MouseEvent): void {
+  if (!selectedNames.value.has(item.name)) {
+    selectedNames.value = new Set([item.name]);
+  }
+  showContextMenu(event.clientX, event.clientY);
+}
+
+function onContentContext(event: MouseEvent): void {
+  // Right-click on background: only show menu if there is a selection
+  if (selectedNames.value.size > 0) {
+    showContextMenu(event.clientX, event.clientY);
+  }
+}
+
+/* ── Open With dialog ── */
+
+function showOpenWithDialog(filenames: string[], filePaths: string[]): void {
+  ctxMenu.show = false;
+  owDialog.filenames = filenames;
+  owDialog.filePaths = filePaths;
+  owDialog.loading = true;
+  owDialog.packs = [];
+  owDialog.show = true;
+
+  loadPackList().then((packs) => {
+    owDialog.packs = packs;
+    owDialog.loading = false;
+  });
+}
+
+function ctxOpenWith(): void {
+  ctxMenu.show = false;
+  const selected = items.value.filter((i) => selectedNames.value.has(i.name));
+  const files = selected.filter((i) => !i.isDirectory);
+  if (files.length === 0) return;
+  const filenames = files.map((f) => f.name);
+  const filePaths = files.map((f) =>
+    normalizePath(currentPath.value + '/' + f.name),
+  );
+  showOpenWithDialog(filenames, filePaths);
+}
+
+async function onOpenWithSelect(packName: string, setDefault: boolean): Promise<void> {
+  owDialog.show = false;
+  intentStore = await handleOpenWithSelection(
+    intentStore, packName, owDialog.filenames, owDialog.filePaths, setDefault,
+  );
 }
 
 /* ── Read initial path from context ── */
@@ -302,6 +531,8 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
   opfsRoot = await getStarkOpfsRoot();
+  intentStore = await loadIntents();
+
   const initialPath = getInitialPath();
   history.value = [initialPath];
   historyIndex.value = 0;
@@ -312,6 +543,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (refreshInterval) clearInterval(refreshInterval);
+  cancelLongPress();
 });
 </script>
 
@@ -661,5 +893,44 @@ onBeforeUnmount(() => {
   text-align: center;
   color: #f87171;
   font-size: 0.85rem;
+}
+
+/* ── Selection highlighting ── */
+
+.icon-cell.selected {
+  background: rgba(59, 130, 246, 0.18);
+  outline: 1px solid rgba(59, 130, 246, 0.35);
+  outline-offset: -1px;
+}
+.list-row.selected {
+  background: rgba(59, 130, 246, 0.18);
+}
+.details-row.selected {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+/* ── Context menu ── */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 99999;
+  min-width: 160px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+}
+
+.ctx-item {
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.ctx-item:hover {
+  background: rgba(59, 130, 246, 0.2);
 }
 </style>

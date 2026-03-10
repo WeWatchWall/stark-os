@@ -52,8 +52,6 @@ export default defineNuxtConfig({
       assetsInlineLimit: 100 * 1024,
 
       rollupOptions: {
-        // Externalize shared-layer deps this app never uses (git utilities)
-        external: (id: string) => /^(isomorphic-git|buffer|diff)(\/|$)/.test(id),
         output: {
           // Inline all dynamic imports into a single chunk
           inlineDynamicImports: true,

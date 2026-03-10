@@ -50,38 +50,10 @@ export {
   type ExecutionPlan,
 } from './terminal/shell';
 
-export {
-  buildGitFs,
-  gitInit,
-  gitClone,
-  gitAdd,
-  gitRemove,
-  gitCommit,
-  gitPush,
-  gitPull,
-  gitFetch,
-  gitCurrentBranch,
-  gitLog,
-  gitStatusMatrix,
-  gitIsRepo,
-  gitReadBlob,
-  gitDiffFiles,
-  gitDiffFileContent,
-  gitDiffWorkingFile,
-  gitListRemotes,
-  gitSetConfig,
-  gitListBranches,
-  gitCreateBranch,
-  gitCheckout,
-  gitDeleteBranch,
-  gitMerge,
-  type GitAuthor,
-  type GitAuth,
-  type GitLogEntry,
-  type GitDiffFile,
-  type GitFileDiff,
-  type GitStatusRow,
-} from './lib/git';
+// NOTE: git.ts is intentionally NOT re-exported from this barrel.
+// It has heavy dependencies (isomorphic-git, buffer, diff) with top-level
+// side-effects that prevent tree-shaking.  Apps that need git should import
+// directly from './lib/git' (or the convenience re-export in './git').
 
 export {
   loadIntents,

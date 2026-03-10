@@ -49,14 +49,6 @@ export default defineNuxtConfig({
         },
       },
     },
-    resolve: {
-      alias: {
-        buffer: 'buffer/',
-      },
-    },
-    optimizeDeps: {
-      include: ['buffer'],
-    },
   },
 
   css: [],

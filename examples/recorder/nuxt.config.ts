@@ -49,17 +49,6 @@ export default defineNuxtConfig({
         },
       },
     },
-    resolve: {
-      alias: {
-        // isomorphic-git references the Node.js `buffer` built-in, which Vite
-        // externalizes by default.  Point it at the npm `buffer` polyfill so
-        // `Buffer` is available in the browser.
-        buffer: 'buffer/',
-      },
-    },
-    optimizeDeps: {
-      include: ['buffer'],
-    },
   },
 
   css: [],

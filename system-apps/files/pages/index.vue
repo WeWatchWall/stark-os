@@ -89,7 +89,18 @@
           <div class="icon-wrapper" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
           </div>
-          <span class="icon-label" :title="item.name">{{ item.name }}</span>
+          <input
+            v-if="renaming.active && renaming.name === item.name"
+            ref="renameInputEl"
+            class="rename-input"
+            v-model="renaming.newName"
+            @keydown.enter.stop="confirmRename"
+            @keydown.escape.stop="cancelRename"
+            @blur="confirmRename"
+            @click.stop
+            @dblclick.stop
+          />
+          <span v-else class="icon-label" :title="item.name">{{ item.name }}</span>
         </div>
         <div v-if="!sortedItems.length && !loading" class="empty-message">
           This folder is empty
@@ -112,7 +123,18 @@
           <div class="list-icon" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
           </div>
-          <span class="list-name" :title="item.name">{{ item.name }}</span>
+          <input
+            v-if="renaming.active && renaming.name === item.name"
+            ref="renameInputEl"
+            class="rename-input rename-input-list"
+            v-model="renaming.newName"
+            @keydown.enter.stop="confirmRename"
+            @keydown.escape.stop="cancelRename"
+            @blur="confirmRename"
+            @click.stop
+            @dblclick.stop
+          />
+          <span v-else class="list-name" :title="item.name">{{ item.name }}</span>
         </div>
         <div v-if="!sortedItems.length && !loading" class="empty-message">
           This folder is empty
@@ -141,7 +163,18 @@
             <span class="details-icon" :style="{ color: getColor(item) }">
               <span class="icon-svg" v-html="getSvg(item)"></span>
             </span>
-            <span class="details-name" :title="item.name">{{ item.name }}</span>
+            <input
+              v-if="renaming.active && renaming.name === item.name"
+              ref="renameInputEl"
+              class="rename-input rename-input-list"
+              v-model="renaming.newName"
+              @keydown.enter.stop="confirmRename"
+              @keydown.escape.stop="cancelRename"
+              @blur="confirmRename"
+              @click.stop
+              @dblclick.stop
+            />
+            <span v-else class="details-name" :title="item.name">{{ item.name }}</span>
           </span>
           <span class="details-col col-type">{{ item.isDirectory ? 'Folder' : formatType(item.name) }}</span>
           <span class="details-col col-size">{{ item.isDirectory ? '—' : formatSize(item.size) }}</span>
@@ -166,11 +199,61 @@
     <!-- Context menu -->
     <div
       v-if="ctxMenu.show"
+      ref="ctxMenuEl"
       class="ctx-menu"
-      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+      :style="ctxMenuStyle"
+      @click.stop
     >
-      <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
+      <div v-if="hasFileSelection" class="ctx-item" @click="ctxOpenWith">Open With…</div>
+      <div class="ctx-item" @click="ctxDownload">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </div>
+      <div class="ctx-item" @click="ctxZip">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        Zip
+      </div>
+      <div v-if="selectedNames.size === 1" class="ctx-item" @click="ctxRename">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Rename
+      </div>
+      <div class="ctx-item ctx-item-danger" @click="ctxDelete">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+        Delete
+      </div>
     </div>
+
+    <!-- Floating Action Button -->
+    <div class="fab-container" @click.stop>
+      <transition name="fab-menu">
+        <div v-if="fabOpen" class="fab-menu">
+          <button class="fab-menu-item" @click="fabNewFile">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            <span>New File</span>
+          </button>
+          <button class="fab-menu-item" @click="fabNewFolder">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+            <span>New Folder</span>
+          </button>
+          <button class="fab-menu-item" @click="fabUpload">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Upload Files</span>
+          </button>
+        </div>
+      </transition>
+      <button class="fab-btn" :class="{ open: fabOpen }" @click="fabOpen = !fabOpen" title="Add…">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+
+    <!-- Hidden file input for uploads -->
+    <input
+      ref="fileInput"
+      type="file"
+      multiple
+      style="display: none"
+      @change="onFilesSelected"
+    />
 
     <!-- Open With dialog (from shared layer, auto-registered by Nuxt) -->
     <OpenWithDialog
@@ -186,9 +269,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { FileItem, IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
+// fileops is NOT barrel-exported (heavy JSZip dep) — import directly
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';
@@ -226,6 +311,21 @@ let intentStore: IntentStore = { defaults: {} };
 
 // Context menu
 const ctxMenu = reactive({ show: false, x: 0, y: 0 });
+const ctxMenuEl = ref<HTMLDivElement | null>(null);
+
+// Context menu position with auto-flip
+const ctxMenuStyle = computed(() => {
+  const style: Record<string, string> = {};
+  const menuW = ctxMenuEl.value?.offsetWidth ?? 180;
+  const menuH = ctxMenuEl.value?.offsetHeight ?? 200;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  style.left = (ctxMenu.x + menuW > vw ? Math.max(0, ctxMenu.x - menuW) : ctxMenu.x) + 'px';
+  style.top = (ctxMenu.y + menuH > vh ? Math.max(0, ctxMenu.y - menuH) : ctxMenu.y) + 'px';
+
+  return style;
+});
 
 // Open With dialog
 const owDialog = reactive({
@@ -240,6 +340,21 @@ const owDialog = reactive({
 let lastTapTime = 0;
 let touchLongPressTimer: ReturnType<typeof setTimeout> | null = null;
 let touchMoved = false;
+
+// FAB state
+const fabOpen = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
+
+// Rename state
+const renaming = reactive({ active: false, name: '', newName: '' });
+const renameInputEl = ref<HTMLInputElement | null>(null);
+
+// Click-away handler to close context menu
+function onDocumentClick(event: MouseEvent): void {
+  if (!ctxMenu.show) return;
+  if (ctxMenuEl.value && ctxMenuEl.value.contains(event.target as Node)) return;
+  ctxMenu.show = false;
+}
 
 const canGoBack = computed(() => historyIndex.value > 0);
 const canGoForward = computed(() => historyIndex.value < history.value.length - 1);
@@ -277,6 +392,7 @@ function onItemClick(item: FileItem, event: MouseEvent): void {
 
 function onBackgroundClick(): void {
   ctxMenu.show = false;
+  fabOpen.value = false;
   clearSelection();
 }
 
@@ -285,6 +401,16 @@ function selectedFileItems(): FileItem[] {
   return items.value.filter(
     (i) => selectedNames.value.has(i.name) && !i.isDirectory,
   );
+}
+
+/** Whether at least one non-directory file is selected. */
+const hasFileSelection = computed(() => selectedFileItems().length > 0);
+
+/** All selected item names (files + directories). */
+function selectedItemNames(): string[] {
+  return items.value
+    .filter((i) => selectedNames.value.has(i.name))
+    .map((i) => i.name);
 }
 
 /* ── OPFS root ── */
@@ -395,6 +521,17 @@ function onKeyDown(event: KeyboardEvent): void {
     } else {
       const files = selected.filter((i) => !i.isDirectory);
       if (files.length > 0) openFiles(files);
+    }
+  } else if (event.key === 'Delete' || event.key === 'Backspace') {
+    const names = selectedItemNames();
+    if (names.length > 0) {
+      doDelete(names);
+    }
+  } else if (event.key === 'F2') {
+    // Rename the single selected item
+    if (selectedNames.value.size === 1) {
+      const name = [...selectedNames.value][0];
+      ctxRename(name);
     }
   }
 }
@@ -510,6 +647,132 @@ async function onOpenWithSelect(packName: string, setDefault: boolean): Promise<
   );
 }
 
+/* ── Context menu: Zip ── */
+
+async function ctxZip(): Promise<void> {
+  ctxMenu.show = false;
+  const names = selectedItemNames();
+  if (names.length === 0 || !opfsRoot) return;
+  try {
+    await zipItems(opfsRoot, currentPath.value, names);
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Zip failed:', err);
+  }
+}
+
+/* ── Context menu / keyboard: Delete (move to trash) ── */
+
+async function doDelete(names: string[]): Promise<void> {
+  if (names.length === 0 || !opfsRoot) return;
+  try {
+    await moveToTrash(opfsRoot, currentPath.value, names);
+    clearSelection();
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Delete failed:', err);
+  }
+}
+
+function ctxDelete(): void {
+  ctxMenu.show = false;
+  const names = selectedItemNames();
+  doDelete(names);
+}
+
+/* ── Context menu: Download ── */
+
+async function ctxDownload(): Promise<void> {
+  ctxMenu.show = false;
+  const names = selectedItemNames();
+  if (names.length === 0 || !opfsRoot) return;
+  try {
+    await downloadItems(opfsRoot, currentPath.value, names);
+  } catch (err) {
+    console.warn('Download failed:', err);
+  }
+}
+
+/* ── Context menu: Rename ── */
+
+function ctxRename(nameOverride?: string): void {
+  ctxMenu.show = false;
+  const name = nameOverride ?? [...selectedNames.value][0];
+  if (!name) return;
+  renaming.active = true;
+  renaming.name = name;
+  renaming.newName = name;
+  nextTick(() => {
+    const input = renameInputEl.value;
+    if (input) {
+      input.focus();
+      const dot = name.lastIndexOf('.');
+      input.setSelectionRange(0, dot > 0 ? dot : name.length);
+    }
+  });
+}
+
+async function confirmRename(): Promise<void> {
+  const trimmed = renaming.newName.trim();
+  if (!trimmed || trimmed === renaming.name || !opfsRoot) {
+    renaming.active = false;
+    return;
+  }
+  try {
+    await renameItem(opfsRoot, currentPath.value, renaming.name, trimmed);
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Rename failed:', err);
+  }
+  renaming.active = false;
+}
+
+function cancelRename(): void {
+  renaming.active = false;
+}
+
+/* ── FAB actions ── */
+
+async function fabNewFile(): Promise<void> {
+  fabOpen.value = false;
+  if (!opfsRoot) return;
+  try {
+    await createEmptyFile(opfsRoot, currentPath.value);
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Create file failed:', err);
+  }
+}
+
+async function fabNewFolder(): Promise<void> {
+  fabOpen.value = false;
+  if (!opfsRoot) return;
+  try {
+    await createFolder(opfsRoot, currentPath.value);
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Create folder failed:', err);
+  }
+}
+
+function fabUpload(): void {
+  fabOpen.value = false;
+  fileInput.value?.click();
+}
+
+async function onFilesSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  if (!input.files || input.files.length === 0 || !opfsRoot) return;
+  try {
+    await uploadFiles(opfsRoot, currentPath.value, input.files);
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Upload failed:', err);
+  }
+  // Reset so the same files can be re-selected
+  input.value = '';
+}
+
 /* ── Read initial path from context ── */
 
 function getInitialPath(): string {
@@ -536,17 +799,24 @@ onMounted(async () => {
   opfsRoot = await getStarkOpfsRoot();
   intentStore = await loadIntents();
 
+  // Ensure trash directory exists
+  if (opfsRoot) await ensureTrash(opfsRoot);
+
   const initialPath = getInitialPath();
   history.value = [initialPath];
   historyIndex.value = 0;
   await readDir(initialPath);
 
   refreshInterval = setInterval(() => readDir(currentPath.value), REFRESH_INTERVAL_MS);
+
+  // Click-away listener to close context menu
+  document.addEventListener('mousedown', onDocumentClick);
 });
 
 onBeforeUnmount(() => {
   if (refreshInterval) clearInterval(refreshInterval);
   cancelLongPress();
+  document.removeEventListener('mousedown', onDocumentClick);
 });
 </script>
 
@@ -932,8 +1202,124 @@ onBeforeUnmount(() => {
   cursor: pointer;
   user-select: none;
   transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .ctx-item:hover {
   background: rgba(59, 130, 246, 0.2);
+}
+.ctx-item-danger {
+  color: #f87171;
+}
+.ctx-item-danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+.ctx-icon {
+  flex-shrink: 0;
+}
+
+/* ── Rename input ── */
+
+.rename-input {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  border-radius: 3px;
+  padding: 1px 4px;
+  text-align: center;
+  max-width: 100%;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rename-input-list {
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Floating Action Button ── */
+
+.fab-container {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.fab-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.fab-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+}
+.fab-btn.open {
+  transform: rotate(45deg);
+}
+.fab-btn.open:hover {
+  transform: rotate(45deg) scale(1.08);
+}
+
+.fab-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.fab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  transition: background 0.12s, transform 0.12s;
+}
+.fab-menu-item:hover {
+  background: #334155;
+  transform: translateX(-2px);
+}
+.fab-menu-item svg {
+  flex-shrink: 0;
+  color: #60a5fa;
+}
+
+/* FAB menu transitions */
+.fab-menu-enter-active,
+.fab-menu-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.fab-menu-enter-from,
+.fab-menu-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 </style>

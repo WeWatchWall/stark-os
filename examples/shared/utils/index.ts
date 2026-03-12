@@ -19,6 +19,7 @@ export {
   ICON_APP,
   ICON_SPREADSHEET,
   ICON_CONFIG,
+  ICON_TRASH,
   type IconCategory,
 } from './lib/icons';
 
@@ -49,6 +50,10 @@ export {
   type ShellState,
   type ExecutionPlan,
 } from './terminal/shell';
+
+// NOTE: fileops.ts is intentionally NOT re-exported from this barrel.
+// It dynamically imports jszip which is heavy.  Apps that need file
+// operations should import directly from './lib/fileops'.
 
 // NOTE: git.ts is intentionally NOT re-exported from this barrel.
 // It has heavy dependencies (isomorphic-git, buffer, diff) with top-level

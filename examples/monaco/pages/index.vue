@@ -3960,6 +3960,18 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+// ─── Initial args (from intent system) ──────────────
+function getInitialPaths(): string[] {
+  try {
+    const ctx = (window.parent as Record<string, unknown>).__STARK_CONTEXT__ as
+      { args?: string[] } | undefined;
+    if (ctx?.args && ctx.args.length > 0) {
+      return ctx.args.filter(a => typeof a === 'string' && a.trim().length > 0);
+    }
+  } catch { /* cross-origin or no parent */ }
+  return [];
+}
+
 // ─── Lifecycle ──────────────────────────────────────
 onMounted(async () => {
   opfsRoot = await getStarkOpfsRoot();
@@ -3973,6 +3985,44 @@ onMounted(async () => {
   await loadGitSettings();
   await detectGitRepo();
   window.addEventListener('keydown', handleKeydown);
+
+  // Open file(s)/folder(s) passed as arguments from the intent system
+  const initialPaths = getInitialPaths();
+  if (initialPaths.length > 0 && opfsRoot) {
+    let folderOpened = false;
+    // Check if the first path is a directory — open it as the project root
+    try {
+      const parts = getPathParts(initialPaths[0]);
+      if (parts.length > 0) {
+        const name = parts[parts.length - 1];
+        const parentParts = parts.slice(0, -1);
+        let parent = opfsRoot;
+        for (const p of parentParts) parent = await parent.getDirectoryHandle(p);
+        try {
+          await parent.getDirectoryHandle(name);
+          // It's a directory — set as project root
+          projectRoot.value = initialPaths[0];
+          await refreshTree();
+          scmInitialized.value = false;
+          await detectGitRepo();
+          folderOpened = true;
+        } catch { /* not a directory, continue as files */ }
+      }
+    } catch { /* ignore */ }
+
+    // Open remaining paths as files
+    const filePaths = folderOpened ? initialPaths.slice(1) : initialPaths;
+    for (const filePath of filePaths) {
+      // If no project is open, set project root to the file's directory
+      if (!projectRoot.value) {
+        const parts = getPathParts(filePath);
+        parts.pop();
+        projectRoot.value = '/' + parts.join('/');
+        await refreshTree();
+      }
+      await openFile(filePath);
+    }
+  }
 });
 
 onBeforeUnmount(() => {

@@ -72,7 +72,8 @@
       @click.stop
     >
       <template v-if="ctxMenu.itemName">
-        <div v-if="!ctxMenu.isDir" class="ctx-item" @click="ctxOpenWith">Open With…</div>
+        <div class="ctx-item" @click="ctxOpen">Open</div>
+        <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
         <div class="ctx-item" @click="ctxDownload">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Download
@@ -648,12 +649,18 @@ function showOpenWithDialog(filenames: string[], filePaths: string[]): void {
   });
 }
 
+function ctxOpen(): void {
+  ctxMenu.show = false;
+  openSelectedItems();
+}
+
 function ctxOpenWith(): void {
   ctxMenu.show = false;
-  const itemName = ctxMenu.itemName;
-  if (!itemName) return;
-  const filePath = normalizePath('/home/desktop/' + itemName);
-  showOpenWithDialog([itemName], [filePath]);
+  const names = [...selectedNames];
+  if (names.length === 0) return;
+  const filenames = names;
+  const filePaths = names.map((n) => normalizePath('/home/desktop/' + n));
+  showOpenWithDialog(filenames, filePaths);
 }
 
 async function onOpenWithSelect(packName: string, setDefault: boolean): Promise<void> {
@@ -825,8 +832,43 @@ function onBackgroundContext(event: MouseEvent): void {
 
 // ── Keyboard handler ──
 
+function openSelectedItems(): void {
+  const selected = items.value.filter((i) => selectedNames.has(i.name));
+  if (selected.length === 0) return;
+
+  const now = Date.now();
+  if (now - lastLaunchTime < 1000) return;
+  lastLaunchTime = now;
+
+  // Separate trash, directories, and files
+  const hasTrash = selected.some((i) => i.name === 'trash');
+  const dirs = selected.filter((i) => i.isDirectory && i.name !== 'trash');
+  const files = selected.filter((i) => !i.isDirectory && i.name !== 'trash');
+
+  if (hasTrash) {
+    launchPack('files', [TRASH_PATH]);
+  }
+
+  for (const dir of dirs) {
+    const dirPath = normalizePath('/home/desktop/' + dir.name);
+    showOpenWithDialog([dir.name], [dirPath]);
+  }
+
+  if (files.length > 0) {
+    const filenames = files.map((f) => f.name);
+    const filePaths = files.map((f) => normalizePath('/home/desktop/' + f.name));
+    openFilesWithIntent(intentStore, filenames, filePaths).then((result) => {
+      if (!result.resolved) {
+        showOpenWithDialog(result.filenames, result.filePaths);
+      }
+    });
+  }
+}
+
 function onKeyDown(event: KeyboardEvent): void {
-  if (event.key === 'Delete' || event.key === 'Backspace') {
+  if (event.key === 'Enter') {
+    openSelectedItems();
+  } else if (event.key === 'Delete' || event.key === 'Backspace') {
     const names = [...selectedNames].filter(n => n !== 'trash');
     if (names.length > 0) {
       doDelete(names);

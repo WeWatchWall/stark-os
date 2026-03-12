@@ -204,7 +204,7 @@
       :style="ctxMenuStyle"
       @click.stop
     >
-      <div v-if="hasFileSelection" class="ctx-item" @click="ctxOpenWith">Open With…</div>
+      <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
       <div class="ctx-item" @click="ctxDownload">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download
@@ -631,10 +631,9 @@ function showOpenWithDialog(filenames: string[], filePaths: string[]): void {
 function ctxOpenWith(): void {
   ctxMenu.show = false;
   const selected = items.value.filter((i) => selectedNames.value.has(i.name));
-  const files = selected.filter((i) => !i.isDirectory);
-  if (files.length === 0) return;
-  const filenames = files.map((f) => f.name);
-  const filePaths = files.map((f) =>
+  if (selected.length === 0) return;
+  const filenames = selected.map((f) => f.name);
+  const filePaths = selected.map((f) =>
     normalizePath(currentPath.value + '/' + f.name),
   );
   showOpenWithDialog(filenames, filePaths);

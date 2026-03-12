@@ -36,6 +36,7 @@
         </div>
         <input
           v-if="renaming.active && renaming.name === slot.name"
+          ref="renameInputEl"
           class="rename-input"
           v-model="renaming.newName"
           @keydown.enter.stop="confirmRename"
@@ -188,6 +189,9 @@ const fileInput = ref<HTMLInputElement | null>(null);
 
 // Multi-selection (Ctrl/Cmd + click)
 const selectedNames = reactive(new Set<string>());
+
+// Rename input ref
+const renameInputEl = ref<HTMLInputElement | null>(null);
 
 // Open With dialog
 const owDialog = reactive({
@@ -606,12 +610,7 @@ function onDocumentClick(event: MouseEvent): void {
 
 // ── Context menu (right-click / long-press on non-drag) ──
 
-interface DesktopItemOrNull {
-  name: string;
-  isDirectory: boolean;
-}
-
-function onGridCellContext(index: number, slot: DesktopItemOrNull | null, event: MouseEvent): void {
+function onGridCellContext(index: number, slot: DesktopItem | null, event: MouseEvent): void {
   if (slot) {
     onItemContext(index, event);
   } else {
@@ -742,7 +741,7 @@ function ctxRename(): void {
   renaming.newName = name;
   // Focus the rename input after render
   nextTick(() => {
-    const input = document.querySelector('.rename-input') as HTMLInputElement | null;
+    const input = renameInputEl.value;
     if (input) {
       input.focus();
       // Select the name portion without extension

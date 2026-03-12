@@ -91,6 +91,7 @@
           </div>
           <input
             v-if="renaming.active && renaming.name === item.name"
+            ref="renameInputEl"
             class="rename-input"
             v-model="renaming.newName"
             @keydown.enter.stop="confirmRename"
@@ -124,6 +125,7 @@
           </div>
           <input
             v-if="renaming.active && renaming.name === item.name"
+            ref="renameInputEl"
             class="rename-input rename-input-list"
             v-model="renaming.newName"
             @keydown.enter.stop="confirmRename"
@@ -163,6 +165,7 @@
             </span>
             <input
               v-if="renaming.active && renaming.name === item.name"
+              ref="renameInputEl"
               class="rename-input rename-input-list"
               v-model="renaming.newName"
               @keydown.enter.stop="confirmRename"
@@ -344,6 +347,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 
 // Rename state
 const renaming = reactive({ active: false, name: '', newName: '' });
+const renameInputEl = ref<HTMLInputElement | null>(null);
 
 // Click-away handler to close context menu
 function onDocumentClick(event: MouseEvent): void {
@@ -699,7 +703,7 @@ function ctxRename(nameOverride?: string): void {
   renaming.name = name;
   renaming.newName = name;
   nextTick(() => {
-    const input = document.querySelector('.rename-input') as HTMLInputElement | null;
+    const input = renameInputEl.value;
     if (input) {
       input.focus();
       const dot = name.lastIndexOf('.');

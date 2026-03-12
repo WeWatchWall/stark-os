@@ -119,6 +119,20 @@ export async function ensureTrash(
 }
 
 /**
+ * Empty the trash by removing all entries inside /trash.
+ */
+export async function emptyTrash(
+  root: FileSystemDirectoryHandle,
+): Promise<void> {
+  const trashHandle = await getDirectoryHandle(root, TRASH_PATH);
+  const names: string[] = [];
+  for await (const key of trashHandle.keys()) names.push(key);
+  for (const name of names) {
+    await trashHandle.removeEntry(name, { recursive: true });
+  }
+}
+
+/**
  * Recursively copy a directory from source to destination.
  */
 async function copyDirectory(

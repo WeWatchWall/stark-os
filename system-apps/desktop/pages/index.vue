@@ -2,10 +2,12 @@
   <div
     ref="gridContainer"
     class="desktop-grid"
+    tabindex="0"
     @dragover.prevent="onDragOver"
     @drop.prevent="onDrop"
     @click="onBackgroundClick"
-    @contextmenu.prevent
+    @keydown="onKeyDown"
+    @contextmenu.prevent="onBackgroundContext($event)"
   >
     <div
       v-for="(slot, index) in displaySlots"
@@ -54,8 +56,44 @@
       class="ctx-menu"
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
     >
-      <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
+      <template v-if="ctxMenu.itemName">
+        <div v-if="!ctxMenu.isDir" class="ctx-item" @click="ctxOpenWith">Open With…</div>
+        <div class="ctx-item" @click="ctxZip">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Zip
+        </div>
+        <div v-if="ctxMenu.itemName !== 'trash'" class="ctx-item ctx-item-danger" @click="ctxDelete">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          Delete
+        </div>
+        <div v-if="ctxMenu.itemName === 'trash'" class="ctx-item ctx-item-danger" @click="ctxEmptyTrash">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          Empty Trash
+        </div>
+        <div class="ctx-separator"></div>
+      </template>
+      <div class="ctx-item" @click="ctxNewFile">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        New File
+      </div>
+      <div class="ctx-item" @click="ctxNewFolder">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+        New Folder
+      </div>
+      <div class="ctx-item" @click="ctxUpload">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload Files
+      </div>
     </div>
+
+    <!-- Hidden file input for uploads -->
+    <input
+      ref="fileInput"
+      type="file"
+      multiple
+      style="display: none"
+      @change="onFilesSelected"
+    />
 
     <!-- Open With dialog (from shared layer, auto-registered by Nuxt) -->
     <OpenWithDialog
@@ -74,6 +112,8 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
+// fileops is NOT barrel-exported (heavy JSZip dep) — import directly
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Tunable constants ── */
 const LONG_PRESS_MS = 300;
@@ -118,7 +158,10 @@ let lastLaunchTime = 0;
 let intentStore: IntentStore = { defaults: {} };
 
 // Context menu
-const ctxMenu = reactive({ show: false, x: 0, y: 0, itemName: '' });
+const ctxMenu = reactive({ show: false, x: 0, y: 0, itemName: '', isDir: false });
+
+// File upload input ref
+const fileInput = ref<HTMLInputElement | null>(null);
 
 // Open With dialog
 const owDialog = reactive({
@@ -221,10 +264,12 @@ const displaySlots = computed<Array<DesktopItem | null>>(() => {
 // ── Icon helpers (using shared utilities) ──
 
 function getSvg(item: DesktopItem): string {
+  if (item.name === 'trash') return ICON_TRASH;
   return getIconSvg(item.name, item.isDirectory);
 }
 
 function getColor(item: DesktopItem): string {
+  if (item.name === 'trash') return '#94a3b8';
   return getIconColor(item.name, item.isDirectory);
 }
 
@@ -249,10 +294,16 @@ async function readDesktopDir(): Promise<void> {
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
+
+    // Add synthetic trash icon if not already present (trash lives at /trash, not in /home/desktop)
+    if (!entries.some(e => e.name === 'trash')) {
+      entries.push({ name: 'trash', isDirectory: true });
+    }
+
     items.value = entries;
   } catch (err) {
     console.warn('Desktop: failed to read /home/desktop:', err);
-    items.value = [];
+    items.value = [{ name: 'trash', isDirectory: true }];
   }
 }
 
@@ -453,7 +504,10 @@ function onDblClick(index: number): void {
   lastLaunchTime = now;
   ctxMenu.show = false;
 
-  if (item.isDirectory) {
+  if (item.name === 'trash') {
+    // Trash shortcut: open files app in /trash
+    launchPack('files', [TRASH_PATH]);
+  } else if (item.isDirectory) {
     launchPack('files', ['/home/desktop/' + item.name]);
   } else {
     // Open file via intent system
@@ -474,8 +528,9 @@ function onBackgroundClick(): void {
 
 function onItemContext(index: number, event: MouseEvent): void {
   const item = displaySlots.value[index];
-  if (!item || item.isDirectory) return;
+  if (!item) return;
   ctxMenu.itemName = item.name;
+  ctxMenu.isDir = item.isDirectory;
   ctxMenu.x = event.clientX;
   ctxMenu.y = event.clientY;
   ctxMenu.show = true;
@@ -512,6 +567,117 @@ async function onOpenWithSelect(packName: string, setDefault: boolean): Promise<
   );
 }
 
+// ── Context menu: Zip ──
+
+async function ctxZip(): Promise<void> {
+  ctxMenu.show = false;
+  const itemName = ctxMenu.itemName;
+  if (!itemName || !opfsRoot) return;
+  try {
+    // Trash is a synthetic item — zip its contents from /trash
+    if (itemName === 'trash') {
+      await zipItems(opfsRoot, '/', ['trash']);
+    } else {
+      await zipItems(opfsRoot, '/home/desktop', [itemName]);
+    }
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop zip failed:', err);
+  }
+}
+
+// ── Context menu / keyboard: Delete (move to trash) ──
+
+async function doDelete(itemName: string): Promise<void> {
+  if (!itemName || itemName === 'trash' || !opfsRoot) return;
+  try {
+    await moveToTrash(opfsRoot, '/home/desktop', [itemName]);
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop delete failed:', err);
+  }
+}
+
+function ctxDelete(): void {
+  ctxMenu.show = false;
+  doDelete(ctxMenu.itemName);
+}
+
+// ── Context menu: Empty Trash ──
+
+async function ctxEmptyTrash(): Promise<void> {
+  ctxMenu.show = false;
+  if (!opfsRoot) return;
+  try {
+    await emptyTrash(opfsRoot);
+  } catch (err) {
+    console.warn('Desktop empty trash failed:', err);
+  }
+}
+
+// ── Context menu: New File / New Folder / Upload ──
+
+const DESKTOP_PATH = '/home/desktop';
+
+async function ctxNewFile(): Promise<void> {
+  ctxMenu.show = false;
+  if (!opfsRoot) return;
+  try {
+    await createEmptyFile(opfsRoot, DESKTOP_PATH);
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop create file failed:', err);
+  }
+}
+
+async function ctxNewFolder(): Promise<void> {
+  ctxMenu.show = false;
+  if (!opfsRoot) return;
+  try {
+    await createFolder(opfsRoot, DESKTOP_PATH);
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop create folder failed:', err);
+  }
+}
+
+function ctxUpload(): void {
+  ctxMenu.show = false;
+  fileInput.value?.click();
+}
+
+async function onFilesSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  if (!input.files || input.files.length === 0 || !opfsRoot) return;
+  try {
+    await uploadFiles(opfsRoot, DESKTOP_PATH, input.files);
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop upload failed:', err);
+  }
+  input.value = '';
+}
+
+// ── Background context menu (empty space — creation actions only) ──
+
+function onBackgroundContext(event: MouseEvent): void {
+  ctxMenu.itemName = '';
+  ctxMenu.isDir = false;
+  ctxMenu.x = event.clientX;
+  ctxMenu.y = event.clientY;
+  ctxMenu.show = true;
+}
+
+// ── Keyboard handler ──
+
+function onKeyDown(event: KeyboardEvent): void {
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (ctxMenu.itemName && ctxMenu.itemName !== 'trash') {
+      doDelete(ctxMenu.itemName);
+    }
+  }
+}
+
 // ── Periodic refresh ──
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
@@ -521,6 +687,10 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null;
 onMounted(async () => {
   opfsRoot = await getStarkOpfsRoot();
   intentStore = await loadIntents();
+
+  // Ensure /trash directory exists
+  if (opfsRoot) await ensureTrash(opfsRoot);
+
   await loadArrangement();
   await readDesktopDir();
 
@@ -694,8 +864,25 @@ onBeforeUnmount(() => {
   cursor: pointer;
   user-select: none;
   transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .ctx-item:hover {
   background: rgba(59, 130, 246, 0.2);
+}
+.ctx-item-danger {
+  color: #f87171;
+}
+.ctx-item-danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+.ctx-icon {
+  flex-shrink: 0;
+}
+.ctx-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(255, 255, 255, 0.08);
 }
 </style>

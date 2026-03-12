@@ -475,7 +475,16 @@ function goUp(): void {
 
 function navigateToAddressBar(): void {
   const val = addressBarValue.value.trim();
-  if (val) navigateTo(val);
+  if (!val) return;
+  if (val.startsWith('/')) {
+    // Normal path navigation
+    navigateTo(val);
+  } else {
+    // Treat as a pack name — launch it with the current directory as argument
+    launchPack(val, [currentPath.value]);
+    // Restore the current path in the address bar
+    addressBarValue.value = currentPath.value;
+  }
 }
 
 /* ── Intent-based file opening ── */

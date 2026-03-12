@@ -816,13 +816,13 @@
             </div>
             <div class="welcome-section">
               <h3><i class="codicon codicon-history"></i> Recent</h3>
-              <template v-if="openTabs.length > 0">
+              <template v-if="recentItems.length > 0">
                 <div
-                  v-for="tab in openTabs.slice(0, 5)"
-                  :key="tab.path"
+                  v-for="item in recentItems.slice(0, 8)"
+                  :key="item.path"
                   class="welcome-link"
-                  @click="openFile(tab.path)"
-                ><i :class="'codicon codicon-' + getCodiconForFile(tab.name)"></i> {{ tab.name }}</div>
+                  @click="item.isFolder ? openRecentFolder(item.path) : openFile(item.path)"
+                ><i :class="'codicon codicon-' + (item.isFolder ? 'folder' : getCodiconForFile(item.name))"></i> {{ item.name }}</div>
               </template>
               <div v-else class="welcome-hint">No recent files</div>
             </div>
@@ -1205,6 +1205,8 @@ interface TerminalInstance {
 const SAVE_DELAY = 1000;
 const SETTINGS_FILE = 'home/.stark-code/settings.json'; // /home/.stark-code/settings.json in OPFS
 const GIT_SETTINGS_FILE = 'home/.stark-code/git-settings.json';
+const RECENT_FILE = 'home/.stark-code/recent.json';
+const MAX_RECENT_ITEMS = 20;
 
 // ─── Shared OPFS FS ────────────────────────────────
 let opfsRoot: FileSystemDirectoryHandle | null = null;
@@ -1225,6 +1227,14 @@ const currentFile = ref<string | null>(null);
 const saveStatus = ref<'saved' | 'saving' | 'idle'>('idle');
 const openTabs = ref<Tab[]>([]);
 let tabOrderCounter = 0;
+
+// Recently opened files/folders (persisted to OPFS)
+interface RecentItem {
+  path: string;
+  name: string;
+  isFolder: boolean;
+}
+const recentItems = ref<RecentItem[]>([]);
 const sidebarVisible = ref(true);
 const sidebarWidth = ref(260);
 const activePanel = ref<'explorer' | 'search' | 'scm' | 'extensions'>('explorer');
@@ -2011,6 +2021,23 @@ async function openFolder() {
   }
   currentFile.value = null;
   // Reload SCM state for the newly opened folder
+  scmInitialized.value = false;
+  scmBranch.value = 'main';
+  scmCommits.value = [];
+  scmStagedFiles.value = [];
+  scmChangedFiles.value = [];
+  await detectGitRepo();
+  notify(`Opened folder: ${projectRoot.value}`, 'success');
+}
+
+async function openRecentFolder(path: string) {
+  projectRoot.value = path;
+  await refreshTree();
+  // Close all open tabs from different project
+  for (const tab of [...openTabs.value]) {
+    await closeTab(tab.path);
+  }
+  currentFile.value = null;
   scmInitialized.value = false;
   scmBranch.value = 'main';
   scmCommits.value = [];
@@ -3601,6 +3628,39 @@ async function loadEditorSettings() {
   } catch { /* ignore — use defaults */ }
 }
 
+// ─── Recently opened persistence ────────────────────
+async function loadRecentItems() {
+  if (!fs) return;
+  try {
+    const raw = await fs.readFile(RECENT_FILE);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) {
+      recentItems.value = data.slice(0, MAX_RECENT_ITEMS);
+    }
+  } catch { /* ignore */ }
+}
+
+async function saveRecentItems() {
+  if (!fs) return;
+  try {
+    await fs.mkdir('home/.stark-code', true);
+    await fs.writeFile(RECENT_FILE, JSON.stringify(recentItems.value));
+  } catch { /* ignore */ }
+}
+
+function addRecentItem(path: string, name: string, isFolder: boolean) {
+  // Remove existing entry for this path (if any)
+  recentItems.value = recentItems.value.filter(r => r.path !== path);
+  // Add to front
+  recentItems.value.unshift({ path, name, isFolder });
+  // Trim
+  if (recentItems.value.length > MAX_RECENT_ITEMS) {
+    recentItems.value = recentItems.value.slice(0, MAX_RECENT_ITEMS);
+  }
+  saveRecentItems();
+}
+
 function applySettings() {
   if (!editor) return;
   editor.updateOptions({
@@ -3981,6 +4041,8 @@ onMounted(async () => {
   await refreshExtensionState();
   // Load persisted editor settings (font size, theme, tab size, etc.)
   await loadEditorSettings();
+  // Load recently opened items
+  await loadRecentItems();
   // Load SCM state — detect git repo in current project
   await loadGitSettings();
   await detectGitRepo();
@@ -4006,6 +4068,8 @@ onMounted(async () => {
           scmInitialized.value = false;
           await detectGitRepo();
           folderOpened = true;
+          // Track folder in recently opened
+          addRecentItem(initialPaths[0], name, true);
         } catch { /* not a directory, continue as files */ }
       }
     } catch { /* ignore */ }
@@ -4021,6 +4085,9 @@ onMounted(async () => {
         await refreshTree();
       }
       await openFile(filePath);
+      // Track file in recently opened
+      const fileParts = getPathParts(filePath);
+      addRecentItem(filePath, fileParts[fileParts.length - 1] || filePath, false);
     }
   }
 });

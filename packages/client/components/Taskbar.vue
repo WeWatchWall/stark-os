@@ -442,6 +442,29 @@ function toggleLayout() {
   flex-shrink: 0;
 }
 
+/* ── Left taskbar: vertical text for mobile landscape ── */
+.taskbar.left .mobile-current-window {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 10px 3px;
+  min-width: unset;
+  min-height: 0;
+}
+.taskbar.left .current-title {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.taskbar.left .window-count {
+  min-width: 16px;
+  min-height: 16px;
+}
+.taskbar.left .switcher-btn,
+.taskbar.left .icon-btn-mobile {
+  width: 26px;
+  height: 26px;
+}
+
 /* ── Mobile: switcher button ── */
 .switcher-btn {
   background: rgba(255,255,255,0.06);

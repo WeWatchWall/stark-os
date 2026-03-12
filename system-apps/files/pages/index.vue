@@ -89,7 +89,17 @@
           <div class="icon-wrapper" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
           </div>
-          <span class="icon-label" :title="item.name">{{ item.name }}</span>
+          <input
+            v-if="renaming.active && renaming.name === item.name"
+            class="rename-input"
+            v-model="renaming.newName"
+            @keydown.enter.stop="confirmRename"
+            @keydown.escape.stop="cancelRename"
+            @blur="confirmRename"
+            @click.stop
+            @dblclick.stop
+          />
+          <span v-else class="icon-label" :title="item.name">{{ item.name }}</span>
         </div>
         <div v-if="!sortedItems.length && !loading" class="empty-message">
           This folder is empty
@@ -112,7 +122,17 @@
           <div class="list-icon" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
           </div>
-          <span class="list-name" :title="item.name">{{ item.name }}</span>
+          <input
+            v-if="renaming.active && renaming.name === item.name"
+            class="rename-input rename-input-list"
+            v-model="renaming.newName"
+            @keydown.enter.stop="confirmRename"
+            @keydown.escape.stop="cancelRename"
+            @blur="confirmRename"
+            @click.stop
+            @dblclick.stop
+          />
+          <span v-else class="list-name" :title="item.name">{{ item.name }}</span>
         </div>
         <div v-if="!sortedItems.length && !loading" class="empty-message">
           This folder is empty
@@ -141,7 +161,17 @@
             <span class="details-icon" :style="{ color: getColor(item) }">
               <span class="icon-svg" v-html="getSvg(item)"></span>
             </span>
-            <span class="details-name" :title="item.name">{{ item.name }}</span>
+            <input
+              v-if="renaming.active && renaming.name === item.name"
+              class="rename-input rename-input-list"
+              v-model="renaming.newName"
+              @keydown.enter.stop="confirmRename"
+              @keydown.escape.stop="cancelRename"
+              @blur="confirmRename"
+              @click.stop
+              @dblclick.stop
+            />
+            <span v-else class="details-name" :title="item.name">{{ item.name }}</span>
           </span>
           <span class="details-col col-type">{{ item.isDirectory ? 'Folder' : formatType(item.name) }}</span>
           <span class="details-col col-size">{{ item.isDirectory ? '—' : formatSize(item.size) }}</span>
@@ -166,13 +196,23 @@
     <!-- Context menu -->
     <div
       v-if="ctxMenu.show"
+      ref="ctxMenuEl"
       class="ctx-menu"
-      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+      :style="ctxMenuStyle"
+      @click.stop
     >
       <div v-if="hasFileSelection" class="ctx-item" @click="ctxOpenWith">Open With…</div>
+      <div class="ctx-item" @click="ctxDownload">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </div>
       <div class="ctx-item" @click="ctxZip">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
         Zip
+      </div>
+      <div v-if="selectedNames.size === 1" class="ctx-item" @click="ctxRename">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Rename
       </div>
       <div class="ctx-item ctx-item-danger" @click="ctxDelete">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
@@ -226,11 +266,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { FileItem, IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';
@@ -268,6 +308,21 @@ let intentStore: IntentStore = { defaults: {} };
 
 // Context menu
 const ctxMenu = reactive({ show: false, x: 0, y: 0 });
+const ctxMenuEl = ref<HTMLDivElement | null>(null);
+
+// Context menu position with auto-flip
+const ctxMenuStyle = computed(() => {
+  const style: Record<string, string> = {};
+  const menuW = ctxMenuEl.value?.offsetWidth ?? 180;
+  const menuH = ctxMenuEl.value?.offsetHeight ?? 200;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  style.left = (ctxMenu.x + menuW > vw ? Math.max(0, ctxMenu.x - menuW) : ctxMenu.x) + 'px';
+  style.top = (ctxMenu.y + menuH > vh ? Math.max(0, ctxMenu.y - menuH) : ctxMenu.y) + 'px';
+
+  return style;
+});
 
 // Open With dialog
 const owDialog = reactive({
@@ -286,6 +341,16 @@ let touchMoved = false;
 // FAB state
 const fabOpen = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+
+// Rename state
+const renaming = reactive({ active: false, name: '', newName: '' });
+
+// Click-away handler to close context menu
+function onDocumentClick(event: MouseEvent): void {
+  if (!ctxMenu.show) return;
+  if (ctxMenuEl.value && ctxMenuEl.value.contains(event.target as Node)) return;
+  ctxMenu.show = false;
+}
 
 const canGoBack = computed(() => historyIndex.value > 0);
 const canGoForward = computed(() => historyIndex.value < history.value.length - 1);
@@ -458,6 +523,12 @@ function onKeyDown(event: KeyboardEvent): void {
     if (names.length > 0) {
       doDelete(names);
     }
+  } else if (event.key === 'F2') {
+    // Rename the single selected item
+    if (selectedNames.value.size === 1) {
+      const name = [...selectedNames.value][0];
+      ctxRename(name);
+    }
   }
 }
 
@@ -605,6 +676,57 @@ function ctxDelete(): void {
   doDelete(names);
 }
 
+/* ── Context menu: Download ── */
+
+async function ctxDownload(): Promise<void> {
+  ctxMenu.show = false;
+  const names = selectedItemNames();
+  if (names.length === 0 || !opfsRoot) return;
+  try {
+    await downloadItems(opfsRoot, currentPath.value, names);
+  } catch (err) {
+    console.warn('Download failed:', err);
+  }
+}
+
+/* ── Context menu: Rename ── */
+
+function ctxRename(nameOverride?: string): void {
+  ctxMenu.show = false;
+  const name = nameOverride ?? [...selectedNames.value][0];
+  if (!name) return;
+  renaming.active = true;
+  renaming.name = name;
+  renaming.newName = name;
+  nextTick(() => {
+    const input = document.querySelector('.rename-input') as HTMLInputElement | null;
+    if (input) {
+      input.focus();
+      const dot = name.lastIndexOf('.');
+      input.setSelectionRange(0, dot > 0 ? dot : name.length);
+    }
+  });
+}
+
+async function confirmRename(): Promise<void> {
+  const trimmed = renaming.newName.trim();
+  if (!trimmed || trimmed === renaming.name || !opfsRoot) {
+    renaming.active = false;
+    return;
+  }
+  try {
+    await renameItem(opfsRoot, currentPath.value, renaming.name, trimmed);
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Rename failed:', err);
+  }
+  renaming.active = false;
+}
+
+function cancelRename(): void {
+  renaming.active = false;
+}
+
 /* ── FAB actions ── */
 
 async function fabNewFile(): Promise<void> {
@@ -682,11 +804,15 @@ onMounted(async () => {
   await readDir(initialPath);
 
   refreshInterval = setInterval(() => readDir(currentPath.value), REFRESH_INTERVAL_MS);
+
+  // Click-away listener to close context menu
+  document.addEventListener('mousedown', onDocumentClick);
 });
 
 onBeforeUnmount(() => {
   if (refreshInterval) clearInterval(refreshInterval);
   cancelLongPress();
+  document.removeEventListener('mousedown', onDocumentClick);
 });
 </script>
 
@@ -1087,6 +1213,30 @@ onBeforeUnmount(() => {
 }
 .ctx-icon {
   flex-shrink: 0;
+}
+
+/* ── Rename input ── */
+
+.rename-input {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  border-radius: 3px;
+  padding: 1px 4px;
+  text-align: center;
+  max-width: 100%;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rename-input-list {
+  text-align: left;
+  flex: 1;
+  min-width: 0;
 }
 
 /* ── Floating Action Button ── */

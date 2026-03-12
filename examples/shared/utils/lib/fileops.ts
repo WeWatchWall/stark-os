@@ -285,6 +285,156 @@ export async function createFolder(
   return finalName;
 }
 
+/* ── Download operations ── */
+
+/**
+ * Download one or more files/folders from OPFS to the user's device.
+ *
+ * - Single file: triggers a direct browser download.
+ * - Multiple items or a directory: zips them first, then downloads the zip.
+ *
+ * @param root       OPFS root handle
+ * @param dirPath    The directory containing the items
+ * @param names      Names of files/folders to download
+ */
+export async function downloadItems(
+  root: FileSystemDirectoryHandle,
+  dirPath: string,
+  names: string[],
+): Promise<void> {
+  if (names.length === 0) return;
+
+  const parentHandle = await getDirectoryHandle(root, dirPath);
+
+  // Helper to trigger browser download
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  if (names.length === 1) {
+    const name = names[0];
+    // Check if it's a file
+    let isFile = true;
+    try {
+      await parentHandle.getFileHandle(name);
+    } catch {
+      isFile = false;
+    }
+
+    if (isFile) {
+      // Direct download of a single file
+      const fh = await parentHandle.getFileHandle(name);
+      const file = await fh.getFile();
+      triggerDownload(file, name);
+      return;
+    }
+  }
+
+  // Multiple items or directory: zip then download
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+
+  for (const name of names) {
+    let isFile = true;
+    try {
+      await parentHandle.getFileHandle(name);
+    } catch {
+      isFile = false;
+    }
+
+    if (isFile) {
+      const fh = await parentHandle.getFileHandle(name);
+      const file = await fh.getFile();
+      const data = await file.arrayBuffer();
+      zip.file(name, data);
+    } else {
+      const dh = await parentHandle.getDirectoryHandle(name);
+      const folder = zip.folder(name)!;
+      await addDirectoryToZip(folder, dh);
+    }
+  }
+
+  const zipData = await zip.generateAsync({ type: 'blob' });
+  const archiveName = names.length === 1 ? `${names[0]}.zip` : 'download.zip';
+  triggerDownload(zipData, archiveName);
+}
+
+/* ── Upload operations ── */
+
+/**
+ * Rename a file or folder inside an OPFS directory.
+ *
+ * OPFS doesn't have a native rename — we copy+delete.
+ *
+ * @param root       OPFS root handle
+ * @param dirPath    The directory containing the item
+ * @param oldName    Current name
+ * @param newName    Desired new name
+ * @returns          The actual name used (may differ if collision)
+ */
+export async function renameItem(
+  root: FileSystemDirectoryHandle,
+  dirPath: string,
+  oldName: string,
+  newName: string,
+): Promise<string> {
+  if (!newName || newName === oldName) return oldName;
+
+  const dirHandle = await getDirectoryHandle(root, dirPath);
+
+  // Collision avoidance
+  const existingNames = new Set<string>();
+  for await (const key of dirHandle.keys()) existingNames.add(key);
+
+  let finalName = newName;
+  let counter = 1;
+  while (existingNames.has(finalName) && finalName !== oldName) {
+    const dot = newName.lastIndexOf('.');
+    if (dot > 0) {
+      finalName = `${newName.slice(0, dot)} (${counter})${newName.slice(dot)}`;
+    } else {
+      finalName = `${newName} (${counter})`;
+    }
+    counter++;
+  }
+
+  // Determine if file or directory
+  let isFile = true;
+  try {
+    await dirHandle.getFileHandle(oldName);
+  } catch {
+    isFile = false;
+  }
+
+  if (isFile) {
+    const srcFh = await dirHandle.getFileHandle(oldName);
+    const file = await srcFh.getFile();
+    const data = await file.arrayBuffer();
+    const destFh = await dirHandle.getFileHandle(finalName, { create: true });
+    const writable = await destFh.createWritable();
+    try {
+      await writable.write(data);
+    } finally {
+      await writable.close();
+    }
+    await dirHandle.removeEntry(oldName);
+  } else {
+    const srcDir = await dirHandle.getDirectoryHandle(oldName);
+    const destDir = await dirHandle.getDirectoryHandle(finalName, { create: true });
+    await copyDirectory(srcDir, destDir);
+    await dirHandle.removeEntry(oldName, { recursive: true });
+  }
+
+  return finalName;
+}
+
 /**
  * Upload files from the browser's native file picker into an OPFS directory.
  * Accepts a FileList or array of File objects (from `<input type="file">`).

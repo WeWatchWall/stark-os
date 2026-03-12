@@ -16,10 +16,10 @@
       :class="{
         'drag-over': dropTargetIndex === index,
         'empty-slot': !slot,
-        'selected': slot && slot.name === selectedItemName,
+        'selected': slot && selectedNames.has(slot.name),
       }"
       :draggable="!!slot"
-      @click.stop="onItemClick(index)"
+      @click.stop="onItemClick(index, $event)"
       @dblclick="onDblClick(index)"
       @contextmenu.prevent.stop="onGridCellContext(index, slot, $event)"
       @dragstart="onDragStart(index, $event)"
@@ -34,7 +34,17 @@
         <div class="icon-wrapper" :style="{ color: getColor(slot) }">
           <div class="icon-svg" v-html="getSvg(slot)"></div>
         </div>
-        <span class="icon-label" :title="slot.name">{{ slot.name }}</span>
+        <input
+          v-if="renaming.active && renaming.name === slot.name"
+          class="rename-input"
+          v-model="renaming.newName"
+          @keydown.enter.stop="confirmRename"
+          @keydown.escape.stop="cancelRename"
+          @blur="confirmRename"
+          @click.stop
+          @dblclick.stop
+        />
+        <span v-else class="icon-label" :title="slot.name">{{ slot.name }}</span>
       </template>
     </div>
 
@@ -55,14 +65,24 @@
     <!-- Context menu -->
     <div
       v-if="ctxMenu.show"
+      ref="ctxMenuEl"
       class="ctx-menu"
-      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+      :style="ctxMenuStyle"
+      @click.stop
     >
       <template v-if="ctxMenu.itemName">
         <div v-if="!ctxMenu.isDir" class="ctx-item" @click="ctxOpenWith">Open With…</div>
+        <div class="ctx-item" @click="ctxDownload">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </div>
         <div class="ctx-item" @click="ctxZip">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           Zip
+        </div>
+        <div v-if="ctxMenu.itemName !== 'trash'" class="ctx-item" @click="ctxRename">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Rename
         </div>
         <div v-if="ctxMenu.itemName !== 'trash'" class="ctx-item ctx-item-danger" @click="ctxDelete">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
@@ -111,11 +131,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Tunable constants ── */
 const LONG_PRESS_MS = 300;
@@ -161,12 +181,13 @@ let intentStore: IntentStore = { defaults: {} };
 
 // Context menu
 const ctxMenu = reactive({ show: false, x: 0, y: 0, itemName: '', isDir: false });
+const ctxMenuEl = ref<HTMLDivElement | null>(null);
 
 // File upload input ref
 const fileInput = ref<HTMLInputElement | null>(null);
 
-// Currently selected item (for keyboard shortcuts)
-const selectedItemName = ref('');
+// Multi-selection (Ctrl/Cmd + click)
+const selectedNames = reactive(new Set<string>());
 
 // Open With dialog
 const owDialog = reactive({
@@ -264,6 +285,32 @@ const displaySlots = computed<Array<DesktopItem | null>>(() => {
   }
 
   return out;
+});
+
+// ── Context menu position (auto-flip when near edges) ──
+
+const ctxMenuStyle = computed(() => {
+  const style: Record<string, string> = {};
+  const menuW = ctxMenuEl.value?.offsetWidth ?? 180;
+  const menuH = ctxMenuEl.value?.offsetHeight ?? 200;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Flip left if it would overflow the right edge
+  if (ctxMenu.x + menuW > vw) {
+    style.left = Math.max(0, ctxMenu.x - menuW) + 'px';
+  } else {
+    style.left = ctxMenu.x + 'px';
+  }
+
+  // Flip upward if it would overflow the bottom edge
+  if (ctxMenu.y + menuH > vh) {
+    style.top = Math.max(0, ctxMenu.y - menuH) + 'px';
+  } else {
+    style.top = ctxMenu.y + 'px';
+  }
+
+  return style;
 });
 
 // ── Icon helpers (using shared utilities) ──
@@ -525,16 +572,36 @@ function onDblClick(index: number): void {
   }
 }
 
-function onItemClick(index: number): void {
+function onItemClick(index: number, event: MouseEvent): void {
   const item = displaySlots.value[index];
   if (!item) return;
-  selectedItemName.value = item.name;
   ctxMenu.show = false;
+
+  if (event.ctrlKey || event.metaKey) {
+    // Toggle selection
+    if (selectedNames.has(item.name)) {
+      selectedNames.delete(item.name);
+    } else {
+      selectedNames.add(item.name);
+    }
+  } else {
+    selectedNames.clear();
+    selectedNames.add(item.name);
+  }
 }
 
 function onBackgroundClick(): void {
   ctxMenu.show = false;
-  selectedItemName.value = '';
+  selectedNames.clear();
+}
+
+// ── Click-away handler to close context menu ──
+
+function onDocumentClick(event: MouseEvent): void {
+  if (!ctxMenu.show) return;
+  // If the click is inside the context menu, don't close
+  if (ctxMenuEl.value && ctxMenuEl.value.contains(event.target as Node)) return;
+  ctxMenu.show = false;
 }
 
 // ── Context menu (right-click / long-press on non-drag) ──
@@ -555,7 +622,10 @@ function onGridCellContext(index: number, slot: DesktopItemOrNull | null, event:
 function onItemContext(index: number, event: MouseEvent): void {
   const item = displaySlots.value[index];
   if (!item) return;
-  selectedItemName.value = item.name;
+  if (!selectedNames.has(item.name)) {
+    selectedNames.clear();
+    selectedNames.add(item.name);
+  }
   ctxMenu.itemName = item.name;
   ctxMenu.isDir = item.isDirectory;
   ctxMenu.x = event.clientX;
@@ -594,19 +664,34 @@ async function onOpenWithSelect(packName: string, setDefault: boolean): Promise<
   );
 }
 
+// ── Context menu: Download ──
+
+async function ctxDownload(): Promise<void> {
+  ctxMenu.show = false;
+  const names = [...selectedNames];
+  if (names.length === 0 || !opfsRoot) return;
+  try {
+    // Resolve directory: trash is at root, others at /home/desktop
+    for (const name of names) {
+      if (name === 'trash') {
+        await downloadItems(opfsRoot, '/', ['trash']);
+      } else {
+        await downloadItems(opfsRoot, '/home/desktop', [name]);
+      }
+    }
+  } catch (err) {
+    console.warn('Desktop download failed:', err);
+  }
+}
+
 // ── Context menu: Zip ──
 
 async function ctxZip(): Promise<void> {
   ctxMenu.show = false;
-  const itemName = ctxMenu.itemName;
-  if (!itemName || !opfsRoot) return;
+  const names = [...selectedNames].filter(n => n !== 'trash');
+  if (names.length === 0 || !opfsRoot) return;
   try {
-    // Trash is a synthetic item — zip its contents from /trash
-    if (itemName === 'trash') {
-      await zipItems(opfsRoot, '/', ['trash']);
-    } else {
-      await zipItems(opfsRoot, '/home/desktop', [itemName]);
-    }
+    await zipItems(opfsRoot, '/home/desktop', names);
     await readDesktopDir();
   } catch (err) {
     console.warn('Desktop zip failed:', err);
@@ -615,10 +700,12 @@ async function ctxZip(): Promise<void> {
 
 // ── Context menu / keyboard: Delete (move to trash) ──
 
-async function doDelete(itemName: string): Promise<void> {
-  if (!itemName || itemName === 'trash' || !opfsRoot) return;
+async function doDelete(names: string[]): Promise<void> {
+  const toDelete = names.filter(n => n && n !== 'trash');
+  if (toDelete.length === 0 || !opfsRoot) return;
   try {
-    await moveToTrash(opfsRoot, '/home/desktop', [itemName]);
+    await moveToTrash(opfsRoot, '/home/desktop', toDelete);
+    selectedNames.clear();
     await readDesktopDir();
   } catch (err) {
     console.warn('Desktop delete failed:', err);
@@ -627,7 +714,7 @@ async function doDelete(itemName: string): Promise<void> {
 
 function ctxDelete(): void {
   ctxMenu.show = false;
-  doDelete(ctxMenu.itemName);
+  doDelete([...selectedNames]);
 }
 
 // ── Context menu: Empty Trash ──
@@ -640,6 +727,48 @@ async function ctxEmptyTrash(): Promise<void> {
   } catch (err) {
     console.warn('Desktop empty trash failed:', err);
   }
+}
+
+// ── Context menu: Rename ──
+
+const renaming = reactive({ active: false, name: '', newName: '' });
+
+function ctxRename(): void {
+  ctxMenu.show = false;
+  const name = ctxMenu.itemName;
+  if (!name || name === 'trash') return;
+  renaming.active = true;
+  renaming.name = name;
+  renaming.newName = name;
+  // Focus the rename input after render
+  nextTick(() => {
+    const input = document.querySelector('.rename-input') as HTMLInputElement | null;
+    if (input) {
+      input.focus();
+      // Select the name portion without extension
+      const dot = name.lastIndexOf('.');
+      input.setSelectionRange(0, dot > 0 ? dot : name.length);
+    }
+  });
+}
+
+async function confirmRename(): Promise<void> {
+  const trimmed = renaming.newName.trim();
+  if (!trimmed || trimmed === renaming.name || !opfsRoot) {
+    renaming.active = false;
+    return;
+  }
+  try {
+    await renameItem(opfsRoot, DESKTOP_PATH, renaming.name, trimmed);
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop rename failed:', err);
+  }
+  renaming.active = false;
+}
+
+function cancelRename(): void {
+  renaming.active = false;
 }
 
 // ── Context menu: New File / New Folder / Upload ──
@@ -699,10 +828,19 @@ function onBackgroundContext(event: MouseEvent): void {
 
 function onKeyDown(event: KeyboardEvent): void {
   if (event.key === 'Delete' || event.key === 'Backspace') {
-    const name = selectedItemName.value;
-    if (name && name !== 'trash') {
-      doDelete(name);
-      selectedItemName.value = '';
+    const names = [...selectedNames].filter(n => n !== 'trash');
+    if (names.length > 0) {
+      doDelete(names);
+      selectedNames.clear();
+    }
+  } else if (event.key === 'F2') {
+    // Rename the single selected item
+    if (selectedNames.size === 1) {
+      const name = [...selectedNames][0];
+      if (name !== 'trash') {
+        ctxMenu.itemName = name;
+        ctxRename();
+      }
     }
   }
 }
@@ -738,12 +876,16 @@ onMounted(async () => {
 
   // Refresh every 5 seconds to pick up terminal changes
   refreshInterval = setInterval(() => readDesktopDir(), REFRESH_INTERVAL_MS);
+
+  // Click-away listener to close context menu
+  document.addEventListener('mousedown', onDocumentClick);
 });
 
 onBeforeUnmount(() => {
   if (refreshInterval) clearInterval(refreshInterval);
   if (touchStartTimer) clearTimeout(touchStartTimer);
   resizeObserver?.disconnect();
+  document.removeEventListener('mousedown', onDocumentClick);
 });
 </script>
 
@@ -919,5 +1061,23 @@ onBeforeUnmount(() => {
   height: 1px;
   margin: 4px 8px;
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Rename input ── */
+
+.rename-input {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  border-radius: 3px;
+  padding: 1px 4px;
+  text-align: center;
+  max-width: 100%;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 </style>

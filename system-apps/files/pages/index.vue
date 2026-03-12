@@ -181,7 +181,7 @@
     </div>
 
     <!-- Floating Action Button -->
-    <div class="fab-container">
+    <div class="fab-container" @click.stop>
       <transition name="fab-menu">
         <div v-if="fabOpen" class="fab-menu">
           <button class="fab-menu-item" @click="fabNewFile">

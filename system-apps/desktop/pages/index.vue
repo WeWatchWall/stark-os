@@ -21,7 +21,7 @@
       :draggable="!!slot"
       @click.stop="onItemClick(index)"
       @dblclick="onDblClick(index)"
-      @contextmenu.prevent.stop="onItemContext(index, $event)"
+      @contextmenu.prevent.stop="onGridCellContext(index, slot, $event)"
       @dragstart="onDragStart(index, $event)"
       @dragend="onDragEnd"
       @dragenter.prevent="onDragEnter(index)"
@@ -538,6 +538,19 @@ function onBackgroundClick(): void {
 }
 
 // ── Context menu (right-click / long-press on non-drag) ──
+
+interface DesktopItemOrNull {
+  name: string;
+  isDirectory: boolean;
+}
+
+function onGridCellContext(index: number, slot: DesktopItemOrNull | null, event: MouseEvent): void {
+  if (slot) {
+    onItemContext(index, event);
+  } else {
+    onBackgroundContext(event);
+  }
+}
 
 function onItemContext(index: number, event: MouseEvent): void {
   const item = displaySlots.value[index];

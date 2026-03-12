@@ -1,7 +1,7 @@
 <template>
   <header
     class="taskbar"
-    :class="{ bottom: isMobile }"
+    :class="{ bottom: isMobile && shell.isPortrait, left: isMobile && !shell.isPortrait }"
   >
     <!-- Logo / Start Menu -->
     <button class="logo-btn" @click="shell.toggleStartMenu()" title="Start Menu" aria-label="Start Menu">
@@ -189,6 +189,24 @@ function toggleLayout() {
   gap: 6px;
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.4);
   border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ── Mobile landscape left taskbar ── */
+.taskbar.left {
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: 0;
+  width: 36px;
+  height: auto;
+  flex-direction: column;
+  padding: 8px 0;
+  gap: 6px;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4);
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+.taskbar.left .taskbar-logo {
+  height: 26px;
 }
 
 /* ── Logo ── */
@@ -422,6 +440,29 @@ function toggleLayout() {
   justify-content: center;
   padding: 0 4px;
   flex-shrink: 0;
+}
+
+/* ── Left taskbar: vertical text for mobile landscape ── */
+.taskbar.left .mobile-current-window {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 10px 3px;
+  min-width: unset;
+  min-height: 0;
+}
+.taskbar.left .current-title {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.taskbar.left .window-count {
+  min-width: 16px;
+  min-height: 16px;
+}
+.taskbar.left .switcher-btn,
+.taskbar.left .icon-btn-mobile {
+  width: 26px;
+  height: 26px;
 }
 
 /* ── Mobile: switcher button ── */

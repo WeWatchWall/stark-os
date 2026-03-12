@@ -13,6 +13,7 @@
     <div class="desktop" :class="{
       'taskbar-visible-top': shell.taskbarPosition === 'top',
       'taskbar-visible-bottom': shell.taskbarPosition === 'bottom',
+      'taskbar-visible-left': shell.taskbarPosition === 'left',
     }">
       <!-- Render ALL windows; hide those not on active workspace via v-show -->
       <WindowFrame
@@ -158,6 +159,9 @@ onUnmounted(() => {
 }
 .desktop.taskbar-visible-bottom {
   bottom: 36px;
+}
+.desktop.taskbar-visible-left {
+  left: 36px;
 }
 
 /* Desktop watermark (always visible, behind windows) */

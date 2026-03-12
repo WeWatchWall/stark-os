@@ -102,9 +102,10 @@ export const useShellStore = defineStore('shell', () => {
   /** Taskbar is always visible */
   const taskbarVisible = ref(true);
 
-  /** Taskbar position: 'top' for desktop, 'bottom' for mobile */
-  const taskbarPosition = computed<'top' | 'bottom'>(() => {
+  /** Taskbar position: 'top' for desktop, 'left' for mobile landscape, 'bottom' for mobile portrait */
+  const taskbarPosition = computed<'top' | 'bottom' | 'left'>(() => {
     if (layoutMode.value === 'desktop') return 'top';
+    if (!isPortrait.value) return 'left';
     return 'bottom';
   });
 

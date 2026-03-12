@@ -16,8 +16,10 @@
       :class="{
         'drag-over': dropTargetIndex === index,
         'empty-slot': !slot,
+        'selected': slot && slot.name === selectedItemName,
       }"
       :draggable="!!slot"
+      @click.stop="onItemClick(index)"
       @dblclick="onDblClick(index)"
       @contextmenu.prevent.stop="onItemContext(index, $event)"
       @dragstart="onDragStart(index, $event)"
@@ -162,6 +164,9 @@ const ctxMenu = reactive({ show: false, x: 0, y: 0, itemName: '', isDir: false }
 
 // File upload input ref
 const fileInput = ref<HTMLInputElement | null>(null);
+
+// Currently selected item (for keyboard shortcuts)
+const selectedItemName = ref('');
 
 // Open With dialog
 const owDialog = reactive({
@@ -520,8 +525,16 @@ function onDblClick(index: number): void {
   }
 }
 
+function onItemClick(index: number): void {
+  const item = displaySlots.value[index];
+  if (!item) return;
+  selectedItemName.value = item.name;
+  ctxMenu.show = false;
+}
+
 function onBackgroundClick(): void {
   ctxMenu.show = false;
+  selectedItemName.value = '';
 }
 
 // ── Context menu (right-click / long-press on non-drag) ──
@@ -529,6 +542,7 @@ function onBackgroundClick(): void {
 function onItemContext(index: number, event: MouseEvent): void {
   const item = displaySlots.value[index];
   if (!item) return;
+  selectedItemName.value = item.name;
   ctxMenu.itemName = item.name;
   ctxMenu.isDir = item.isDirectory;
   ctxMenu.x = event.clientX;
@@ -672,8 +686,10 @@ function onBackgroundContext(event: MouseEvent): void {
 
 function onKeyDown(event: KeyboardEvent): void {
   if (event.key === 'Delete' || event.key === 'Backspace') {
-    if (ctxMenu.itemName && ctxMenu.itemName !== 'trash') {
-      doDelete(ctxMenu.itemName);
+    const name = selectedItemName.value;
+    if (name && name !== 'trash') {
+      doDelete(name);
+      selectedItemName.value = '';
     }
   }
 }
@@ -774,6 +790,12 @@ onBeforeUnmount(() => {
   outline: 2px dashed rgba(59, 130, 246, 0.5);
   outline-offset: -2px;
   border-radius: 6px;
+}
+
+.grid-cell.selected {
+  background: rgba(59, 130, 246, 0.18);
+  outline: 1px solid rgba(59, 130, 246, 0.35);
+  outline-offset: -1px;
 }
 
 .icon-wrapper {

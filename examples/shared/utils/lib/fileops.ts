@@ -23,7 +23,7 @@ export const TRASH_PATH = '/trash';
  * JSZip folder instance, preserving the directory structure.
  */
 async function addDirectoryToZip(
-  zipFolder: import('jszip'),
+  zipFolder: InstanceType<import('jszip').default>,
   dirHandle: FileSystemDirectoryHandle,
 ): Promise<void> {
   for await (const [name, handle] of dirHandle.entries()) {
@@ -101,8 +101,11 @@ export async function zipItems(
   // Write to OPFS
   const outHandle = await parentHandle.getFileHandle(zipName, { create: true });
   const writable = await outHandle.createWritable();
-  await writable.write(zipData);
-  await writable.close();
+  try {
+    await writable.write(zipData);
+  } finally {
+    await writable.close();
+  }
 
   return zipName;
 }
@@ -302,7 +305,10 @@ export async function uploadFiles(
   for (const file of Array.from(files)) {
     const fh = await dirHandle.getFileHandle(file.name, { create: true });
     const writable = await fh.createWritable();
-    await writable.write(await file.arrayBuffer());
-    await writable.close();
+    try {
+      await writable.write(await file.arrayBuffer());
+    } finally {
+      await writable.close();
+    }
   }
 }

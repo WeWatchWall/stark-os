@@ -41,7 +41,7 @@
     <!-- App list body -->
     <div v-else class="menu-body">
       <!-- ─── Search results ─── -->
-      <template v-if="searchActive && searchQuery.trim()">
+      <template v-if="searchActive && trimmedSearch">
         <div v-for="group in searchCategoryGroups" :key="group.category" class="category">
           <div class="category-label">{{ group.label }}</div>
           <button
@@ -140,6 +140,7 @@ const expandedGroups = ref(new Set<string>());
 
 /* ── Computed ── */
 
+const trimmedSearch = computed(() => searchQuery.value.trim());
 const searchResults = computed(() => searchApps(allApps.value, searchQuery.value));
 const searchCategoryGroups = computed(() => appsByCategory(searchResults.value));
 const categoryGroups = computed(() => appsByCategory(allApps.value));
@@ -193,9 +194,13 @@ async function refresh(): Promise<void> {
 
     // Persist cache
     writePackCache({ apps, labelGroups: groups, timestamp: Date.now() });
+    errorMsg.value = '';
   } catch (err: unknown) {
     console.error('Failed to load packs:', err);
-    errorMsg.value = err instanceof Error ? err.message : 'Failed to load applications';
+    // Only show error if we have no cached data to display
+    if (allApps.value.length === 0) {
+      errorMsg.value = err instanceof Error ? err.message : 'Failed to load applications';
+    }
   } finally {
     refreshing.value = false;
     initialLoading.value = false;

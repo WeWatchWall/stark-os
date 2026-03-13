@@ -78,3 +78,23 @@ export {
   type IntentPackInfo,
   type OpenWithNeeded,
 } from './lib/intents';
+
+export {
+  categorizePack,
+  buildAppEntries,
+  buildLabelGroups,
+  browserOnlyApps,
+  searchApps,
+  appsByCategory,
+  fetchPacks,
+  readPackCache,
+  writePackCache,
+  loadPacksWithCache,
+  categoryIcon,
+  HIDDEN_LABEL,
+  type PackEntry,
+  type AppCategory,
+  type AppEntry,
+  type LabelGroup,
+  type PackCache,
+} from './lib/packs';

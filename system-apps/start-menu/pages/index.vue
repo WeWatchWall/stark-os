@@ -1,235 +1,246 @@
 <template>
   <div class="start-menu" @click.stop>
-    <!-- Search / Header -->
+    <!-- Header: clickable title / search box -->
     <div class="menu-header">
-      <div class="menu-title">Applications</div>
+      <div v-if="!searchActive" class="menu-title-row" @click="activateSearch">
+        <span class="menu-title">Applications</span>
+        <span v-if="refreshing" class="header-spinner" title="Refreshing…" />
+      </div>
+      <div v-else class="search-row">
+        <input
+          ref="searchInput"
+          v-model="searchQuery"
+          class="search-box"
+          type="text"
+          placeholder="Search applications…"
+          @keydown.escape="deactivateSearch"
+        />
+        <button class="search-close" title="Close search" @click="deactivateSearch">&times;</button>
+        <span v-if="refreshing" class="header-spinner" title="Refreshing…" />
+      </div>
     </div>
 
-    <!-- Loading state -->
-    <div v-if="loading" class="menu-loading">
+    <!-- Toolbar: List / Back toggle -->
+    <div v-if="!searchActive && !initialLoading" class="menu-toolbar">
+      <button v-if="viewMode === 'labels'" class="toolbar-btn" @click="viewMode = 'list'">☰ List</button>
+      <button v-else class="toolbar-btn" @click="viewMode = 'labels'">← Back</button>
+    </div>
+
+    <!-- Initial loading (no cache yet) -->
+    <div v-if="initialLoading" class="menu-loading">
       <span class="spinner" />
       <span>Loading apps…</span>
     </div>
 
-    <!-- Error state -->
-    <div v-else-if="errorMsg" class="menu-error">
+    <!-- Error state (only when no data at all) -->
+    <div v-else-if="errorMsg && allApps.length === 0" class="menu-error">
       <span>{{ errorMsg }}</span>
-      <button class="retry-btn" @click="loadPacks">Retry</button>
+      <button class="retry-btn" @click="refresh">Retry</button>
     </div>
 
-    <!-- App list -->
+    <!-- App list body -->
     <div v-else class="menu-body">
-      <!-- Visual browser apps -->
-      <div v-if="visualApps.length" class="category">
-        <div class="category-label">Apps</div>
-        <button
-          v-for="app in visualApps"
-          :key="app.name"
-          class="app-item"
-          @click="launchApp(app)"
-        >
-          <span class="app-icon visual">◈</span>
-          <span class="app-name">{{ app.name }}</span>
-        </button>
-      </div>
+      <!-- ─── Search results ─── -->
+      <template v-if="searchActive && trimmedSearch">
+        <div v-for="group in searchCategoryGroups" :key="group.category" class="category">
+          <div class="category-label">{{ group.label }}</div>
+          <button
+            v-for="app in group.apps"
+            :key="app.name"
+            class="app-item"
+            @click="launchApp(app)"
+          >
+            <span class="app-icon" :class="app.category">{{ iconFor(app.category) }}</span>
+            <span class="app-name">{{ app.name }}</span>
+          </button>
+        </div>
+        <div v-if="searchResults.length === 0" class="menu-empty">No matching applications.</div>
+      </template>
 
-      <!-- Web worker browser apps -->
-      <div v-if="workerApps.length" class="category">
-        <div class="category-label">Web Workers</div>
-        <button
-          v-for="app in workerApps"
-          :key="app.name"
-          class="app-item"
-          @click="launchApp(app)"
-        >
-          <span class="app-icon worker">⌬</span>
-          <span class="app-name">{{ app.name }}</span>
-        </button>
-      </div>
+      <!-- ─── Label grouping view (default) ─── -->
+      <template v-else-if="viewMode === 'labels'">
+        <div v-for="group in labelGroups" :key="group.label" class="label-group">
+          <button class="label-header" @click="toggleGroup(group.label)">
+            <span class="label-chevron">{{ expandedGroups.has(group.label) ? '▾' : '▸' }}</span>
+            <span class="label-name">{{ group.label }}</span>
+            <span class="label-count">{{ group.apps.length }}</span>
+          </button>
+          <div v-if="expandedGroups.has(group.label)" class="label-apps">
+            <button
+              v-for="app in group.apps"
+              :key="app.name"
+              class="app-item"
+              @click="launchApp(app)"
+            >
+              <span class="app-icon" :class="app.category">{{ iconFor(app.category) }}</span>
+              <span class="app-name">{{ app.name }}</span>
+            </button>
+          </div>
+        </div>
+        <div v-if="labelGroups.length === 0" class="menu-empty">No applications available.</div>
+      </template>
 
-      <!-- Node.js apps -->
-      <div v-if="nodeApps.length" class="category">
-        <div class="category-label">Node.js</div>
-        <button
-          v-for="app in nodeApps"
-          :key="app.name"
-          class="app-item"
-          @click="launchApp(app)"
-        >
-          <span class="app-icon node">⎈</span>
-          <span class="app-name">{{ app.name }}</span>
-        </button>
-      </div>
-
-      <!-- Universal apps -->
-      <div v-if="universalApps.length" class="category">
-        <div class="category-label">Universal</div>
-        <button
-          v-for="app in universalApps"
-          :key="app.name"
-          class="app-item"
-          @click="launchApp(app)"
-        >
-          <span class="app-icon universal">⊕</span>
-          <span class="app-name">{{ app.name }}</span>
-        </button>
-      </div>
-
-      <!-- Empty state -->
-      <div v-if="!visualApps.length && !workerApps.length && !nodeApps.length && !universalApps.length" class="menu-empty">
-        No applications available.
-      </div>
+      <!-- ─── Flat category list view ─── -->
+      <template v-else>
+        <div v-for="group in categoryGroups" :key="group.category" class="category">
+          <div class="category-label">{{ group.label }}</div>
+          <button
+            v-for="app in group.apps"
+            :key="app.name"
+            class="app-item"
+            @click="launchApp(app)"
+          >
+            <span class="app-icon" :class="app.category">{{ iconFor(app.category) }}</span>
+            <span class="app-name">{{ app.name }}</span>
+          </button>
+        </div>
+        <div v-if="allApps.length === 0" class="menu-empty">No applications available.</div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { createStarkAPI, type StarkAPI } from '@stark-o/browser-runtime';
-import { effectiveCapabilities, type PackMessageHandler } from '@stark-o/shared';
-
-/* ── Types ── */
-
-interface PackInfo {
-  name: string;
-  runtimeTag: 'node' | 'browser' | 'universal';
-  grantedCapabilities: string[];
-  metadata?: { requestedCapabilities?: string[] };
-  description?: string;
-}
-
-type AppCategory = 'visual' | 'worker' | 'universal' | 'node';
-
-interface AppEntry {
-  name: string;
-  category: AppCategory;
-  pack: PackInfo;
-}
+import { ref, computed, onMounted, nextTick } from 'vue';
+import { createStarkAPI } from '@stark-o/browser-runtime';
+import type { PackMessageHandler } from '@stark-o/shared';
+import {
+  buildAppEntries,
+  buildLabelGroups,
+  searchApps,
+  appsByCategory,
+  categoryIcon,
+  fetchPacks,
+  readPackCache,
+  writePackCache,
+  getBrowserNodeId,
+  type AppEntry,
+  type AppCategory,
+  type LabelGroup,
+} from '../../../examples/shared/utils/lib/packs';
 
 /* ── State ── */
 
-const loading = ref(true);
+const allApps = ref<AppEntry[]>([]);
+const labelGroups = ref<LabelGroup[]>([]);
+const initialLoading = ref(true);
+const refreshing = ref(false);
 const errorMsg = ref('');
-const apps = ref<AppEntry[]>([]);
 
-/**
- * Create a StarkAPI instance.
- * The start-menu runs in a srcdoc iframe that shares the parent's origin,
- * so createStarkAPI() automatically picks up credentials from localStorage
- * and resolves the API URL from location.origin — no token relay needed.
- */
-function getApi(): StarkAPI {
-  return createStarkAPI();
-}
+/** 'labels' = label-grouping default, 'list' = flat category list */
+const viewMode = ref<'labels' | 'list'>('labels');
 
-/* ── Categorized lists (alphabetical) ── */
+/** Search */
+const searchActive = ref(false);
+const searchQuery = ref('');
+const searchInput = ref<HTMLInputElement | null>(null);
 
-const visualApps = computed(() =>
-  apps.value.filter((a) => a.category === 'visual').sort((a, b) => a.name.localeCompare(b.name)),
-);
-const workerApps = computed(() =>
-  apps.value.filter((a) => a.category === 'worker').sort((a, b) => a.name.localeCompare(b.name)),
-);
-const nodeApps = computed(() =>
-  apps.value.filter((a) => a.category === 'node').sort((a, b) => a.name.localeCompare(b.name)),
-);
-const universalApps = computed(() =>
-  apps.value.filter((a) => a.category === 'universal').sort((a, b) => a.name.localeCompare(b.name)),
-);
+/** Expanded label groups */
+const expandedGroups = ref(new Set<string>());
+
+/* ── Computed ── */
+
+const trimmedSearch = computed(() => searchQuery.value.trim());
+const searchResults = computed(() => searchApps(allApps.value, searchQuery.value));
+const searchCategoryGroups = computed(() => appsByCategory(searchResults.value));
+const categoryGroups = computed(() => appsByCategory(allApps.value));
 
 /* ── Helpers ── */
 
-function categorize(pack: PackInfo): AppCategory {
-  const caps = effectiveCapabilities(pack.metadata?.requestedCapabilities, pack.grantedCapabilities ?? []);
-  // d. Universal apps: run on both browser and node runtimes
-  if (pack.runtimeTag === 'universal') {
-    return 'universal';
-  }
-  // a. Visual browser apps: have the root effective capability and browser runtime
-  if (caps.includes('root') && pack.runtimeTag === 'browser') {
-    return 'visual';
-  }
-  // b. Web worker browser apps: browser runtime without root
-  if (pack.runtimeTag === 'browser') {
-    return 'worker';
-  }
-  // c. Node.js apps
-  return 'node';
+function iconFor(cat: AppCategory): string {
+  return categoryIcon(cat);
 }
 
-/**
- * Signal the parent shell to hide the start menu.
- * Uses a DOM CustomEvent on the parent window (same origin via srcdoc).
- */
+function toggleGroup(label: string): void {
+  if (expandedGroups.value.has(label)) {
+    expandedGroups.value.delete(label);
+  } else {
+    expandedGroups.value.add(label);
+  }
+}
+
+function activateSearch(): void {
+  searchActive.value = true;
+  searchQuery.value = '';
+  nextTick(() => searchInput.value?.focus());
+}
+
+function deactivateSearch(): void {
+  searchActive.value = false;
+  searchQuery.value = '';
+}
+
+/* ── Shell interaction ── */
+
 function requestHide(): void {
   try {
     window.parent?.dispatchEvent(new CustomEvent('stark:start-menu:hide'));
-  } catch {
-    /* cross-origin or no parent — ignore */
-  }
+  } catch { /* cross-origin — ignore */ }
 }
 
-/**
- * Read the current browser node ID from the pack execution context.
- * The executor sets __STARK_ENV__ on the parent window for main-thread packs.
- * STARK_NODE_ID is injected there by the pack executor.
- */
-function getBrowserNodeId(): string | null {
-  try {
-    const env = (window.parent as Record<string, unknown>).__STARK_ENV__ as
-      Record<string, string> | undefined;
-    return env?.STARK_NODE_ID ?? null;
-  } catch {
-    return null;
-  }
-}
+/* ── Data loading with cache ── */
 
-/* ── Load packs from API ── */
-
-async function loadPacks() {
-  loading.value = true;
+async function refresh(): Promise<void> {
+  refreshing.value = true;
   errorMsg.value = '';
 
   try {
-    const api = getApi();
-    const result = (await api.pack.list()) as { packs: PackInfo[] };
-    const packs: PackInfo[] = result.packs ?? [];
+    const packs = await fetchPacks();
+    const apps = buildAppEntries(packs);
+    const groups = buildLabelGroups(apps);
 
-    apps.value = packs.map((p) => ({
-      name: p.name,
-      category: categorize(p),
-      pack: p,
-    }));
+    allApps.value = apps;
+    labelGroups.value = groups;
+
+    // Persist cache
+    writePackCache({ apps, labelGroups: groups, timestamp: Date.now() });
+    errorMsg.value = '';
   } catch (err: unknown) {
     console.error('Failed to load packs:', err);
-    errorMsg.value = err instanceof Error ? err.message : 'Failed to load applications';
+    // Only show error if we have no cached data to display
+    if (allApps.value.length === 0) {
+      errorMsg.value = err instanceof Error ? err.message : 'Failed to load applications';
+    }
   } finally {
-    loading.value = false;
+    refreshing.value = false;
+    initialLoading.value = false;
   }
 }
 
-/* ── Launch an app ── */
-
-async function launchApp(app: AppEntry) {
+async function initLoad(): Promise<void> {
+  // 1. Try to show cached data immediately
   try {
-    const api = getApi();
+    const cached = await readPackCache();
+    if (cached && cached.apps.length > 0) {
+      allApps.value = cached.apps;
+      labelGroups.value = cached.labelGroups;
+      initialLoading.value = false;
+    }
+  } catch { /* ignore cache errors */ }
+
+  // 2. Refresh from API
+  await refresh();
+}
+
+/* ── Launch ── */
+
+async function launchApp(app: AppEntry): Promise<void> {
+  try {
+    const api = createStarkAPI();
 
     if (app.category === 'node') {
-      // Node apps need a Node.js node — find first available online node
-      const nodeResult = (await api.node.list()) as { nodes: Array<{ id: string; name: string; runtimeType: string; status: string }> };
-      const nodes = nodeResult.nodes ?? [];
-      const nodeNode = nodes.find(
+      const nodeResult = (await api.node.list()) as {
+        nodes: Array<{ id: string; name: string; runtimeType: string; status: string }>;
+      };
+      const nodeNode = (nodeResult.nodes ?? []).find(
         (n) => n.runtimeType === 'node' && n.status === 'online',
       );
-
       if (!nodeNode) {
         alert('No Node.js runtime available. Please ensure a Node.js node is online.');
         return;
       }
-
       await api.pod.create(app.pack.name, { nodeId: nodeNode.id });
     } else {
-      // Browser, universal, visual, and worker apps — target this browser node
       const browserNodeId = getBrowserNodeId();
       if (browserNodeId) {
         await api.pod.create(app.pack.name, { nodeId: browserNodeId });
@@ -238,7 +249,6 @@ async function launchApp(app: AppEntry) {
       }
     }
 
-    // Hide the start menu after launching
     requestHide();
   } catch (err: unknown) {
     console.error('Failed to launch app:', err);
@@ -246,13 +256,8 @@ async function launchApp(app: AppEntry) {
   }
 }
 
-/**
- * Re-query packs when the shell opens the start-menu panel.
- * Listens for 'start-menu:opened' messages pushed by the executor
- * via the standardised onMessage / sendMessage API.
- */
+/* ── Message listener ── */
 
-/** Register with the standardised onMessage API from the pack context */
 function registerOnMessage(): void {
   try {
     const ctx = (window.parent as Record<string, unknown>).__STARK_CONTEXT__ as
@@ -260,17 +265,15 @@ function registerOnMessage(): void {
     if (ctx?.onMessage) {
       ctx.onMessage((msg) => {
         if (msg.type === 'start-menu:opened') {
-          loadPacks();
+          refresh();
         }
       });
     }
-  } catch {
-    /* cross-origin or no parent — ignore */
-  }
+  } catch { /* cross-origin — ignore */ }
 }
 
 onMounted(() => {
-  loadPacks();
+  initLoad();
   registerOnMessage();
 });
 </script>
@@ -292,9 +295,16 @@ onMounted(() => {
 
 /* ── Header ── */
 .menu-header {
-  padding: 16px 18px 12px;
+  padding: 12px 18px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+}
+
+.menu-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
 }
 
 .menu-title {
@@ -304,6 +314,63 @@ onMounted(() => {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+.header-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-box {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  outline: none;
+}
+.search-box::placeholder { color: #64748b; }
+.search-box:focus { border-color: rgba(59, 130, 246, 0.5); }
+
+.search-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.2rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+}
+.search-close:hover { color: #e2e8f0; }
+
+/* ── Toolbar ── */
+.menu-toolbar {
+  display: flex;
+  padding: 4px 18px;
+  flex-shrink: 0;
+}
+
+.toolbar-btn {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.toolbar-btn:hover { text-decoration: underline; }
 
 /* ── Loading ── */
 .menu-loading {
@@ -351,9 +418,7 @@ onMounted(() => {
   cursor: pointer;
   transition: background 0.15s;
 }
-.retry-btn:hover {
-  background: rgba(59, 130, 246, 0.25);
-}
+.retry-btn:hover { background: rgba(59, 130, 246, 0.25); }
 
 /* ── Body (scrollable app list) ── */
 .menu-body {
@@ -364,21 +429,15 @@ onMounted(() => {
   padding: 8px 0;
 }
 
-.menu-body::-webkit-scrollbar {
-  width: 4px;
-}
-.menu-body::-webkit-scrollbar-track {
-  background: transparent;
-}
+.menu-body::-webkit-scrollbar { width: 4px; }
+.menu-body::-webkit-scrollbar-track { background: transparent; }
 .menu-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
 }
 
 /* ── Category ── */
-.category {
-  margin-bottom: 4px;
-}
+.category { margin-bottom: 4px; }
 
 .category-label {
   padding: 8px 18px 4px;
@@ -388,6 +447,44 @@ onMounted(() => {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+/* ── Label group ── */
+.label-group { margin-bottom: 2px; }
+
+.label-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 18px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.label-header:hover { background: rgba(255, 255, 255, 0.04); }
+
+.label-chevron {
+  font-size: 0.75rem;
+  width: 12px;
+  text-align: center;
+}
+
+.label-name { flex: 1; }
+
+.label-count {
+  font-size: 0.65rem;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.label-apps { padding-left: 0; }
 
 /* ── App item ── */
 .app-item {
@@ -409,9 +506,7 @@ onMounted(() => {
   background: rgba(59, 130, 246, 0.12);
   color: #f1f5f9;
 }
-.app-item:active {
-  background: rgba(59, 130, 246, 0.2);
-}
+.app-item:active { background: rgba(59, 130, 246, 0.2); }
 
 .app-icon {
   display: flex;

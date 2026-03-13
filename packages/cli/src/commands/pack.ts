@@ -164,6 +164,7 @@ async function registerHandler(
     minNodeVersion?: string;
     enableEphemeral?: boolean;
     capabilities?: string;
+    label?: string[];
     yes?: boolean;
   }
 ): Promise<void> {
@@ -256,6 +257,11 @@ async function registerHandler(
     if (options.capabilities) {
       const caps = options.capabilities.split(',').map((c: string) => c.trim()).filter(Boolean);
       requestBody.metadata = { ...((requestBody.metadata as Record<string, unknown>) ?? {}), requestedCapabilities: caps };
+    }
+
+    // Add labels if specified
+    if (options.label && options.label.length > 0) {
+      requestBody.metadata = { ...((requestBody.metadata as Record<string, unknown>) ?? {}), labels: options.label };
     }
     
     info(`Sending registration request for ${options.name}@${options.ver}...`);
@@ -549,6 +555,7 @@ export function createPackCommand(): Command {
     .option('--min-node-version <version>', 'Minimum Node.js version required (e.g., 18, 20.10.0)')
     .option('--enable-ephemeral', 'Enable EphemeralDataPlane for this pack (context.ephemeral)')
     .option('--capabilities <caps>', 'Comma-separated requested capabilities (e.g., root,ui:render)')
+    .option('--label <label>', 'Label for categorisation in start menu (repeatable)', (val: string, prev: string[]) => prev.concat(val), [] as string[])
     .option('-y, --yes', 'Skip confirmation prompts')
     .action(registerHandler);
 

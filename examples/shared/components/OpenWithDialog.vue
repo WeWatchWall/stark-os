@@ -4,6 +4,7 @@
       <!-- Header -->
       <div class="ow-header">
         <span class="ow-title">Open With</span>
+        <span v-if="refreshingApps" class="ow-header-spinner" title="Refreshing…" />
         <button class="ow-close-btn" title="Close" @click="cancel">&times;</button>
       </div>
 
@@ -17,24 +18,38 @@
         </template>
       </div>
 
+      <!-- Search -->
+      <div class="ow-search-row">
+        <input
+          v-model="searchQuery"
+          class="ow-search-box"
+          type="text"
+          placeholder="Search applications…"
+        />
+      </div>
+
       <!-- App list -->
       <div class="ow-list">
-        <div v-if="loading" class="ow-loading">Loading applications…</div>
-        <div v-else-if="filteredPacks.length === 0" class="ow-empty">
+        <div v-if="loading && displayGroups.length === 0" class="ow-loading">Loading applications…</div>
+        <template v-else-if="displayGroups.length > 0">
+          <div v-for="group in displayGroups" :key="group.category" class="ow-category">
+            <div class="ow-category-label">{{ group.label }}</div>
+            <div
+              v-for="app in group.apps"
+              :key="app.name"
+              class="ow-item"
+              :class="{ 'ow-selected': selectedPack === app.name }"
+              @click="selectedPack = app.name"
+              @dblclick="openWith(app.name, false)"
+            >
+              <span class="ow-item-icon" :class="app.category">{{ iconFor(app.category) }}</span>
+              <span class="ow-item-name">{{ app.name }}</span>
+              <span v-if="app.pack.description" class="ow-item-desc">{{ app.pack.description }}</span>
+            </div>
+          </div>
+        </template>
+        <div v-else class="ow-empty">
           No compatible applications found.
-        </div>
-        <div
-          v-for="pack in filteredPacks"
-          v-else
-          :key="pack.name"
-          class="ow-item"
-          :class="{ 'ow-selected': selectedPack === pack.name }"
-          @click="selectedPack = pack.name"
-          @dblclick="openWith(pack.name, false)"
-        >
-          <span class="ow-item-name">{{ pack.name }}</span>
-          <span v-if="pack.description" class="ow-item-desc">{{ pack.description }}</span>
-          <span class="ow-item-tag">{{ pack.runtimeTag }}</span>
         </div>
       </div>
 
@@ -60,8 +75,21 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { commonExtension, browserCompatiblePacks } from '../utils/lib/intents';
-import type { IntentPackInfo } from '../utils/lib/intents';
+import { commonExtension } from '../utils/lib/intents';
+import {
+  buildAppEntries,
+  browserOnlyApps,
+  searchApps,
+  appsByCategory,
+  categoryIcon,
+  fetchPacks,
+  readPackCache,
+  writePackCache,
+  buildLabelGroups,
+  type AppEntry,
+  type AppCategory,
+  type PackEntry,
+} from '../utils/lib/packs';
 
 /* ── Props ── */
 
@@ -70,9 +98,9 @@ const props = withDefaults(defineProps<{
   visible?: boolean;
   /** The filenames to open (used for display and extension detection). */
   filenames?: string[];
-  /** Available packs (pre-filtered or full list). */
-  packs?: IntentPackInfo[];
-  /** Whether the pack list is still loading. */
+  /** Available packs (pre-filtered or full list) — legacy prop kept for compat. */
+  packs?: PackEntry[];
+  /** Whether the pack list is still loading — legacy prop. */
   loading?: boolean;
 }>(), {
   visible: false,
@@ -84,38 +112,79 @@ const props = withDefaults(defineProps<{
 /* ── Emits ── */
 
 const emit = defineEmits<{
-  /** User chose a pack. */
   (e: 'select', packName: string, setDefault: boolean): void;
-  /** User cancelled. */
   (e: 'cancel'): void;
-  /** Visibility toggle (for v-model:visible). */
   (e: 'update:visible', val: boolean): void;
 }>();
 
 /* ── State ── */
 
 const selectedPack = ref('');
+const searchQuery = ref('');
+
+/** Internally-loaded apps (from cache + API). */
+const internalApps = ref<AppEntry[]>([]);
+const refreshingApps = ref(false);
 
 /* ── Computed ── */
 
-/**
- * If all files share the same extension, return it; otherwise empty string.
- * Determines whether the "Always" button is shown.
- */
 const singleExtension = computed(() => commonExtension(props.filenames));
 
-/** Packs filtered to browser/universal only. */
-const filteredPacks = computed(() =>
-  browserCompatiblePacks(props.packs).sort((a, b) => a.name.localeCompare(b.name)),
-);
+/** Merge legacy `packs` prop with internally loaded apps. */
+const resolvedApps = computed<AppEntry[]>(() => {
+  if (internalApps.value.length > 0) return internalApps.value;
+  // Fallback: build entries from legacy prop
+  if (props.packs.length > 0) return browserOnlyApps(buildAppEntries(props.packs));
+  return [];
+});
+
+/** Apply browser-only filter, then search query, then group by category. */
+const displayGroups = computed(() => {
+  const browserApps = browserOnlyApps(resolvedApps.value);
+  const filtered = searchApps(browserApps, searchQuery.value);
+  return appsByCategory(filtered);
+});
 
 /* ── Watchers ── */
 
 watch(() => props.visible, (val) => {
   if (val) {
     selectedPack.value = '';
+    searchQuery.value = '';
+    loadApps();
   }
 });
+
+/* ── Load with cache ── */
+
+async function loadApps(): Promise<void> {
+  // 1. Try cache
+  try {
+    const cached = await readPackCache();
+    if (cached && cached.apps.length > 0) {
+      internalApps.value = cached.apps;
+    }
+  } catch { /* ignore */ }
+
+  // 2. Refresh from API
+  refreshingApps.value = true;
+  try {
+    const packs = await fetchPacks();
+    const apps = buildAppEntries(packs);
+    internalApps.value = apps;
+    writePackCache({ apps, labelGroups: buildLabelGroups(apps), timestamp: Date.now() });
+  } catch {
+    /* keep showing cached / legacy data */
+  } finally {
+    refreshingApps.value = false;
+  }
+}
+
+/* ── Helpers ── */
+
+function iconFor(cat: AppCategory): string {
+  return categoryIcon(cat);
+}
 
 /* ── Handlers ── */
 
@@ -170,7 +239,7 @@ function confirmAlways(): void {
 .ow-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
@@ -179,6 +248,21 @@ function confirmAlways(): void {
 .ow-title {
   font-size: 0.95rem;
   font-weight: 600;
+  flex: 1;
+}
+
+.ow-header-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: ow-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ow-spin {
+  to { transform: rotate(360deg); }
 }
 
 .ow-close-btn {
@@ -196,7 +280,7 @@ function confirmAlways(): void {
 
 /* Description */
 .ow-desc {
-  padding: 10px 16px;
+  padding: 10px 16px 4px;
   font-size: 0.82rem;
   color: #94a3b8;
   flex-shrink: 0;
@@ -204,6 +288,26 @@ function confirmAlways(): void {
 .ow-desc strong {
   color: #cbd5e1;
 }
+
+/* Search */
+.ow-search-row {
+  padding: 6px 16px 6px;
+  flex-shrink: 0;
+}
+
+.ow-search-box {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  outline: none;
+  box-sizing: border-box;
+}
+.ow-search-box::placeholder { color: #64748b; }
+.ow-search-box:focus { border-color: rgba(59, 130, 246, 0.5); }
 
 /* List */
 .ow-list {
@@ -219,6 +323,17 @@ function confirmAlways(): void {
 .ow-list::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
+}
+
+.ow-category { margin-bottom: 4px; }
+
+.ow-category-label {
+  padding: 6px 10px 2px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .ow-item {
@@ -238,6 +353,34 @@ function confirmAlways(): void {
   background: rgba(59, 130, 246, 0.2);
 }
 
+.ow-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.ow-item-icon.visual {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+.ow-item-icon.universal {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+.ow-item-icon.worker {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+.ow-item-icon.node {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
 .ow-item-name {
   font-size: 0.85rem;
   font-weight: 500;
@@ -253,15 +396,6 @@ function confirmAlways(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-.ow-item-tag {
-  font-size: 0.65rem;
-  color: #94a3b8;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 2px 6px;
-  border-radius: 3px;
-  flex-shrink: 0;
 }
 
 .ow-loading,

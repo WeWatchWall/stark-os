@@ -44,6 +44,11 @@ export interface PackMetadata {
    * @default false
    */
   enableEphemeral?: boolean;
+  /**
+   * Labels for categorising this pack in the start menu and "open with" dialog.
+   * A special label `"hidden"` prevents the pack from appearing in the UI.
+   */
+  labels?: string[];
   /** Additional configuration */
   [key: string]: unknown;
 }

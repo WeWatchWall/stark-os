@@ -32,6 +32,7 @@ export const packCommandDef: CliCommandDef = {
         { flags: '--ver <version>', description: 'Pack version', defaultValue: '1.0.0' },
         { flags: '-r, --runtime <runtime>', description: 'Runtime tag (node, browser)', defaultValue: 'node' },
         { flags: '-d, --description <desc>', description: 'Pack description' },
+        { flags: '--label <label>', description: 'Label for categorisation in start menu (repeatable)' },
       ],
       apiMethod: 'POST',
       apiPath: '/api/packs',

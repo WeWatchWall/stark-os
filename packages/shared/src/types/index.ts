@@ -271,6 +271,7 @@ export {
 export type {
   Service,
   ServiceStatus,
+  ServiceMode,
   ServiceVisibility,
   CreateServiceInput,
   UpdateServiceInput,
@@ -280,10 +281,12 @@ export type {
 export {
   isServiceActive,
   isServiceDaemonSet,
+  isServiceDynamic,
   isServiceReady,
   DEFAULT_SERVICE_RESOURCE_REQUESTS,
   DEFAULT_SERVICE_RESOURCE_LIMITS,
   VALID_SERVICE_VISIBILITY_VALUES,
+  VALID_SERVICE_MODE_VALUES,
 } from './service.js';
 
 // Volume types

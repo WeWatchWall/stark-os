@@ -102,6 +102,7 @@ export {
   validateServicePackId,
   validateServicePackName,
   validateReplicas,
+  validateServiceMode,
   validateServiceNamespace,
   validateServiceStatus,
   validateServiceMetadata,

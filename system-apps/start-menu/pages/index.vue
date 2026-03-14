@@ -21,7 +21,7 @@
     </div>
 
     <!-- Toolbar: List / Back toggle -->
-    <div v-if="!searchActive && !initialLoading" class="menu-toolbar">
+    <div v-if="!searchActive && !initialLoading && !servicePickerApp" class="menu-toolbar">
       <button v-if="viewMode === 'labels'" class="toolbar-btn" @click="viewMode = 'list'">☰ List</button>
       <button v-else class="toolbar-btn" @click="viewMode = 'labels'">← Back</button>
     </div>
@@ -36,6 +36,33 @@
     <div v-else-if="errorMsg && allApps.length === 0" class="menu-error">
       <span>{{ errorMsg }}</span>
       <button class="retry-btn" @click="refresh">Retry</button>
+    </div>
+
+    <!-- Dynamic service picker overlay -->
+    <div v-else-if="servicePickerApp" class="menu-body">
+      <div class="service-picker-header">
+        <button class="toolbar-btn" @click="servicePickerApp = null; dynamicServices = [];">← Back</button>
+        <span class="service-picker-title">Select service for {{ servicePickerApp.name }}</span>
+      </div>
+      <div v-if="dynamicServicesLoading" class="menu-loading">
+        <span class="spinner" />
+        <span>Loading services…</span>
+      </div>
+      <div v-else-if="dynamicServices.length === 0" class="menu-empty">
+        No dynamic services available for this pack.
+      </div>
+      <div v-else class="service-picker-list">
+        <button
+          v-for="svc in dynamicServices"
+          :key="svc.id"
+          class="app-item"
+          @click="launchWithService(servicePickerApp, svc)"
+        >
+          <span class="app-icon service-icon">⚡</span>
+          <span class="app-name">{{ svc.name }}</span>
+          <span class="service-ns">{{ svc.namespace }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- App list body -->
@@ -110,6 +137,7 @@ import {
   searchApps,
   appsByCategory,
   categoryIcon,
+  hasServiceLabel,
   fetchPacks,
   readPackCache,
   writePackCache,
@@ -118,6 +146,15 @@ import {
   type AppCategory,
   type LabelGroup,
 } from '../../../examples/shared/utils/lib/packs';
+
+/* ── Types ── */
+
+interface DynamicServiceItem {
+  id: string;
+  name: string;
+  namespace: string;
+  packId: string;
+}
 
 /* ── State ── */
 
@@ -137,6 +174,11 @@ const searchInput = ref<HTMLInputElement | null>(null);
 
 /** Expanded label groups */
 const expandedGroups = ref(new Set<string>());
+
+/** Dynamic service picker */
+const servicePickerApp = ref<AppEntry | null>(null);
+const dynamicServices = ref<DynamicServiceItem[]>([]);
+const dynamicServicesLoading = ref(false);
 
 /* ── Computed ── */
 
@@ -224,7 +266,79 @@ async function initLoad(): Promise<void> {
 
 /* ── Launch ── */
 
+/**
+ * Fetch dynamic services for a pack.
+ * Returns services where mode === 'dynamic' and packId matches the given pack.
+ */
+async function fetchDynamicServicesForPack(packId: string): Promise<DynamicServiceItem[]> {
+  try {
+    const api = createStarkAPI();
+    const data = await api.service.list({}) as { services?: Array<Record<string, unknown>> };
+    const services = data.services ?? [];
+    return services
+      .filter((s) => s.mode === 'dynamic' && s.packId === packId)
+      .map((s) => ({
+        id: String(s.id),
+        name: String(s.name),
+        namespace: String(s.namespace ?? 'default'),
+        packId: String(s.packId),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 async function launchApp(app: AppEntry): Promise<void> {
+  // If the pack has the special "service" label, look up dynamic services
+  if (hasServiceLabel(app.pack)) {
+    dynamicServicesLoading.value = true;
+    servicePickerApp.value = app;
+    dynamicServices.value = [];
+
+    const svcs = await fetchDynamicServicesForPack(app.pack.id);
+    dynamicServicesLoading.value = false;
+
+    if (svcs.length === 1) {
+      // Single dynamic service — launch directly
+      servicePickerApp.value = null;
+      await launchWithService(app, svcs[0]);
+      return;
+    } else if (svcs.length > 1) {
+      // Multiple dynamic services — show picker
+      dynamicServices.value = svcs;
+      return;
+    }
+    // No dynamic services found — fall through to normal launch
+    servicePickerApp.value = null;
+  }
+
+  await launchAppDirect(app);
+}
+
+/**
+ * Launch a pack under a specific dynamic service.
+ */
+async function launchWithService(app: AppEntry, svc: DynamicServiceItem): Promise<void> {
+  servicePickerApp.value = null;
+  dynamicServices.value = [];
+
+  try {
+    const api = createStarkAPI();
+    const browserNodeId = getBrowserNodeId();
+    const opts: Record<string, unknown> = { serviceId: svc.id };
+    if (browserNodeId) opts.nodeId = browserNodeId;
+    await api.pod.create(app.pack.name, opts);
+    requestHide();
+  } catch (err: unknown) {
+    console.error('Failed to launch app with service:', err);
+    alert(`Failed to launch ${app.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Normal launch path (no dynamic service).
+ */
+async function launchAppDirect(app: AppEntry): Promise<void> {
   try {
     const api = createStarkAPI();
 
@@ -549,5 +663,43 @@ onMounted(() => {
   text-align: center;
   color: #64748b;
   font-size: 0.85rem;
+}
+
+/* ── Service Picker ── */
+.service-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.service-picker-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.service-icon {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.service-ns {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: #64748b;
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
 }
 </style>

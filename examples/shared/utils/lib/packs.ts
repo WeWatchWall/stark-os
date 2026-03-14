@@ -49,7 +49,13 @@ export interface PackCache {
 /* ── Constants ── */
 
 /** The special label that hides a pack from the UI. */
-export const HIDDEN_LABEL = 'hidden';
+export const HIDDEN_LABEL = 'start:hidden';
+
+/** Prefix for labels used for start-menu organization. */
+export const START_LABEL_PREFIX = 'start:';
+
+/** The special label indicating a pack should be launched under a dynamic service. */
+export const SERVICE_LABEL = 'service';
 
 /* ── Categorisation ── */
 
@@ -75,16 +81,23 @@ export function buildAppEntries(packs: PackEntry[]): AppEntry[] {
     .map((p) => ({ name: p.name, category: categorizePack(p), pack: p }));
 }
 
-/** Group apps by their labels.  Apps without labels go into an "Other" group. */
+/** Group apps by their start-menu labels.  Only labels starting with "start:" are
+ *  used for grouping; the prefix is stripped for display.  Apps without qualifying
+ *  labels go into an "Other" group. */
 export function buildLabelGroups(apps: AppEntry[]): LabelGroup[] {
   const map = new Map<string, AppEntry[]>();
 
   for (const app of apps) {
-    const labels = app.pack.metadata?.labels?.filter(
-      (l) => l.toLowerCase() !== HIDDEN_LABEL,
-    );
-    if (labels && labels.length > 0) {
-      for (const label of labels) {
+    // Only consider labels prefixed with "start:" (excluding start:hidden)
+    const startLabels = (app.pack.metadata?.labels ?? [])
+      .filter((l) => {
+        const lower = l.toLowerCase();
+        return lower.startsWith(START_LABEL_PREFIX) && lower !== HIDDEN_LABEL;
+      })
+      .map((l) => l.slice(START_LABEL_PREFIX.length)); // strip prefix for display
+
+    if (startLabels.length > 0) {
+      for (const label of startLabels) {
         const key = label;
         if (!map.has(key)) map.set(key, []);
         map.get(key)!.push(app);
@@ -264,6 +277,15 @@ export function getBrowserNodeId(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Check if a pack has the special "service" label (used for dynamic service launch).
+ */
+export function hasServiceLabel(pack: PackEntry): boolean {
+  return (pack.metadata?.labels ?? []).some(
+    (l) => l.toLowerCase() === SERVICE_LABEL,
+  );
 }
 
 /**

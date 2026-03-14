@@ -2041,13 +2041,15 @@ commands['stark'] = async (ctx) => {
               services.map((d: Record<string, unknown>) => ({
                 name: String(d.name ?? ''),
                 pack: String(d.packVersion ?? ''),
-                replicas: d.replicas === 0 ? 'DaemonSet' : `${d.readyReplicas ?? 0}/${d.replicas}`,
+                mode: String(d.mode ?? 'replica'),
+                replicas: d.mode === 'daemon' ? 'Daemon' : d.mode === 'dynamic' ? 'Dynamic' : `${d.readyReplicas ?? 0}/${d.replicas}`,
                 status: statusBadge(String(d.status ?? '')),
                 namespace: String(d.namespace ?? ''),
               })),
               [
                 { key: 'name', header: 'Name', width: 25 },
                 { key: 'pack', header: 'Version', width: 15 },
+                { key: 'mode', header: 'Mode', width: 10 },
                 { key: 'replicas', header: 'Ready', width: 12 },
                 { key: 'status', header: 'Status', width: 12 },
                 { key: 'namespace', header: 'Namespace', width: 15 },
@@ -2057,7 +2059,8 @@ commands['stark'] = async (ctx) => {
           case 'status': {
             const n = positionals[0]; if (!n) return 'Usage: stark service status <name>\n';
             const svc = await api.service.status(n) as Record<string, unknown>;
-            const replicaDisplay = svc.replicas === 0 ? 'DaemonSet (all nodes)' : String(svc.replicas);
+            const svcMode = String(svc.mode ?? 'replica');
+            const replicaDisplay = svcMode === 'daemon' ? 'N/A (daemon)' : svcMode === 'dynamic' ? 'N/A (dynamic)' : String(svc.replicas);
             return `\nService: ${svc.name}\n\n` + fmtKeyValue({
               'ID': svc.id,
               'Status': statusBadge(String(svc.status ?? '')),
@@ -2065,8 +2068,9 @@ commands['stark'] = async (ctx) => {
               'Pack ID': svc.packId,
               'Pack Version': svc.packVersion,
               'Namespace': svc.namespace,
+              'Mode': svcMode,
               'Replicas': replicaDisplay,
-              'Ready': `${svc.readyReplicas ?? 0}/${svc.replicas === 0 ? 'N/A' : svc.replicas}`,
+              'Ready': `${svc.readyReplicas ?? 0}/${svcMode === 'daemon' || svcMode === 'dynamic' ? 'N/A' : svc.replicas}`,
               'Available': svc.availableReplicas,
               'Updated': svc.updatedReplicas,
               'Created': svc.createdAt ? new Date(String(svc.createdAt)).toLocaleString() : '(none)',
@@ -2096,7 +2100,8 @@ commands['stark'] = async (ctx) => {
               'Name': service.name,
               'Pack Version': service.packVersion,
               'Namespace': service.namespace,
-              'Replicas': service.replicas === 0 ? 'DaemonSet (all nodes)' : String(service.replicas),
+              'Mode': String(service.mode ?? 'replica'),
+              'Replicas': service.mode === 'daemon' ? 'N/A (daemon)' : service.mode === 'dynamic' ? 'N/A (dynamic)' : String(service.replicas),
               'Status': statusBadge(String(service.status ?? '')),
             });
             out += `\nℹ The service controller will create pods automatically.\n`;

@@ -9,6 +9,7 @@ import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import type {
   Service,
   ServiceStatus,
+  ServiceMode,
   ServiceListItem,
   CreateServiceInput,
   UpdateServiceInput,
@@ -32,6 +33,7 @@ interface ServiceRow {
   follow_latest: boolean;
   namespace: string;
   node_id: string | null;
+  mode: string;
   replicas: number;
   status: ServiceStatus;
   status_message: string | null;
@@ -87,6 +89,7 @@ function rowToService(row: ServiceRow): Service {
     followLatest: row.follow_latest ?? false,
     namespace: row.namespace,
     nodeId: row.node_id ?? undefined,
+    mode: (row.mode as ServiceMode) ?? 'replica',
     replicas: row.replicas,
     status: row.status,
     statusMessage: row.status_message ?? undefined,
@@ -134,6 +137,7 @@ function rowToServiceListItem(row: ServiceRow): ServiceListItem {
     packVersion: row.pack_version,
     followLatest: row.follow_latest ?? false,
     namespace: row.namespace,
+    mode: (row.mode as ServiceMode) ?? 'replica',
     replicas: row.replicas,
     readyReplicas: row.ready_replicas,
     availableReplicas: row.available_replicas,
@@ -168,6 +172,7 @@ export class ServiceQueries {
         follow_latest: input.followLatest ?? false,
         namespace: input.namespace ?? 'default',
         node_id: input.nodeId ?? null,
+        mode: input.mode ?? 'replica',
         replicas: input.replicas ?? 1, // Default to 1 replica
         status: 'active',
         labels: input.labels ?? {},
@@ -364,6 +369,9 @@ export class ServiceQueries {
     }
     if (input.nodeId !== undefined) {
       updates.node_id = input.nodeId;
+    }
+    if (input.mode !== undefined) {
+      updates.mode = input.mode;
     }
     if (input.replicas !== undefined) {
       updates.replicas = input.replicas;

@@ -650,6 +650,7 @@ import {
   validateServicePackId,
   validateServicePackName,
   validateReplicas,
+  validateServiceMode,
   validateServiceNamespace,
   validateServiceStatus,
   validateServiceMetadata,
@@ -748,7 +749,7 @@ describe('Service Validation', () => {
 
   describe('validateReplicas', () => {
     it('should accept valid replica counts', () => {
-      expect(validateReplicas(0)).toBeNull(); // DaemonSet mode
+      expect(validateReplicas(0)).toBeNull();
       expect(validateReplicas(1)).toBeNull();
       expect(validateReplicas(100)).toBeNull();
       expect(validateReplicas(1000)).toBeNull(); // Max replicas
@@ -773,6 +774,28 @@ describe('Service Validation', () => {
 
     it('should reject non-number replicas', () => {
       expect(validateReplicas('5')?.code).toBe('INVALID_TYPE');
+    });
+  });
+
+  describe('validateServiceMode', () => {
+    it('should accept valid modes', () => {
+      expect(validateServiceMode('replica')).toBeNull();
+      expect(validateServiceMode('daemon')).toBeNull();
+      expect(validateServiceMode('dynamic')).toBeNull();
+    });
+
+    it('should allow undefined (defaults to replica)', () => {
+      expect(validateServiceMode(undefined)).toBeNull();
+      expect(validateServiceMode(null)).toBeNull();
+    });
+
+    it('should reject invalid mode values', () => {
+      expect(validateServiceMode('daemonset')?.code).toBe('INVALID_VALUE');
+      expect(validateServiceMode('unknown')?.code).toBe('INVALID_VALUE');
+    });
+
+    it('should reject non-string mode', () => {
+      expect(validateServiceMode(123)?.code).toBe('INVALID_TYPE');
     });
   });
 
@@ -922,13 +945,33 @@ describe('Service Validation', () => {
       expect(result.errors.some(e => e.field === 'input')).toBe(true);
     });
 
-    it('should accept DaemonSet mode (replicas=0)', () => {
+    it('should accept daemon mode (replicas=0, mode=daemon)', () => {
       const result = validateCreateServiceInput({
-        name: 'daemonset-service',
+        name: 'daemon-service',
         packId: '11111111-1111-4111-8111-111111111111',
+        mode: 'daemon',
         replicas: 0,
       });
       expect(result.valid).toBe(true);
+    });
+
+    it('should accept dynamic mode', () => {
+      const result = validateCreateServiceInput({
+        name: 'dynamic-service',
+        packId: '11111111-1111-4111-8111-111111111111',
+        mode: 'dynamic',
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject invalid mode', () => {
+      const result = validateCreateServiceInput({
+        name: 'bad-mode-service',
+        packId: '11111111-1111-4111-8111-111111111111',
+        mode: 'unknown',
+      } as any);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.field === 'mode')).toBe(true);
     });
   });
 
@@ -988,7 +1031,23 @@ describe('Service Validation', () => {
       expect(result.errors.some(e => e.field === 'input')).toBe(true);
     });
 
-    it('should accept scale to DaemonSet mode', () => {
+    it('should accept mode update to daemon', () => {
+      const result = validateUpdateServiceInput({ mode: 'daemon' });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should accept mode update to dynamic', () => {
+      const result = validateUpdateServiceInput({ mode: 'dynamic' });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject invalid mode update', () => {
+      const result = validateUpdateServiceInput({ mode: 'invalid' } as any);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.field === 'mode')).toBe(true);
+    });
+
+    it('should accept scale to daemon mode', () => {
       const result = validateUpdateServiceInput({ replicas: 0 });
       expect(result.valid).toBe(true);
     });

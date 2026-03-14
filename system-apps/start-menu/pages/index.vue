@@ -301,7 +301,7 @@ async function launchApp(app: AppEntry): Promise<void> {
     if (svcs.length === 1) {
       // Single dynamic service — launch directly
       servicePickerApp.value = null;
-      await launchWithService(app, svcs[0]!);
+      await launchWithService(app, svcs[0]);
       return;
     } else if (svcs.length > 1) {
       // Multiple dynamic services — show picker

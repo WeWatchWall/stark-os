@@ -47,7 +47,7 @@ export interface PackMetadata {
   /**
    * Labels for categorising this pack in the start menu and "open with" dialog.
    *
-   * Labels prefixed with `"start:"` are used for start-menu organisation;
+   * Labels prefixed with `"start:"` are used for start-menu organization;
    * the prefix is stripped for display (e.g. `"start:Utilities"` → group "Utilities").
    *
    * Special labels:

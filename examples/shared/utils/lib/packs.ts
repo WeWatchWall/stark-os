@@ -51,7 +51,7 @@ export interface PackCache {
 /** The special label that hides a pack from the UI. */
 export const HIDDEN_LABEL = 'start:hidden';
 
-/** Prefix for labels used for start-menu organisation. */
+/** Prefix for labels used for start-menu organization. */
 export const START_LABEL_PREFIX = 'start:';
 
 /** The special label indicating a pack should be launched under a dynamic service. */

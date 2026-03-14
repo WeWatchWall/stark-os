@@ -533,37 +533,37 @@ describe('Service API Handlers', () => {
     });
   });
 
-  describe('Service with DaemonSet mode (replicas=0)', () => {
-    it('should create service in DaemonSet mode', async () => {
-      const daemonSetService = { ...sampleService, replicas: 0 };
+  describe('Service with daemon mode', () => {
+    it('should create service in daemon mode', async () => {
+      const daemonService = { ...sampleService, mode: 'daemon' as const, replicas: 0 };
 
       mockServiceQueries.createService.mockResolvedValue({
-        data: daemonSetService,
+        data: daemonService,
         error: null,
       });
 
       const result = await mockServiceQueries.createService(
-        { name: 'daemonset-service', packId: samplePack.id, replicas: 0 },
+        { name: 'daemon-service', packId: samplePack.id, mode: 'daemon', replicas: 0 },
         samplePack.id,
         '1.0.0',
         'dev-user-id'
       );
 
-      expect(result.data?.replicas).toBe(0);
+      expect(result.data?.mode).toBe('daemon');
       expect(result.error).toBeNull();
     });
 
-    it('should scale from regular to DaemonSet mode', async () => {
-      const daemonSetService = { ...sampleService, replicas: 0 };
+    it('should switch from replica to daemon mode', async () => {
+      const daemonService = { ...sampleService, mode: 'daemon' as const, replicas: 0 };
 
       mockServiceQueries.updateService.mockResolvedValue({
-        data: daemonSetService,
+        data: daemonService,
         error: null,
       });
 
-      const result = await mockServiceQueries.updateService(sampleService.id, { replicas: 0 });
+      const result = await mockServiceQueries.updateService(sampleService.id, { mode: 'daemon' });
 
-      expect(result.data?.replicas).toBe(0);
+      expect(result.data?.mode).toBe('daemon');
       expect(result.error).toBeNull();
     });
   });

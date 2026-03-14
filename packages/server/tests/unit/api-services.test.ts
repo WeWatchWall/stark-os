@@ -78,6 +78,7 @@ const sampleService: Service = {
   packVersion: '1.0.0',
   followLatest: false,
   namespace: 'default',
+  mode: 'replica',
   replicas: 3,
   status: 'active',
   labels: {},

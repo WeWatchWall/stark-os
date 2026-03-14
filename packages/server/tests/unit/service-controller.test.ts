@@ -76,6 +76,7 @@ function makeService(overrides: Partial<Service> = {}): Service {
     packVersion: '0.0.14',
     followLatest: true,
     namespace: 'default',
+    mode: 'daemon',
     replicas: 0,
     status: 'active',
     labels: {},
@@ -167,7 +168,7 @@ describe('ServiceController', () => {
       });
       mockSendToNode.mockReturnValue(true);
 
-      // No nodes for DaemonSet (focus on rolling update)
+      // No nodes for daemon mode (focus on rolling update)
       mockNodeQueries.listNodes.mockResolvedValue({ data: [], error: null });
       mockServiceQueries.updateReplicaCounts.mockResolvedValue({ data: {}, error: null });
 
@@ -206,9 +207,10 @@ describe('ServiceController', () => {
   });
 
   describe('stopping pods excluded from active pods', () => {
-    it('should not count stopping pods toward DaemonSet node coverage', async () => {
+    it('should not count stopping pods toward daemon mode node coverage', async () => {
       const service = makeService({
         followLatest: false,
+        mode: 'daemon',
         replicas: 0,
         packId: 'pack-1',
         packVersion: '0.0.15',
@@ -259,6 +261,7 @@ describe('ServiceController', () => {
     it('should create replacement pods for replicas > 0 when existing pods are stopping', async () => {
       const service = makeService({
         followLatest: false,
+        mode: 'replica',
         replicas: 2,
         packId: 'pack-1',
         packVersion: '0.0.15',
@@ -293,6 +296,41 @@ describe('ServiceController', () => {
 
       // Two new pods should be created (desired=2, active=0 since stopping pods excluded)
       expect(mockPodQueries.createPodWithIncarnation).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('dynamic mode service', () => {
+    it('should skip reconciliation for dynamic mode services (no automatic pod creation)', async () => {
+      const service = makeService({
+        followLatest: false,
+        mode: 'dynamic',
+        replicas: 0,
+        packId: 'pack-1',
+        packVersion: '0.0.15',
+      });
+
+      mockServiceQueries.listActiveServices.mockResolvedValue({ data: [service], error: null });
+
+      // No existing pods
+      mockPodQueries.listPodsByService.mockResolvedValue({
+        data: [],
+        error: null,
+      });
+
+      mockServiceQueries.updateReplicaCounts.mockResolvedValue({ data: {}, error: null });
+
+      await controller.triggerReconcile();
+
+      // Should NOT create any pods
+      expect(mockPodQueries.createPodWithIncarnation).not.toHaveBeenCalled();
+
+      // Should still update replica counts for observability
+      expect(mockServiceQueries.updateReplicaCounts).toHaveBeenCalledWith(
+        'svc-1',
+        0, // ready
+        0, // available
+        0, // total active
+      );
     });
   });
 });

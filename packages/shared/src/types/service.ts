@@ -18,6 +18,21 @@ export type ServiceStatus =
   | 'deleting'; // Being deleted
 
 /**
+ * Service scheduling mode.
+ *
+ * - `replica`  → Maintain exactly N replicas across eligible nodes (default).
+ * - `daemon`   → Deploy one pod per eligible node (DaemonSet behaviour). `replicas` is ignored.
+ * - `dynamic`  → On-demand pods: no automatic reconciliation; pods are created
+ *                when explicitly requested via the pod-start command for this service.
+ */
+export type ServiceMode = 'replica' | 'daemon' | 'dynamic';
+
+/**
+ * Valid service mode values (for validation)
+ */
+export const VALID_SERVICE_MODE_VALUES: ServiceMode[] = ['replica', 'daemon', 'dynamic'];
+
+/**
  * Network visibility level for a service.
  *
  * Controls internal (service-to-service) access:
@@ -35,16 +50,18 @@ export const VALID_SERVICE_VISIBILITY_VALUES: ServiceVisibility[] = ['public', '
 /**
  * Service entity - persistent pod scheduling configuration
  * 
- * A Service maintains a desired number of pod replicas:
- * - replicas = 0: Deploy to ALL matching nodes (DaemonSet-like behavior)
- * - replicas > 0: Maintain exactly N pods across eligible nodes
+ * A Service schedules pods according to its `mode`:
+ * - `replica` → maintain exactly `replicas` pods across eligible nodes (default)
+ * - `daemon`  → deploy one pod per eligible node (`replicas` is ignored)
+ * - `dynamic` → on-demand: no automatic reconciliation; pods are created when
+ *               explicitly requested via the pod-start command for this service
  * 
  * @example
  * // Deploy to all production nodes
  * {
  *   name: "log-collector",
  *   packId: "...",
- *   replicas: 0,
+ *   mode: "daemon",
  *   scheduling: { nodeSelector: { env: "production" } }
  * }
  * 
@@ -52,7 +69,15 @@ export const VALID_SERVICE_VISIBILITY_VALUES: ServiceVisibility[] = ['public', '
  * {
  *   name: "web-frontend",
  *   packId: "...",
+ *   mode: "replica",
  *   replicas: 3
+ * }
+ *
+ * // Dynamic on-demand service
+ * {
+ *   name: "user-workspace",
+ *   packId: "...",
+ *   mode: "dynamic"
  * }
  */
 export interface Service {
@@ -76,10 +101,17 @@ export interface Service {
    * Required when volumeMounts are specified (volumes are node-local).
    */
   nodeId?: string;
+  /**
+   * Scheduling mode for the service.
+   * - `replica` → maintain exactly `replicas` pods (default)
+   * - `daemon`  → one pod per eligible node (`replicas` ignored)
+   * - `dynamic` → pods created on-demand, no automatic reconciliation
+   * @default 'replica'
+   */
+  mode: ServiceMode;
   /** 
-   * Number of desired replicas:
-   * - 0 = deploy to all matching nodes (DaemonSet-like)
-   * - >0 = maintain exactly N pods
+   * Number of desired replicas (only used when mode is 'replica').
+   * Ignored for daemon and dynamic modes.
    */
   replicas: number;
   /** Current status */
@@ -214,10 +246,16 @@ export interface CreateServiceInput {
    * Required when volumeMounts are specified (volumes are node-local).
    */
   nodeId?: string;
+  /**
+   * Scheduling mode for the service.
+   * - `replica` → maintain exactly `replicas` pods (default)
+   * - `daemon`  → one pod per eligible node (`replicas` ignored)
+   * - `dynamic` → pods created on-demand, no automatic reconciliation
+   * @default 'replica'
+   */
+  mode?: ServiceMode;
   /** 
-   * Number of replicas:
-   * - 0 = deploy to all matching nodes
-   * - >0 = maintain exactly N pods
+   * Number of replicas (only used when mode is 'replica').
    * @default 1
    */
   replicas?: number;
@@ -294,6 +332,8 @@ export interface UpdateServiceInput {
   followLatest?: boolean;
   /** Target node update */
   nodeId?: string | null;
+  /** Scheduling mode update */
+  mode?: ServiceMode;
   /** New replica count */
   replicas?: number;
   /** New status */
@@ -356,6 +396,7 @@ export interface ServiceListItem {
   packVersion: string;
   followLatest: boolean;
   namespace: string;
+  mode: ServiceMode;
   replicas: number;
   readyReplicas: number;
   availableReplicas: number;
@@ -373,21 +414,32 @@ export function isServiceActive(service: Service): boolean {
 }
 
 /**
- * Check if service is a DaemonSet (replicas = 0)
+ * Check if service is a DaemonSet (mode = 'daemon')
  */
 export function isServiceDaemonSet(service: Service): boolean {
-  return service.replicas === 0;
+  return service.mode === 'daemon';
+}
+
+/**
+ * Check if service is dynamic (mode = 'dynamic')
+ */
+export function isServiceDynamic(service: Service): boolean {
+  return service.mode === 'dynamic';
 }
 
 /**
  * Check if service has reached desired state
  */
 export function isServiceReady(service: Service): boolean {
-  if (service.replicas === 0) {
+  if (service.mode === 'daemon') {
     // DaemonSet: check if availableReplicas > 0
     return service.availableReplicas > 0 && service.status === 'active';
   }
-  // Regular service: check if readyReplicas matches desired
+  if (service.mode === 'dynamic') {
+    // Dynamic: always ready if active (no automatic reconciliation)
+    return service.status === 'active';
+  }
+  // Replica service: check if readyReplicas matches desired
   return service.readyReplicas >= service.replicas && service.status === 'active';
 }
 

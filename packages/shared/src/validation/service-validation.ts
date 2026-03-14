@@ -3,7 +3,8 @@
  * @module @stark-o/shared/validation/service-validation
  */
 
-import type { ServiceStatus, CreateServiceInput, UpdateServiceInput } from '../types/service';
+import type { ServiceStatus, ServiceMode, CreateServiceInput, UpdateServiceInput } from '../types/service';
+import { VALID_SERVICE_MODE_VALUES } from '../types/service';
 import type { ValidationResult, ValidationError } from './pack-validation';
 import { validateLabels, validateAnnotations } from './node-validation';
 import { validateTolerations, validateResourceRequirements, validateArgs } from './pod-validation';
@@ -182,6 +183,33 @@ export function validateReplicas(replicas: unknown): ValidationError | null {
     return {
       field: 'replicas',
       message: `Replicas cannot exceed ${MAX_REPLICAS}`,
+      code: 'INVALID_VALUE',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Validate service mode
+ */
+export function validateServiceMode(mode: unknown): ValidationError | null {
+  if (mode === undefined || mode === null) {
+    return null; // Defaults to 'replica'
+  }
+
+  if (typeof mode !== 'string') {
+    return {
+      field: 'mode',
+      message: 'Mode must be a string',
+      code: 'INVALID_TYPE',
+    };
+  }
+
+  if (!VALID_SERVICE_MODE_VALUES.includes(mode as ServiceMode)) {
+    return {
+      field: 'mode',
+      message: `Mode must be one of: ${VALID_SERVICE_MODE_VALUES.join(', ')}`,
       code: 'INVALID_VALUE',
     };
   }
@@ -371,6 +399,10 @@ export function validateCreateServiceInput(input: unknown): ValidationResult {
   const replicasError = validateReplicas(data.replicas);
   if (replicasError) errors.push(replicasError);
 
+  // Optional: mode
+  const modeError = validateServiceMode(data.mode);
+  if (modeError) errors.push(modeError);
+
   // Optional: namespace
   const namespaceError = validateServiceNamespace(data.namespace);
   if (namespaceError) errors.push(namespaceError);
@@ -474,6 +506,12 @@ export function validateUpdateServiceInput(input: unknown): ValidationResult {
   if (data.replicas !== undefined) {
     const replicasError = validateReplicas(data.replicas);
     if (replicasError) errors.push(replicasError);
+  }
+
+  // Optional: mode
+  if (data.mode !== undefined) {
+    const modeError = validateServiceMode(data.mode);
+    if (modeError) errors.push(modeError);
   }
 
   // Optional: followLatest

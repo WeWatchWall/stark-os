@@ -46,7 +46,13 @@ export interface PackMetadata {
   enableEphemeral?: boolean;
   /**
    * Labels for categorising this pack in the start menu and "open with" dialog.
-   * A special label `"hidden"` prevents the pack from appearing in the UI.
+   *
+   * Labels prefixed with `"start:"` are used for start-menu organisation;
+   * the prefix is stripped for display (e.g. `"start:Utilities"` → group "Utilities").
+   *
+   * Special labels:
+   * - `"start:hidden"` — hides the pack from the start menu and open-with dialog.
+   * - `"service"`       — indicates the pack should be launched under a dynamic service.
    */
   labels?: string[];
   /** Additional configuration */

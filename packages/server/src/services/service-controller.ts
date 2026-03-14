@@ -4,9 +4,10 @@
  *
  * Background service that reconciles services by:
  * 1. Checking desired vs actual pod counts
- * 2. Creating pods for under-replicated services
- * 3. Handling DaemonSet mode (replicas=0) by deploying to all matching nodes
- * 4. Cleaning up pods when services are deleted
+ * 2. Creating pods for under-replicated services (mode='replica')
+ * 3. Handling daemon mode by deploying to all matching nodes (mode='daemon')
+ * 4. Skipping automatic reconciliation for dynamic mode (mode='dynamic')
+ * 5. Cleaning up pods when services are deleted
  */
 
 import { createServiceLogger, matchesSelector, isRuntimeCompatible, isNodeVersionCompatible, shouldCountTowardCrashLoop } from '@stark-o/shared';
@@ -61,8 +62,9 @@ const DEFAULT_CONFIG: Required<ServiceControllerConfig> = {
  * Service Controller Service
  *
  * Runs a background loop that reconciles services:
- * - For replicas > 0: maintains exactly N pods
- * - For replicas = 0 (DaemonSet): maintains 1 pod per matching node
+ * - For mode 'replica': maintains exactly N pods
+ * - For mode 'daemon': maintains 1 pod per matching node
+ * - For mode 'dynamic': skips reconciliation (pods are created on-demand)
  */
 export class ServiceController {
   private config: Required<ServiceControllerConfig>;
@@ -574,11 +576,29 @@ export class ServiceController {
       !['stopped', 'failed', 'evicted', 'stopping'].includes(p.status)
     );
 
-    if (service.replicas === 0) {
-      // DaemonSet mode: one pod per matching node
+    if (service.mode === 'dynamic') {
+      // Dynamic mode: no automatic reconciliation — pods are created on-demand.
+      // Still update replica counts for observability.
+      const readyPods = activePods.filter(p => p.status === 'running');
+      const availablePods = activePods.filter(p => 
+        ['running', 'starting', 'scheduled'].includes(p.status)
+      );
+
+      const serviceQueries = getServiceQueriesAdmin();
+      await serviceQueries.updateReplicaCounts(
+        service.id,
+        readyPods.length,
+        availablePods.length,
+        activePods.length
+      );
+      return;
+    }
+
+    if (service.mode === 'daemon') {
+      // Daemon mode: one pod per matching node
       await this.reconcileDaemonSet(service, activePods);
     } else {
-      // Regular service: maintain exact replica count
+      // Replica mode: maintain exact replica count
       await this.reconcileReplicas(service, activePods);
     }
 
@@ -598,7 +618,7 @@ export class ServiceController {
   }
 
   /**
-   * Reconcile DaemonSet mode (replicas = 0)
+   * Reconcile daemon mode (mode = 'daemon')
    * Creates one pod per matching node
    */
   private async reconcileDaemonSet(
@@ -611,7 +631,7 @@ export class ServiceController {
     // Get pack to check runtime compatibility
     const packResult = await packQueries.getPackById(service.packId);
     if (packResult.error || !packResult.data) {
-      logger.error('Failed to get pack for DaemonSet reconciliation', undefined, {
+      logger.error('Failed to get pack for daemon reconciliation', undefined, {
         serviceId: service.id,
         packId: service.packId,
         error: packResult.error,
@@ -624,7 +644,7 @@ export class ServiceController {
     // Get all online nodes
     const nodesResult = await nodeQueries.listNodes({ status: 'online' });
     if (nodesResult.error || !nodesResult.data) {
-      logger.error('Failed to get nodes for DaemonSet reconciliation', undefined, {
+      logger.error('Failed to get nodes for daemon reconciliation', undefined, {
         serviceId: service.id,
         error: nodesResult.error,
       });
@@ -639,7 +659,7 @@ export class ServiceController {
         node.registeredBy
       );
       if (accessResult.error) {
-        logger.warn('Failed to check pack access for node in DaemonSet', { 
+        logger.warn('Failed to check pack access for node in daemon mode', { 
           nodeId: node.id, 
           packId: pack.id,
           error: accessResult.error 
@@ -667,7 +687,7 @@ export class ServiceController {
       return;
     }
 
-    logger.info('DaemonSet needs pods on new nodes', {
+    logger.info('Daemon mode needs pods on new nodes', {
       serviceName: service.name,
       nodesCount: nodesNeedingPods.length,
     });
@@ -679,7 +699,7 @@ export class ServiceController {
   }
 
   /**
-   * Reconcile regular service (replicas > 0)
+   * Reconcile replica mode service (mode = 'replica')
    */
   private async reconcileReplicas(
     service: Service,
@@ -853,7 +873,7 @@ export class ServiceController {
     const incarnation = incarnationResult.data ?? 1;
 
     // Create pod with service reference and incarnation
-    // For DaemonSet mode (targetNodeId provided), the pod is pre-assigned to the node
+    // For daemon mode (targetNodeId provided), the pod is pre-assigned to the node
     const result = await podQueries.createPodWithIncarnation({
       packId: service.packId,
       packVersion: service.packVersion,
@@ -889,7 +909,7 @@ export class ServiceController {
       targetNodeId,
     });
 
-    // For DaemonSet mode: immediately deploy to the target node
+    // For daemon mode: immediately deploy to the target node
     if (targetNodeId && pod) {
       await this.deployPodToNode(pod.id, targetNodeId, pack, service.name);
     }
@@ -897,7 +917,7 @@ export class ServiceController {
 
   /**
    * Send pod:deploy message to a node via WebSocket
-   * Used for DaemonSet pods that are pre-assigned to specific nodes
+   * Used for daemon mode pods that are pre-assigned to specific nodes
    */
   private async deployPodToNode(
     podId: string,
@@ -989,7 +1009,7 @@ export class ServiceController {
     });
 
     if (sent) {
-      logger.info('DaemonSet pod deploy message sent to node', {
+      logger.info('Daemon pod deploy message sent to node', {
         podId,
         nodeId,
         nodeName: node.name,

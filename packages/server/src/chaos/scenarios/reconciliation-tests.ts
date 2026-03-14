@@ -714,16 +714,16 @@ export interface ServiceShapeChangeOptions {
   /**
    * Change type:
    * - 'scale_down': Reduce replica count
-   * - 'daemonset_to_replica': Change from replicas=0 (DaemonSet) to fixed count
+   * - 'daemon_to_replica': Change from daemon mode to replica mode
    */
-  changeType: 'scale_down' | 'daemonset_to_replica';
-  /** New replica count (for scale_down or daemonset_to_replica) */
+  changeType: 'scale_down' | 'daemon_to_replica';
+  /** New replica count (for scale_down or daemon_to_replica) */
   newReplicas: number;
 }
 
 export const serviceShapeChangeScenario: ChaosScenario<ServiceShapeChangeOptions> = {
   name: 'service-shape-change',
-  description: 'Test pod cleanup when service shape changes (scale down, DaemonSet→replica)',
+  description: 'Test pod cleanup when service shape changes (scale down, daemon→replica)',
 
   async validate(options): Promise<{ valid: boolean; error?: string }> {
     const chaos = getChaosProxy();
@@ -775,12 +775,12 @@ export const serviceShapeChangeScenario: ChaosScenario<ServiceShapeChangeOptions
         console.log(`      • ${pod.id} on node ${pod.nodeId}`);
       });
       
-      events.push(`Initial: replicas=${initialService.data.replicas}, running_pods=${runningPods.length}`);
+      events.push(`Initial: mode=${initialService.data.mode ?? 'replica'}, replicas=${initialService.data.replicas}, running_pods=${runningPods.length}`);
 
-      const isDaemonSet = initialService.data.replicas === 0;
+      const isDaemonSet = initialService.data.mode === 'daemon';
       
-      if (options.changeType === 'daemonset_to_replica' && !isDaemonSet) {
-        console.log(`\n    ⚠ Warning: Service is not a DaemonSet (replicas=${initialService.data.replicas})`);
+      if (options.changeType === 'daemon_to_replica' && !isDaemonSet) {
+        console.log(`\n    ⚠ Warning: Service is not in daemon mode (mode=${initialService.data.mode ?? 'replica'})`);
       }
 
       // ─────────────────────────────────────────────────────────────────────────
@@ -808,9 +808,14 @@ export const serviceShapeChangeScenario: ChaosScenario<ServiceShapeChangeOptions
 
       section('APPLYING SERVICE CHANGE');
       
-      const updateResult = await serviceQueries.updateService(options.serviceId, {
+      const updatePayload: Record<string, unknown> = {
         replicas: options.newReplicas,
-      });
+      };
+      // When switching from daemon to replica, also update the mode
+      if (options.changeType === 'daemon_to_replica') {
+        updatePayload.mode = 'replica';
+      }
+      const updateResult = await serviceQueries.updateService(options.serviceId, updatePayload as any);
       
       if (updateResult.error) {
         return {

@@ -811,7 +811,7 @@ export class PodQueries {
   /**
    * Creates a pod with a specific incarnation number
    * Used when creating replacement pods after revocation
-   * @param targetNodeId - Optional node ID to pre-assign the pod to (for DaemonSet mode)
+   * @param targetNodeId - Optional node ID to pre-assign the pod to (for daemon mode)
    */
   async createPodWithIncarnation(
     input: CreatePodInput,
@@ -850,7 +850,7 @@ export class PodQueries {
       incarnation: incarnation,
     };
 
-    // For DaemonSet mode: pre-assign pod to specific node
+    // For daemon mode: pre-assign pod to specific node
     if (targetNodeId) {
       insertData.node_id = targetNodeId;
       insertData.status = 'scheduled';

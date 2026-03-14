@@ -7,6 +7,7 @@ import { reactive } from '@vue/reactivity';
 import type {
   Service,
   ServiceStatus,
+  ServiceMode,
   CreateServiceInput,
   ServiceListItem,
   ResourceRequirements,
@@ -19,6 +20,7 @@ import {
   validateCreateServiceInput,
   isServiceActive,
   isServiceDaemonSet,
+  isServiceDynamic,
   isServiceReady,
   DEFAULT_SERVICE_RESOURCE_REQUESTS,
   DEFAULT_SERVICE_RESOURCE_LIMITS,
@@ -113,10 +115,17 @@ export class ServiceModel {
   }
 
   /**
-   * Desired replicas (0 = DaemonSet mode)
+   * Desired replicas (for replica mode)
    */
   get replicas(): number {
     return this._service.replicas;
+  }
+
+  /**
+   * Scheduling mode
+   */
+  get mode(): ServiceMode {
+    return this._service.mode;
   }
 
   /**
@@ -260,10 +269,17 @@ export class ServiceModel {
   }
 
   /**
-   * Check if service is a DaemonSet (replicas = 0)
+   * Check if service is a DaemonSet (mode = 'daemon')
    */
   get isDaemonSet(): boolean {
     return isServiceDaemonSet(this._service);
+  }
+
+  /**
+   * Check if service is dynamic (mode = 'dynamic')
+   */
+  get isDynamic(): boolean {
+    return isServiceDynamic(this._service);
   }
 
   /**
@@ -335,6 +351,7 @@ export class ServiceModel {
       packVersion: this._service.packVersion,
       followLatest: this._service.followLatest,
       namespace: this._service.namespace,
+      mode: this._service.mode,
       replicas: this._service.replicas,
       readyReplicas: this._service.readyReplicas,
       availableReplicas: this._service.availableReplicas,
@@ -366,6 +383,7 @@ export class ServiceModel {
       followLatest: input.followLatest ?? false,
       namespace: input.namespace ?? 'default',
       nodeId: input.nodeId,
+      mode: input.mode ?? 'replica',
       replicas: input.replicas ?? 1, // Default to 1 replica
       status: 'active',
       statusMessage: undefined,

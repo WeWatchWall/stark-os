@@ -15,7 +15,7 @@ A JavaScript operating system that deploys and manages software packages ("packs
 - 🎯 **Kubernetes-Like Scheduling**: Filter → Score → Select pipeline with node selectors, taints/tolerations, resource fitting, priority & preemption
 - 🔐 **Security & RBAC**: Supabase Auth with 4-role model (admin/user/node/viewer), ownership boundaries, trust zones, and transport security
 - 📡 **Real-Time Event System**: Structured events across 7 categories with persistent storage, WebSocket streaming, correlation IDs, and audit trails
-- 🛡️ **Services & Auto-Healing**: Declarative service controller with replica-based and DaemonSet modes, crash-loop detection, auto-rollback, and follow-latest upgrades
+- 🛡️ **Services & Auto-Healing**: Declarative service controller with replica, daemon, and dynamic scheduling modes, crash-loop detection, auto-rollback, and follow-latest upgrades
 - 🌐 **Networking & Service Mesh**: Inter-service communication via internal URLs, WebRTC data plane, network policies (deny-by-default), and HTTP interceptors
 - 💥 **Built-in Chaos Testing**: 10 pre-built fault-injection scenarios including node loss, network partitions, latency injection, and API flakiness
 - 📊 **Observability**: Structured JSON logging, health endpoints, resource monitoring, and JSON output for scripting

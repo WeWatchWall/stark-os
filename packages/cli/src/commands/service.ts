@@ -39,6 +39,7 @@ interface Service {
   packId: string;
   packVersion: string;
   namespace: string;
+  mode: string;
   replicas: number;
   status: ServiceStatus;
   statusMessage?: string;
@@ -59,6 +60,7 @@ interface ServiceListItem {
   packId: string;
   packVersion: string;
   namespace: string;
+  mode: string;
   replicas: number;
   readyReplicas: number;
   availableReplicas: number;
@@ -76,6 +78,7 @@ async function createHandler(
     pack: string;
     ver?: string;
     namespace?: string;
+    mode?: string;
     replicas?: string;
     visibility?: string;
     label?: string[];
@@ -107,11 +110,26 @@ async function createHandler(
   requireAuth();
   const config = loadConfig();
 
+  // Determine mode
+  const validModes = ['replica', 'daemon', 'dynamic'];
+  const mode = options.mode ?? 'replica';
+  if (!validModes.includes(mode)) {
+    error(`Mode must be one of: ${validModes.join(', ')}`);
+    process.exit(1);
+  }
+
   const replicas = options.replicas !== undefined ? parseInt(options.replicas, 10) : 1;
-  const replicasDesc = replicas === 0 ? 'all matching nodes (DaemonSet mode)' : `${replicas} replica(s)`;
+  let modeDesc: string;
+  if (mode === 'daemon') {
+    modeDesc = 'daemon (one pod per matching node)';
+  } else if (mode === 'dynamic') {
+    modeDesc = 'dynamic (on-demand pods)';
+  } else {
+    modeDesc = `replica — ${replicas} replica(s)`;
+  }
 
   info(`Creating service: ${name} → ${options.pack}${options.ver ? '@' + options.ver : ''}`);
-  info(`Replicas: ${replicasDesc}`);
+  info(`Mode: ${modeDesc}`);
 
   // Validate visibility
   const validVisibility = ['public', 'private', 'system'];
@@ -131,6 +149,7 @@ async function createHandler(
       packName: options.pack,
       packVersion: options.ver,
       namespace: options.namespace ?? config.defaultNamespace ?? 'default',
+      mode,
       replicas,
       visibility: options.visibility ?? 'private',
     };
@@ -282,7 +301,8 @@ async function createHandler(
       'Name': service.name,
       'Pack Version': service.packVersion,
       'Namespace': service.namespace,
-      'Replicas': service.replicas === 0 ? 'DaemonSet (all nodes)' : service.replicas.toString(),
+      'Mode': service.mode ?? 'replica',
+      'Replicas': service.mode === 'daemon' ? 'N/A (daemon)' : service.mode === 'dynamic' ? 'N/A (dynamic)' : service.replicas.toString(),
       'Visibility': (service as any).visibility ?? 'private',
       'Ingress Port': (service as any).ingressPort ? (service as any).ingressPort.toString() : chalk.gray('(none)'),
       'Status': statusBadge(service.status),
@@ -352,13 +372,15 @@ async function listHandler(options: {
       services.map((d) => ({
         name: d.name,
         pack: d.packVersion,
-        replicas: d.replicas === 0 ? 'DaemonSet' : `${d.readyReplicas}/${d.replicas}`,
+        mode: d.mode ?? 'replica',
+        replicas: d.mode === 'daemon' ? 'Daemon' : d.mode === 'dynamic' ? 'Dynamic' : `${d.readyReplicas}/${d.replicas}`,
         status: statusBadge(d.status),
         namespace: d.namespace,
       })),
       [
         { key: 'name', header: 'Name', width: 25 },
         { key: 'pack', header: 'Version', width: 15 },
+        { key: 'mode', header: 'Mode', width: 10 },
         { key: 'replicas', header: 'Ready', width: 12 },
         { key: 'status', header: 'Status', width: 12 },
         { key: 'namespace', header: 'Namespace', width: 15 },
@@ -398,9 +420,12 @@ async function statusHandler(name: string, options: { namespace?: string }): Pro
 
     console.log(chalk.bold(`\nService: ${service.name}\n`));
 
-    const replicaDisplay = service.replicas === 0
-      ? 'DaemonSet (deploy to all matching nodes)'
-      : service.replicas.toString();
+    const serviceMode = (service as any).mode ?? 'replica';
+    const replicaDisplay = serviceMode === 'daemon'
+      ? 'N/A (daemon — one pod per matching node)'
+      : serviceMode === 'dynamic'
+        ? 'N/A (dynamic — on-demand)'
+        : service.replicas.toString();
 
     keyValue({
       'ID': service.id,
@@ -409,8 +434,9 @@ async function statusHandler(name: string, options: { namespace?: string }): Pro
       'Pack ID': service.packId,
       'Pack Version': service.packVersion,
       'Namespace': service.namespace,
+      'Mode': serviceMode,
       'Replicas': replicaDisplay,
-      'Ready': `${service.readyReplicas}/${service.replicas === 0 ? 'N/A' : service.replicas}`,
+      'Ready': `${service.readyReplicas}/${serviceMode === 'daemon' || serviceMode === 'dynamic' ? 'N/A' : service.replicas}`,
       'Available': service.availableReplicas.toString(),
       'Updated': service.updatedReplicas.toString(),
       'Created': new Date(service.createdAt).toLocaleString(),
@@ -439,7 +465,7 @@ async function scaleHandler(
     process.exit(1);
   }
 
-  const replicasDesc = replicas === 0 ? 'DaemonSet mode (all matching nodes)' : `${replicas} replica(s)`;
+  const replicasDesc = `${replicas} replica(s)`;
   info(`Scaling service '${name}' to ${replicasDesc}`);
 
   try {
@@ -745,7 +771,8 @@ export function createServiceCommand(): Command {
     .requiredOption('--pack <packName>', 'Pack name to deploy')
     .option('-V, --ver <version>', 'Pack version (defaults to latest)')
     .option('--namespace <namespace>', 'Target namespace', 'default')
-    .option('-r, --replicas <count>', 'Number of replicas (0 = all matching nodes)', '1')
+    .option('-m, --mode <mode>', 'Scheduling mode: replica, daemon, or dynamic', 'replica')
+    .option('-r, --replicas <count>', 'Number of replicas (only for replica mode)', '1')
     .option('--visibility <level>', 'Network visibility (public, private, system)', 'private')
     .option('-l, --label <key=value...>', 'Service labels')
     .option('--pod-label <key=value...>', 'Labels applied to created pods')
@@ -783,7 +810,7 @@ export function createServiceCommand(): Command {
   service
     .command('scale <name>')
     .description('Scale service replicas')
-    .requiredOption('-r, --replicas <count>', 'Number of replicas (0 = all matching nodes)')
+    .requiredOption('-r, --replicas <count>', 'Number of replicas')
     .option('--namespace <namespace>', 'Namespace', 'default')
     .action(scaleHandler);
 

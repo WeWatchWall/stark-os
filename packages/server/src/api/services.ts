@@ -200,6 +200,7 @@ async function createService(req: Request, res: Response): Promise<void> {
     requestLogger.info('Service created', {
       serviceId: result.data?.id,
       name: input.name,
+      mode: input.mode ?? 'replica',
       replicas: input.replicas ?? 1,
       ingressPort: input.ingressPort,
       correlationId,

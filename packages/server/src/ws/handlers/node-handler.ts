@@ -207,7 +207,7 @@ export async function handleNodeRegister(
 
   const registeredNodeId = createResult.data.id;
 
-  // Trigger reactive reconciliation — services (especially DaemonSets) may need
+  // Trigger reactive reconciliation — services (especially daemon mode) may need
   // pods deployed to the newly registered node.
   const serviceController = getServiceController();
   if (serviceController && serviceController.isActive()) {
@@ -550,7 +550,7 @@ export async function handleNodeReconnect(
   }
 
   // Always trigger immediate reconciliation when a node reconnects.
-  // This ensures DaemonSet services deploy pods to the newly-available node
+  // This ensures daemon mode services deploy pods to the newly-available node
   // and services with followLatest get new-version pods, even when no
   // orphaned pods were found (e.g., all pods were already stopped).
   const serviceController = getServiceController();

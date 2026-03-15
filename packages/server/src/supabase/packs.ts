@@ -74,7 +74,7 @@ function rowToPack(row: PackRow): Pack {
 /**
  * Converts a database row to a PackListItem
  */
-function rowToPackListItem(row: PackRow & { version_count?: number }): PackListItem {
+function rowToPackListItem(row: Pick<PackRow, 'id' | 'name' | 'version' | 'runtime_tag' | 'owner_id' | 'description' | 'granted_capabilities' | 'metadata' | 'created_at'> & { version_count?: number }): PackListItem {
   return {
     id: row.id,
     name: row.name,
@@ -211,11 +211,11 @@ export class PackQueries {
     limit?: number;
     offset?: number;
   }): Promise<PackResult<PackListItem[]>> {
-    // Use a subquery to get the latest version of each pack
-    // Group by name and get the most recent entry
+    // Select only the columns needed for the list view — avoids fetching
+    // the potentially large bundle_content column.
     let query = this.client
       .from('packs')
-      .select('*');
+      .select('id, name, version, runtime_tag, owner_id, description, granted_capabilities, metadata, created_at');
 
     if (options?.resourceNamespace) {
       query = query.eq('resource_namespace', options.resourceNamespace);
@@ -244,8 +244,9 @@ export class PackQueries {
     }
 
     // Group by pack name and get the latest version for each
-    const packMap = new Map<string, { pack: PackRow; count: number }>();
-    for (const row of data as PackRow[]) {
+    type PackListRow = Pick<PackRow, 'id' | 'name' | 'version' | 'runtime_tag' | 'owner_id' | 'description' | 'granted_capabilities' | 'metadata' | 'created_at'>;
+    const packMap = new Map<string, { pack: PackListRow; count: number }>();
+    for (const row of data as PackListRow[]) {
       const existing = packMap.get(row.name);
       if (!existing) {
         packMap.set(row.name, { pack: row, count: 1 });

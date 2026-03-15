@@ -138,6 +138,7 @@ import {
   appsByCategory,
   categoryIcon,
   hasServiceLabel,
+  extractVolumeMounts,
   fetchPacks,
   readPackCache,
   writePackCache,
@@ -298,6 +299,8 @@ async function launchWithService(app: AppEntry, svc: DynamicServiceItem): Promis
     const browserNodeId = getBrowserNodeId();
     const opts: Record<string, unknown> = { serviceId: svc.id };
     if (browserNodeId) opts.nodeId = browserNodeId;
+    const vols = extractVolumeMounts(app.pack);
+    if (vols.length > 0) opts.volumeMounts = vols;
     await api.pod.create(app.pack.name, opts);
     requestHide();
   } catch (err: unknown) {
@@ -312,6 +315,8 @@ async function launchWithService(app: AppEntry, svc: DynamicServiceItem): Promis
 async function launchAppDirect(app: AppEntry): Promise<void> {
   try {
     const api = createStarkAPI();
+    const vols = extractVolumeMounts(app.pack);
+    const volOpts = vols.length > 0 ? { volumeMounts: vols } : {};
 
     if (app.category === 'node') {
       const nodeResult = (await api.node.list()) as {
@@ -324,13 +329,13 @@ async function launchAppDirect(app: AppEntry): Promise<void> {
         alert('No Node.js runtime available. Please ensure a Node.js node is online.');
         return;
       }
-      await api.pod.create(app.pack.name, { nodeId: nodeNode.id });
+      await api.pod.create(app.pack.name, { nodeId: nodeNode.id, ...volOpts });
     } else {
       const browserNodeId = getBrowserNodeId();
       if (browserNodeId) {
-        await api.pod.create(app.pack.name, { nodeId: browserNodeId });
+        await api.pod.create(app.pack.name, { nodeId: browserNodeId, ...volOpts });
       } else {
-        await api.pod.create(app.pack.name);
+        await api.pod.create(app.pack.name, vols.length > 0 ? volOpts : undefined);
       }
     }
 

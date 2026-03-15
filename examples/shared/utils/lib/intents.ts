@@ -240,12 +240,18 @@ export function getBrowserNodeId(): string | null {
 
 /**
  * Launch a pack (program) on the current browser node with file paths as args.
+ * Optionally includes volume mounts extracted from pack labels.
  */
-export async function launchPack(packName: string, filePaths: string[]): Promise<void> {
+export async function launchPack(
+  packName: string,
+  filePaths: string[],
+  volumeMounts?: Array<{ name: string; mountPath: string }>,
+): Promise<void> {
   const api = createStarkAPI();
   const browserNodeId = getBrowserNodeId();
-  const opts: { args: string[]; nodeId?: string } = { args: filePaths };
+  const opts: { args: string[]; nodeId?: string; volumeMounts?: Array<{ name: string; mountPath: string }> } = { args: filePaths };
   if (browserNodeId) opts.nodeId = browserNodeId;
+  if (volumeMounts && volumeMounts.length > 0) opts.volumeMounts = volumeMounts;
   await api.pod.create(packName, opts);
 }
 
@@ -307,6 +313,7 @@ export async function handleOpenWithSelection(
   filenames: string[],
   filePaths: string[],
   setDefault: boolean,
+  volumeMounts?: Array<{ name: string; mountPath: string }>,
 ): Promise<IntentStore> {
   let updated = store;
 
@@ -317,6 +324,6 @@ export async function handleOpenWithSelection(
     }
   }
 
-  await launchPack(packName, filePaths);
+  await launchPack(packName, filePaths, volumeMounts);
   return updated;
 }

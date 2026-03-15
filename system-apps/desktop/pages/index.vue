@@ -720,10 +720,10 @@ function ctxOpenWith(): void {
   showOpenWithDialog(filenames, filePaths);
 }
 
-async function onOpenWithSelect(packName: string, setDefault: boolean): Promise<void> {
+async function onOpenWithSelect(packName: string, setDefault: boolean, volumeMounts: Array<{ name: string; mountPath: string }> = []): Promise<void> {
   owDialog.show = false;
   intentStore = await handleOpenWithSelection(
-    intentStore, packName, owDialog.filenames, owDialog.filePaths, setDefault,
+    intentStore, packName, owDialog.filenames, owDialog.filePaths, setDefault, volumeMounts,
   );
 }
 

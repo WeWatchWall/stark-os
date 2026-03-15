@@ -50,6 +50,10 @@ export interface PackMetadata {
    * Labels prefixed with `"start:"` are used for start-menu organization;
    * the prefix is stripped for display (e.g. `"start:Utilities"` → group "Utilities").
    *
+   * Labels prefixed with `"volume:"` declare volume mounts that should be
+   * attached when the pack is launched.  Format: `"volume:<name>:<mountPath>"`
+   * (e.g. `"volume:counter-data:/app/data"`).
+   *
    * Special labels:
    * - `"start:hidden"` — hides the pack from the start menu and open-with dialog.
    * - `"service"`       — indicates the pack should be launched under a dynamic service.

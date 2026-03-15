@@ -110,6 +110,7 @@ import {
   appsByCategory,
   categoryIcon,
   hasServiceLabel,
+  extractVolumeMounts,
   fetchPacks,
   fetchDynamicServicesForPack,
   readPackCache,
@@ -143,7 +144,7 @@ const props = withDefaults(defineProps<{
 /* ── Emits ── */
 
 const emit = defineEmits<{
-  (e: 'select', packName: string, setDefault: boolean): void;
+  (e: 'select', packName: string, setDefault: boolean, volumeMounts: Array<{ name: string; mountPath: string }>): void;
   (e: 'cancel'): void;
   (e: 'update:visible', val: boolean): void;
 }>();
@@ -234,7 +235,9 @@ function cancel(): void {
 }
 
 function openWith(packName: string, setDefault: boolean): void {
-  emit('select', packName, setDefault);
+  const app = resolvedApps.value.find((a) => a.name === packName);
+  const vols = app ? extractVolumeMounts(app.pack) : [];
+  emit('select', packName, setDefault, vols);
   emit('update:visible', false);
 }
 
@@ -275,6 +278,8 @@ async function launchWithService(app: AppEntry, svc: DynamicServiceItem): Promis
     const browserNodeId = getBrowserNodeId();
     const opts: Record<string, unknown> = { serviceId: svc.id };
     if (browserNodeId) opts.nodeId = browserNodeId;
+    const vols = extractVolumeMounts(app.pack);
+    if (vols.length > 0) opts.volumeMounts = vols;
     await api.pod.create(app.pack.name, opts);
     emit('update:visible', false);
   } catch (err: unknown) {

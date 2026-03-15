@@ -58,6 +58,9 @@ export const START_LABEL_PREFIX = 'start:';
 /** The special label indicating a pack should be launched under a dynamic service. */
 export const SERVICE_LABEL = 'service';
 
+/** Prefix for volume-mount labels.  Format: `volume:<name>:<mountPath>`. */
+export const VOLUME_LABEL_PREFIX = 'volume:';
+
 /* ── Categorisation ── */
 
 /** Determine the UI category for a given pack. */
@@ -319,6 +322,42 @@ export function hasServiceLabel(pack: PackEntry): boolean {
   return (pack.metadata?.labels ?? []).some(
     (l) => l.toLowerCase() === SERVICE_LABEL,
   );
+}
+
+/**
+ * Extract volume mounts declared via `volume:` labels on a pack.
+ *
+ * Each label must have the format `volume:<name>:<mountPath>` where
+ * `<name>` is the volume name and `<mountPath>` is the absolute path
+ * inside the container / pack runtime.
+ *
+ * Example: `volume:counter-data:/app/data`
+ *   → `{ name: 'counter-data', mountPath: '/app/data' }`
+ *
+ * Labels that do not match the expected format are silently ignored.
+ */
+export function extractVolumeMounts(
+  pack: PackEntry,
+): Array<{ name: string; mountPath: string }> {
+  const labels = pack.metadata?.labels ?? [];
+  const mounts: Array<{ name: string; mountPath: string }> = [];
+
+  for (const label of labels) {
+    if (!label.startsWith(VOLUME_LABEL_PREFIX)) continue;
+
+    // Everything after the "volume:" prefix is "<name>:<mountPath>"
+    const rest = label.slice(VOLUME_LABEL_PREFIX.length);
+    const colonIdx = rest.indexOf(':');
+    if (colonIdx < 1) continue; // need at least one char for the name
+
+    const name = rest.slice(0, colonIdx);
+    const mountPath = rest.slice(colonIdx + 1);
+    if (!mountPath) continue; // mount path must not be empty
+
+    mounts.push({ name, mountPath });
+  }
+
+  return mounts;
 }
 
 /**

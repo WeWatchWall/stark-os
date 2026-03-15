@@ -335,7 +335,7 @@ async function launchAppDirect(app: AppEntry): Promise<void> {
       if (browserNodeId) {
         await api.pod.create(app.pack.name, { nodeId: browserNodeId, ...volOpts });
       } else {
-        await api.pod.create(app.pack.name, vols.length > 0 ? volOpts : undefined);
+        await api.pod.create(app.pack.name, volOpts);
       }
     }
 

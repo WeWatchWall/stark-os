@@ -136,7 +136,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } 
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Tunable constants ── */
 const LONG_PRESS_MS = 300;
@@ -472,7 +472,23 @@ function onDrop(event: DragEvent): void {
   dropTargetIndex.value = null;
 
   if (from === null || to === null || from === to) return;
-  reorderItems(from, to);
+
+  const targetItem = displaySlots.value[to];
+  const draggedItem = displaySlots.value[from];
+  if (targetItem && targetItem.isDirectory && targetItem.name !== 'trash' && draggedItem) {
+    // Drop onto a folder: move items into it
+    let namesToMove: string[];
+    if (selectedNames.has(draggedItem.name)) {
+      namesToMove = [...selectedNames].filter(n => n !== targetItem.name && n !== 'trash');
+    } else {
+      namesToMove = [draggedItem.name];
+    }
+    if (namesToMove.length > 0) {
+      doMoveIntoFolder(DESKTOP_PATH, targetItem.name, namesToMove);
+    }
+  } else {
+    reorderItems(from, to);
+  }
 }
 
 // ── Drag & Drop (touch) ──
@@ -535,7 +551,21 @@ function onTouchEnd(index: number): void {
     const from = touchDragSourceIndex;
     const to = dropTargetIndex.value;
     if (from !== to) {
-      reorderItems(from, to);
+      const targetItem = displaySlots.value[to];
+      const draggedItem = displaySlots.value[from];
+      if (targetItem && targetItem.isDirectory && targetItem.name !== 'trash' && draggedItem) {
+        let namesToMove: string[];
+        if (selectedNames.has(draggedItem.name)) {
+          namesToMove = [...selectedNames].filter(n => n !== targetItem.name && n !== 'trash');
+        } else {
+          namesToMove = [draggedItem.name];
+        }
+        if (namesToMove.length > 0) {
+          doMoveIntoFolder(DESKTOP_PATH, targetItem.name, namesToMove);
+        }
+      } else {
+        reorderItems(from, to);
+      }
     }
   }
 
@@ -824,6 +854,86 @@ function onBackgroundContext(event: MouseEvent): void {
   ctxMenu.show = true;
 }
 
+// ── Move into folder (drag-to-folder and clipboard paste) ──
+
+async function doMoveIntoFolder(srcPath: string, folderName: string, names: string[]): Promise<void> {
+  if (names.length === 0 || !opfsRoot) return;
+  const destPath = normalizePath(srcPath + '/' + folderName);
+  try {
+    const conflicts = await moveItems(opfsRoot, srcPath, destPath, names, false);
+    if (conflicts.length > 0) {
+      const ok = confirm(
+        `Some items already exist in "${folderName}". Do you want to replace them?`,
+      );
+      if (!ok) return;
+      await moveItems(opfsRoot, srcPath, destPath, names, true);
+    }
+    selectedNames.clear();
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop move into folder failed:', err);
+  }
+}
+
+// ── Clipboard: Copy / Cut / Paste ──
+
+async function clipboardCopy(): Promise<void> {
+  const names = [...selectedNames].filter(n => n !== 'trash');
+  if (names.length === 0) return;
+  try {
+    const text = buildClipboardText('copy', DESKTOP_PATH, names);
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    console.warn('Desktop clipboard copy failed:', err);
+  }
+}
+
+async function clipboardCut(): Promise<void> {
+  const names = [...selectedNames].filter(n => n !== 'trash');
+  if (names.length === 0) return;
+  try {
+    const text = buildClipboardText('cut', DESKTOP_PATH, names);
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    console.warn('Desktop clipboard cut failed:', err);
+  }
+}
+
+async function clipboardPaste(): Promise<void> {
+  if (!opfsRoot) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    const parsed = parseClipboard(text);
+    if (!parsed) return;
+
+    const { srcDir, names } = extractSourceDir(parsed.paths);
+    if (names.length === 0) return;
+
+    // Noop: same source and destination
+    if (normalizePath(srcDir) === normalizePath(DESKTOP_PATH)) return;
+
+    const op = parsed.mode === 'cut' ? moveItems : copyItems;
+    const conflicts = await op(opfsRoot, srcDir, DESKTOP_PATH, names, false);
+    if (conflicts.length > 0) {
+      const ok = confirm(
+        'Some items already exist in the destination. Do you want to replace them?',
+      );
+      if (!ok) return;
+      await op(opfsRoot, srcDir, DESKTOP_PATH, names, true);
+    }
+
+    // Clear clipboard after cut+paste so the operation can't be repeated
+    if (parsed.mode === 'cut') {
+      await navigator.clipboard.writeText('');
+    }
+
+    selectedNames.clear();
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop clipboard paste failed:', err);
+  }
+}
+
 // ── Keyboard handler ──
 
 function openSelectedItems(): void {
@@ -877,6 +987,15 @@ function onKeyDown(event: KeyboardEvent): void {
         ctxRename();
       }
     }
+  } else if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+    event.preventDefault();
+    clipboardCopy();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === 'x') {
+    event.preventDefault();
+    clipboardCut();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
+    event.preventDefault();
+    clipboardPaste();
   }
 }
 

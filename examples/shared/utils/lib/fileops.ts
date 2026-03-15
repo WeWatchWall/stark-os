@@ -462,3 +462,180 @@ export async function uploadFiles(
     }
   }
 }
+
+/* ── Move / Copy operations ── */
+
+/**
+ * Check which names in a list already exist in the destination directory.
+ *
+ * @param root       OPFS root handle
+ * @param destPath   Destination directory path
+ * @param names      Names to check
+ * @returns          Names that already exist in the destination
+ */
+export async function checkConflicts(
+  root: FileSystemDirectoryHandle,
+  destPath: string,
+  names: string[],
+): Promise<string[]> {
+  const destHandle = await getDirectoryHandle(root, destPath);
+  const existing = new Set<string>();
+  for await (const key of destHandle.keys()) existing.add(key);
+  return names.filter(n => existing.has(n));
+}
+
+/**
+ * Copy files/folders from one directory to another.
+ *
+ * @param root       OPFS root handle
+ * @param srcPath    Source directory path
+ * @param destPath   Destination directory path
+ * @param names      Names of files/folders to copy
+ * @param overwrite  If true, replace existing items; otherwise return conflicts
+ * @returns          Empty array on success, or conflicting names if overwrite is false
+ */
+export async function copyItems(
+  root: FileSystemDirectoryHandle,
+  srcPath: string,
+  destPath: string,
+  names: string[],
+  overwrite = false,
+): Promise<string[]> {
+  if (names.length === 0) return [];
+  if (normalizePath(srcPath) === normalizePath(destPath)) return []; // noop
+
+  const srcHandle = await getDirectoryHandle(root, srcPath);
+  const destHandle = await getDirectoryHandle(root, destPath, true);
+
+  // Check for conflicts
+  if (!overwrite) {
+    const conflicts = await checkConflicts(root, destPath, names);
+    if (conflicts.length > 0) return conflicts;
+  }
+
+  for (const name of names) {
+    // Remove existing if overwriting
+    if (overwrite) {
+      try { await destHandle.removeEntry(name, { recursive: true }); } catch { /* may not exist */ }
+    }
+
+    let isFile = true;
+    try { await srcHandle.getFileHandle(name); } catch { isFile = false; }
+
+    if (isFile) {
+      const fh = await srcHandle.getFileHandle(name);
+      const file = await fh.getFile();
+      const data = await file.arrayBuffer();
+      const destFh = await destHandle.getFileHandle(name, { create: true });
+      const writable = await destFh.createWritable();
+      try { await writable.write(data); } finally { await writable.close(); }
+    } else {
+      const srcDir = await srcHandle.getDirectoryHandle(name);
+      const destDir = await destHandle.getDirectoryHandle(name, { create: true });
+      await copyDirectory(srcDir, destDir);
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Move files/folders from one directory to another.
+ *
+ * @param root       OPFS root handle
+ * @param srcPath    Source directory path
+ * @param destPath   Destination directory path
+ * @param names      Names of files/folders to move
+ * @param overwrite  If true, replace existing items; otherwise return conflicts
+ * @returns          Empty array on success, or conflicting names if overwrite is false
+ */
+export async function moveItems(
+  root: FileSystemDirectoryHandle,
+  srcPath: string,
+  destPath: string,
+  names: string[],
+  overwrite = false,
+): Promise<string[]> {
+  if (names.length === 0) return [];
+  if (normalizePath(srcPath) === normalizePath(destPath)) return []; // noop
+
+  const conflicts = await copyItems(root, srcPath, destPath, names, overwrite);
+  if (conflicts.length > 0) return conflicts;
+
+  // Remove originals
+  const srcHandle = await getDirectoryHandle(root, srcPath);
+  for (const name of names) {
+    await srcHandle.removeEntry(name, { recursive: true });
+  }
+
+  return [];
+}
+
+/* ── Clipboard helpers ── */
+
+export const CLIPBOARD_COPY_PREFIX = 'stark-copy:';
+export const CLIPBOARD_CUT_PREFIX = 'stark-cut:';
+
+/**
+ * Build clipboard text for copy or cut operations.
+ * Each line is prefixed with `stark-copy:` or `stark-cut:` followed by the full path.
+ */
+export function buildClipboardText(
+  mode: 'copy' | 'cut',
+  dirPath: string,
+  names: string[],
+): string {
+  const prefix = mode === 'copy' ? CLIPBOARD_COPY_PREFIX : CLIPBOARD_CUT_PREFIX;
+  return names.map(n => prefix + normalizePath(dirPath + '/' + n)).join('\n');
+}
+
+/**
+ * Parse clipboard text written by buildClipboardText.
+ *
+ * @returns  The operation mode and list of full paths, or null if not a Stark clipboard.
+ */
+export function parseClipboard(
+  text: string,
+): { mode: 'copy' | 'cut'; paths: string[] } | null {
+  const lines = text.trim().split('\n').filter(l => l.length > 0);
+  if (lines.length === 0) return null;
+
+  const first = lines[0];
+  let mode: 'copy' | 'cut';
+  let prefix: string;
+
+  if (first.startsWith(CLIPBOARD_COPY_PREFIX)) {
+    mode = 'copy';
+    prefix = CLIPBOARD_COPY_PREFIX;
+  } else if (first.startsWith(CLIPBOARD_CUT_PREFIX)) {
+    mode = 'cut';
+    prefix = CLIPBOARD_CUT_PREFIX;
+  } else {
+    return null;
+  }
+
+  const paths = lines
+    .filter(l => l.startsWith(prefix))
+    .map(l => l.slice(prefix.length));
+
+  if (paths.length === 0) return null;
+  return { mode, paths };
+}
+
+/**
+ * Given a list of full paths, extract the common source directory and individual names.
+ * Assumes all paths share the same parent directory.
+ */
+export function extractSourceDir(
+  paths: string[],
+): { srcDir: string; names: string[] } {
+  const names: string[] = [];
+  let srcDir = '/';
+  for (const p of paths) {
+    const parts = p.split('/').filter(s => s.length > 0);
+    const name = parts.pop();
+    if (name) names.push(name);
+    srcDir = '/' + parts.join('/');
+  }
+  return { srcDir: normalizePath(srcDir), names };
+}

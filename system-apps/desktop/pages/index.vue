@@ -436,6 +436,24 @@ function isDropFolderTarget(item: DesktopItem | null): boolean {
   return !!item && item.isDirectory && item.name !== 'trash';
 }
 
+function isDropTrashTarget(item: DesktopItem | null): boolean {
+  return !!item && item.name === 'trash';
+}
+
+function handleDropOnTrash(from: number): void {
+  const draggedItem = displaySlots.value[from];
+  if (!draggedItem || draggedItem.name === 'trash') return;
+  let namesToTrash: string[];
+  if (selectedNames.has(draggedItem.name)) {
+    namesToTrash = [...selectedNames].filter(n => n !== 'trash');
+  } else {
+    namesToTrash = [draggedItem.name];
+  }
+  if (namesToTrash.length > 0) {
+    doDelete(namesToTrash);
+  }
+}
+
 function handleDropOnFolder(from: number, to: number): void {
   const targetItem = displaySlots.value[to];
   const draggedItem = displaySlots.value[from];
@@ -492,7 +510,9 @@ function onDrop(event: DragEvent): void {
 
   if (from === null || to === null || from === to) return;
 
-  if (isDropFolderTarget(displaySlots.value[to]) && displaySlots.value[from]) {
+  if (isDropTrashTarget(displaySlots.value[to]) && displaySlots.value[from]) {
+    handleDropOnTrash(from);
+  } else if (isDropFolderTarget(displaySlots.value[to]) && displaySlots.value[from]) {
     handleDropOnFolder(from, to);
   } else {
     reorderItems(from, to);
@@ -559,7 +579,9 @@ function onTouchEnd(index: number): void {
     const from = touchDragSourceIndex;
     const to = dropTargetIndex.value;
     if (from !== to) {
-      if (isDropFolderTarget(displaySlots.value[to]) && displaySlots.value[from]) {
+      if (isDropTrashTarget(displaySlots.value[to]) && displaySlots.value[from]) {
+        handleDropOnTrash(from);
+      } else if (isDropFolderTarget(displaySlots.value[to]) && displaySlots.value[from]) {
         handleDropOnFolder(from, to);
       } else {
         reorderItems(from, to);
@@ -962,6 +984,9 @@ function openSelectedItems(): void {
 }
 
 function onKeyDown(event: KeyboardEvent): void {
+  // Don't intercept keys while a rename input is active
+  if (renaming.active) return;
+
   if (event.key === 'Enter') {
     openSelectedItems();
   } else if (event.key === 'Delete' || event.key === 'Backspace') {

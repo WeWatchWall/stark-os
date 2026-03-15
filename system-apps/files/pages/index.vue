@@ -545,6 +545,9 @@ function onItemActivate(item: FileItem): void {
 /* ── Keyboard ── */
 
 function onKeyDown(event: KeyboardEvent): void {
+  // Don't intercept keys while a rename input is active
+  if (renaming.active) return;
+
   if (event.key === 'Enter') {
     const selected = items.value.filter((i) => selectedNames.value.has(i.name));
     if (selected.length === 1 && selected[0].isDirectory) {

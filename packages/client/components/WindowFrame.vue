@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { useShellStore, type ShellWindow } from '~/stores/shell';
 
 const props = defineProps<{ win: ShellWindow }>();
@@ -152,11 +152,22 @@ function expandTitle() {
   scheduleCollapse();
 }
 
-// Auto-collapse when focused on mobile
+// Auto-collapse when focused on mobile + transfer keyboard focus to iframe
 watch(isFocused, (focused) => {
-  if (focused && isMobile.value) {
-    titleCollapsed.value = false;
-    scheduleCollapse();
+  if (focused) {
+    if (isMobile.value) {
+      titleCollapsed.value = false;
+      scheduleCollapse();
+    }
+    // Transfer keyboard focus to the iframe so clipboard shortcuts work
+    nextTick(() => {
+      const surface = document.getElementById(props.win.containerId);
+      if (!surface) return;
+      const iframe = surface.querySelector('iframe') as HTMLIFrameElement | null;
+      if (iframe) {
+        try { iframe.contentWindow?.focus(); } catch (_) { /* cross-origin */ }
+      }
+    });
   }
 });
 

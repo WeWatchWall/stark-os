@@ -74,17 +74,23 @@
     <!-- Content area -->
     <div class="content" @contextmenu.prevent="onContentContext($event)">
       <!-- Icons view -->
-      <div v-if="viewMode === 'icons'" class="icons-grid">
+      <div v-if="viewMode === 'icons'" class="icons-grid" @dragover.prevent>
         <div
           v-for="item in sortedItems"
           :key="item.name"
           class="icon-cell"
-          :class="{ selected: isSelected(item) }"
+          :class="{ selected: isSelected(item), 'drag-over': dropTargetName === item.name }"
+          draggable="true"
           @click.stop="onItemClick(item, $event)"
           @dblclick="onItemActivate(item)"
           @contextmenu.prevent.stop="onItemContext(item, $event)"
           @touchstart="onTouchStart(item, $event)"
           @touchend="onTouchEnd(item, $event)"
+          @dragstart="onFileDragStart(item, $event)"
+          @dragend="onFileDragEnd"
+          @dragenter.prevent="onFileDragEnter(item)"
+          @dragleave="onFileDragLeave(item)"
+          @drop.prevent="onFileDrop(item)"
         >
           <div class="icon-wrapper" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
@@ -108,17 +114,23 @@
       </div>
 
       <!-- List view -->
-      <div v-if="viewMode === 'list'" class="list-view">
+      <div v-if="viewMode === 'list'" class="list-view" @dragover.prevent>
         <div
           v-for="item in sortedItems"
           :key="item.name"
           class="list-row"
-          :class="{ selected: isSelected(item) }"
+          :class="{ selected: isSelected(item), 'drag-over': dropTargetName === item.name }"
+          draggable="true"
           @click.stop="onItemClick(item, $event)"
           @dblclick="onItemActivate(item)"
           @contextmenu.prevent.stop="onItemContext(item, $event)"
           @touchstart="onTouchStart(item, $event)"
           @touchend="onTouchEnd(item, $event)"
+          @dragstart="onFileDragStart(item, $event)"
+          @dragend="onFileDragEnd"
+          @dragenter.prevent="onFileDragEnter(item)"
+          @dragleave="onFileDragLeave(item)"
+          @drop.prevent="onFileDrop(item)"
         >
           <div class="list-icon" :style="{ color: getColor(item) }">
             <div class="icon-svg" v-html="getSvg(item)"></div>
@@ -142,7 +154,7 @@
       </div>
 
       <!-- Details view -->
-      <div v-if="viewMode === 'details'" class="details-view">
+      <div v-if="viewMode === 'details'" class="details-view" @dragover.prevent>
         <div class="details-header">
           <span class="details-col col-name">Name</span>
           <span class="details-col col-type">Type</span>
@@ -152,12 +164,18 @@
           v-for="item in sortedItems"
           :key="item.name"
           class="details-row"
-          :class="{ selected: isSelected(item) }"
+          :class="{ selected: isSelected(item), 'drag-over': dropTargetName === item.name }"
+          draggable="true"
           @click.stop="onItemClick(item, $event)"
           @dblclick="onItemActivate(item)"
           @contextmenu.prevent.stop="onItemContext(item, $event)"
           @touchstart="onTouchStart(item, $event)"
           @touchend="onTouchEnd(item, $event)"
+          @dragstart="onFileDragStart(item, $event)"
+          @dragend="onFileDragEnd"
+          @dragenter.prevent="onFileDragEnter(item)"
+          @dragleave="onFileDragLeave(item)"
+          @drop.prevent="onFileDrop(item)"
         >
           <span class="details-col col-name">
             <span class="details-icon" :style="{ color: getColor(item) }">
@@ -204,22 +222,37 @@
       :style="ctxMenuStyle"
       @click.stop
     >
-      <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
-      <div class="ctx-item" @click="ctxDownload">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download
-      </div>
-      <div class="ctx-item" @click="ctxZip">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-        Zip
-      </div>
-      <div v-if="selectedNames.size === 1" class="ctx-item" @click="ctxRename">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        Rename
-      </div>
-      <div class="ctx-item ctx-item-danger" @click="ctxDelete">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-        Delete
+      <template v-if="selectedNames.size > 0">
+        <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
+        <div class="ctx-item" @click="ctxDownload">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </div>
+        <div class="ctx-item" @click="ctxZip">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Zip
+        </div>
+        <div class="ctx-item" @click="ctxCopy">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          Copy
+        </div>
+        <div class="ctx-item" @click="ctxCut">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+          Cut
+        </div>
+        <div v-if="selectedNames.size === 1" class="ctx-item" @click="ctxRename">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Rename
+        </div>
+        <div class="ctx-item ctx-item-danger" @click="ctxDelete">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          Delete
+        </div>
+        <div class="ctx-separator"></div>
+      </template>
+      <div class="ctx-item" @click="ctxPaste">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+        Paste
       </div>
     </div>
 
@@ -273,7 +306,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'v
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { FileItem, IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';
@@ -348,6 +381,10 @@ const fileInput = ref<HTMLInputElement | null>(null);
 // Rename state
 const renaming = reactive({ active: false, name: '', newName: '' });
 const renameInputEl = ref<HTMLInputElement | null>(null);
+
+// Drag & drop state
+const dragSourceName = ref<string | null>(null);
+const dropTargetName = ref<string | null>(null);
 
 // Click-away handler to close context menu
 function onDocumentClick(event: MouseEvent): void {
@@ -523,6 +560,9 @@ function onItemActivate(item: FileItem): void {
 /* ── Keyboard ── */
 
 function onKeyDown(event: KeyboardEvent): void {
+  // Don't intercept keys while a rename input is active
+  if (renaming.active) return;
+
   if (event.key === 'Enter') {
     const selected = items.value.filter((i) => selectedNames.value.has(i.name));
     if (selected.length === 1 && selected[0].isDirectory) {
@@ -542,7 +582,157 @@ function onKeyDown(event: KeyboardEvent): void {
       const name = [...selectedNames.value][0];
       ctxRename(name);
     }
+  } else if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+    event.preventDefault();
+    clipboardCopy();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === 'x') {
+    event.preventDefault();
+    clipboardCut();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
+    event.preventDefault();
+    clipboardPaste();
   }
+}
+
+/* ── Drag & drop into folders ── */
+
+function onFileDragStart(item: FileItem, event: DragEvent): void {
+  dragSourceName.value = item.name;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', item.name);
+  }
+  // Ensure the dragged item is in the selection
+  if (!selectedNames.value.has(item.name)) {
+    selectedNames.value = new Set([item.name]);
+  }
+}
+
+function onFileDragEnd(): void {
+  dragSourceName.value = null;
+  dropTargetName.value = null;
+}
+
+function onFileDragEnter(item: FileItem): void {
+  if (item.isDirectory && dragSourceName.value && dragSourceName.value !== item.name) {
+    dropTargetName.value = item.name;
+  }
+}
+
+function onFileDragLeave(item: FileItem): void {
+  if (dropTargetName.value === item.name) {
+    dropTargetName.value = null;
+  }
+}
+
+async function onFileDrop(item: FileItem): Promise<void> {
+  const srcName = dragSourceName.value;
+  dragSourceName.value = null;
+  dropTargetName.value = null;
+
+  if (!item.isDirectory || !srcName || !opfsRoot) return;
+
+  // Collect items to move: all selected, or just the dragged item
+  let namesToMove: string[];
+  if (selectedNames.value.has(srcName)) {
+    namesToMove = [...selectedNames.value].filter(n => n !== item.name);
+  } else {
+    namesToMove = [srcName];
+  }
+  if (namesToMove.length === 0) return;
+
+  await doMoveIntoFolder(currentPath.value, item.name, namesToMove);
+}
+
+/* ── Move into folder (drag & clipboard paste) ── */
+
+async function doMoveIntoFolder(srcPath: string, folderName: string, names: string[]): Promise<void> {
+  if (names.length === 0 || !opfsRoot) return;
+  const destPath = normalizePath(srcPath + '/' + folderName);
+  try {
+    const conflicts = await moveItems(opfsRoot, srcPath, destPath, names, false);
+    if (conflicts.length > 0) {
+      if (!confirm(conflictMessage(folderName))) return;
+      await moveItems(opfsRoot, srcPath, destPath, names, true);
+    }
+    clearSelection();
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Files move into folder failed:', err);
+  }
+}
+
+/* ── Clipboard: Copy / Cut / Paste ── */
+
+async function clipboardCopy(): Promise<void> {
+  const names = selectedItemNames();
+  if (names.length === 0) return;
+  try {
+    const text = buildClipboardText('copy', currentPath.value, names);
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    console.warn('Files clipboard copy failed:', err);
+  }
+}
+
+async function clipboardCut(): Promise<void> {
+  const names = selectedItemNames();
+  if (names.length === 0) return;
+  try {
+    const text = buildClipboardText('cut', currentPath.value, names);
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    console.warn('Files clipboard cut failed:', err);
+  }
+}
+
+async function clipboardPaste(): Promise<void> {
+  if (!opfsRoot) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    const parsed = parseClipboard(text);
+    if (!parsed) return;
+
+    const { srcDir, names } = extractSourceDir(parsed.paths);
+    if (names.length === 0) return;
+
+    // Noop: same source and destination
+    if (normalizePath(srcDir) === normalizePath(currentPath.value)) return;
+
+    const op = parsed.mode === 'cut' ? moveItems : copyItems;
+    const conflicts = await op(opfsRoot, srcDir, currentPath.value, names, false);
+    if (conflicts.length > 0) {
+      if (!confirm(conflictMessage())) return;
+      await op(opfsRoot, srcDir, currentPath.value, names, true);
+    }
+
+    // Clear clipboard after cut+paste so the operation can't be repeated
+    if (parsed.mode === 'cut') {
+      await navigator.clipboard.writeText('');
+    }
+
+    clearSelection();
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Files clipboard paste failed:', err);
+  }
+}
+
+/* ── Context menu: Copy / Cut / Paste ── */
+
+function ctxCopy(): void {
+  ctxMenu.show = false;
+  clipboardCopy();
+}
+
+function ctxCut(): void {
+  ctxMenu.show = false;
+  clipboardCut();
+}
+
+function ctxPaste(): void {
+  ctxMenu.show = false;
+  clipboardPaste();
 }
 
 /* ── Touch: single-tap opens (mobile), long-press → context menu ── */
@@ -615,10 +805,9 @@ function onItemContext(item: FileItem, event: MouseEvent): void {
 }
 
 function onContentContext(event: MouseEvent): void {
-  // Right-click on background: only show menu if there is a selection
-  if (selectedNames.value.size > 0) {
-    showContextMenu(event.clientX, event.clientY);
-  }
+  // Right-click on background: clear selection, show paste-only menu
+  selectedNames.value = new Set();
+  showContextMenu(event.clientX, event.clientY);
 }
 
 /* ── Open With dialog ── */
@@ -1188,6 +1377,17 @@ onBeforeUnmount(() => {
 }
 .details-row.selected {
   background: rgba(59, 130, 246, 0.18);
+}
+
+/* ── Drag-over highlighting ── */
+
+.icon-cell.drag-over,
+.list-row.drag-over,
+.details-row.drag-over {
+  background: rgba(59, 130, 246, 0.2);
+  outline: 2px dashed rgba(59, 130, 246, 0.5);
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 
 /* ── Context menu ── */

@@ -99,6 +99,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useShellStore } from '~/stores/shell';
+import { useClock } from '~/composables/useClock';
 
 const props = defineProps<{ visible: boolean; connectionState: string; nodeName: string }>();
 const emit = defineEmits<{ close: []; signout: []; 'rename-node': [name: string] }>();
@@ -109,23 +110,7 @@ const isFullscreen = ref(false);
 
 const isMobile = computed(() => shell.layoutMode === 'mobile');
 
-/* ── Clock ── */
-const now = ref(new Date());
-let clockTimer: ReturnType<typeof setInterval> | null = null;
-
-const clockTime = computed(() => {
-  const h = now.value.getHours();
-  const m = now.value.getMinutes().toString().padStart(2, '0');
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${m} ${ampm}`;
-});
-
-const clockDate = computed(() => {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[now.value.getDay()]}, ${months[now.value.getMonth()]} ${now.value.getDate()}`;
-});
+const { clockTime, clockDate } = useClock();
 
 // Keep rename input in sync when panel opens or nodeName changes
 watch(() => props.nodeName, (n) => { renameValue.value = n; });
@@ -172,12 +157,10 @@ function onFullscreenChange() {
 onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange);
   isFullscreen.value = !!document.fullscreenElement;
-  clockTimer = setInterval(() => { now.value = new Date(); }, 1000);
 });
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange);
-  if (clockTimer) clearInterval(clockTimer);
 });
 </script>
 

@@ -113,13 +113,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useShellStore } from '~/stores/shell';
+import { useClock } from '~/composables/useClock';
 
 const props = defineProps<{ connectionState: string; nodeName: string }>();
 const emit = defineEmits<{ 'toggle-status': []; 'rename-node': [name: string] }>();
 
 const shell = useShellStore();
+const { clockTime, clockDate } = useClock();
 
 const isMobile = computed(() => shell.layoutMode === 'mobile');
 
@@ -127,32 +129,6 @@ const currentWindowTitle = computed(() => {
   if (!shell.focusedWindowId) return props.nodeName;
   const win = shell.activeWindows.find(w => w.id === shell.focusedWindowId);
   return win?.title ?? props.nodeName;
-});
-
-/* ── Clock ── */
-const now = ref(new Date());
-let clockTimer: ReturnType<typeof setInterval> | null = null;
-
-const clockTime = computed(() => {
-  const h = now.value.getHours();
-  const m = now.value.getMinutes().toString().padStart(2, '0');
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${m} ${ampm}`;
-});
-
-const clockDate = computed(() => {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[now.value.getDay()]}, ${months[now.value.getMonth()]} ${now.value.getDate()}`;
-});
-
-onMounted(() => {
-  clockTimer = setInterval(() => { now.value = new Date(); }, 1000);
-});
-
-onUnmounted(() => {
-  if (clockTimer) clearInterval(clockTimer);
 });
 
 /* ── Rename dropdown state ── */

@@ -12,6 +12,7 @@ import { effectiveCapabilities } from '@stark-o/shared';
 
 /** Minimal pack information needed by the start menu / open-with dialog. */
 export interface PackEntry {
+  id?: string;
   name: string;
   runtimeTag: 'node' | 'browser' | 'universal';
   description?: string;
@@ -128,7 +129,7 @@ export function buildLabelGroups(apps: AppEntry[]): LabelGroup[] {
 /** Filter apps to only those compatible with the browser (for open-with). */
 export function browserOnlyApps(apps: AppEntry[]): AppEntry[] {
   return apps.filter(
-    (a) => a.category === 'visual' || a.category === 'universal',
+    (a) => a.category === 'visual' || a.category === 'worker' || a.category === 'universal',
   );
 }
 
@@ -168,6 +169,7 @@ export async function fetchPacks(): Promise<PackEntry[]> {
   const api = createStarkAPI();
   const result = (await api.pack.list()) as {
     packs: Array<{
+      id?: string;
       name: string;
       runtimeTag: 'node' | 'browser' | 'universal';
       description?: string;
@@ -176,6 +178,7 @@ export async function fetchPacks(): Promise<PackEntry[]> {
     }>;
   };
   return (result.packs ?? []).map((p) => ({
+    id: p.id,
     name: p.name,
     runtimeTag: p.runtimeTag,
     description: p.description,
@@ -265,6 +268,36 @@ export async function loadPacksWithCache(
 }
 
 /* ── Helpers shared by start-menu & open-with ── */
+
+/** A dynamic service associated with a pack. */
+export interface DynamicServiceItem {
+  id: string;
+  name: string;
+  namespace: string;
+  packId: string;
+}
+
+/**
+ * Fetch dynamic services for a pack.
+ * Returns services where mode === 'dynamic' and packId matches the given pack.
+ */
+export async function fetchDynamicServicesForPack(packId: string): Promise<DynamicServiceItem[]> {
+  try {
+    const api = createStarkAPI();
+    const data = await api.service.list({}) as { services?: Array<Record<string, unknown>> };
+    const services = data.services ?? [];
+    return services
+      .filter((s) => s.mode === 'dynamic' && s.packId === packId)
+      .map((s) => ({
+        id: String(s.id),
+        name: String(s.name),
+        namespace: String(s.namespace ?? 'default'),
+        packId: String(s.packId),
+      }));
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Read the current browser node ID from the pack execution context.

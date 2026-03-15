@@ -142,19 +142,12 @@ import {
   readPackCache,
   writePackCache,
   getBrowserNodeId,
+  fetchDynamicServicesForPack,
   type AppEntry,
   type AppCategory,
   type LabelGroup,
+  type DynamicServiceItem,
 } from '../../../examples/shared/utils/lib/packs';
-
-/* ── Types ── */
-
-interface DynamicServiceItem {
-  id: string;
-  name: string;
-  namespace: string;
-  packId: string;
-}
 
 /* ── State ── */
 
@@ -266,31 +259,9 @@ async function initLoad(): Promise<void> {
 
 /* ── Launch ── */
 
-/**
- * Fetch dynamic services for a pack.
- * Returns services where mode === 'dynamic' and packId matches the given pack.
- */
-async function fetchDynamicServicesForPack(packId: string): Promise<DynamicServiceItem[]> {
-  try {
-    const api = createStarkAPI();
-    const data = await api.service.list({}) as { services?: Array<Record<string, unknown>> };
-    const services = data.services ?? [];
-    return services
-      .filter((s) => s.mode === 'dynamic' && s.packId === packId)
-      .map((s) => ({
-        id: String(s.id),
-        name: String(s.name),
-        namespace: String(s.namespace ?? 'default'),
-        packId: String(s.packId),
-      }));
-  } catch {
-    return [];
-  }
-}
-
 async function launchApp(app: AppEntry): Promise<void> {
   // If the pack has the special "service" label, look up dynamic services
-  if (hasServiceLabel(app.pack)) {
+  if (hasServiceLabel(app.pack) && app.pack.id) {
     dynamicServicesLoading.value = true;
     servicePickerApp.value = app;
     dynamicServices.value = [];

@@ -291,7 +291,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'v
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { FileItem, IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';
@@ -634,10 +634,7 @@ async function doMoveIntoFolder(srcPath: string, folderName: string, names: stri
   try {
     const conflicts = await moveItems(opfsRoot, srcPath, destPath, names, false);
     if (conflicts.length > 0) {
-      const ok = confirm(
-        `Some items already exist in "${folderName}". Do you want to replace them?`,
-      );
-      if (!ok) return;
+      if (!confirm(conflictMessage(folderName))) return;
       await moveItems(opfsRoot, srcPath, destPath, names, true);
     }
     clearSelection();
@@ -687,10 +684,7 @@ async function clipboardPaste(): Promise<void> {
     const op = parsed.mode === 'cut' ? moveItems : copyItems;
     const conflicts = await op(opfsRoot, srcDir, currentPath.value, names, false);
     if (conflicts.length > 0) {
-      const ok = confirm(
-        'Some items already exist in the destination. Do you want to replace them?',
-      );
-      if (!ok) return;
+      if (!confirm(conflictMessage())) return;
       await op(opfsRoot, srcDir, currentPath.value, names, true);
     }
 

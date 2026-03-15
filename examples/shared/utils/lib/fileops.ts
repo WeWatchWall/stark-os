@@ -576,6 +576,14 @@ export async function moveItems(
 export const CLIPBOARD_COPY_PREFIX = 'stark-copy:';
 export const CLIPBOARD_CUT_PREFIX = 'stark-cut:';
 
+/** Build a user-facing conflict confirmation message. */
+export function conflictMessage(folderName?: string): string {
+  if (folderName) {
+    return `Some items already exist in "${folderName}". Do you want to replace them?`;
+  }
+  return 'Some items already exist in the destination. Do you want to replace them?';
+}
+
 /**
  * Build clipboard text for copy or cut operations.
  * Each line is prefixed with `stark-copy:` or `stark-cut:` followed by the full path.
@@ -624,18 +632,23 @@ export function parseClipboard(
 
 /**
  * Given a list of full paths, extract the common source directory and individual names.
- * Assumes all paths share the same parent directory.
+ * Assumes all paths share the same parent directory (uses the first path's parent).
  */
 export function extractSourceDir(
   paths: string[],
 ): { srcDir: string; names: string[] } {
+  if (paths.length === 0) return { srcDir: '/', names: [] };
+
+  // Use the first path to determine the source directory
+  const firstParts = paths[0].split('/').filter(s => s.length > 0);
+  firstParts.pop();
+  const srcDir = normalizePath('/' + firstParts.join('/'));
+
   const names: string[] = [];
-  let srcDir = '/';
   for (const p of paths) {
     const parts = p.split('/').filter(s => s.length > 0);
     const name = parts.pop();
     if (name) names.push(name);
-    srcDir = '/' + parts.join('/');
   }
-  return { srcDir: normalizePath(srcDir), names };
+  return { srcDir, names };
 }

@@ -136,7 +136,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } 
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Tunable constants ── */
 const LONG_PRESS_MS = 300;
@@ -432,6 +432,25 @@ function reorderItems(from: number, to: number): void {
 
 // ── Drag & Drop (mouse) ──
 
+function isDropFolderTarget(item: DesktopItem | null): boolean {
+  return !!item && item.isDirectory && item.name !== 'trash';
+}
+
+function handleDropOnFolder(from: number, to: number): void {
+  const targetItem = displaySlots.value[to];
+  const draggedItem = displaySlots.value[from];
+  if (!targetItem || !draggedItem) return;
+  let namesToMove: string[];
+  if (selectedNames.has(draggedItem.name)) {
+    namesToMove = [...selectedNames].filter(n => n !== targetItem.name && n !== 'trash');
+  } else {
+    namesToMove = [draggedItem.name];
+  }
+  if (namesToMove.length > 0) {
+    doMoveIntoFolder(DESKTOP_PATH, targetItem.name, namesToMove);
+  }
+}
+
 function onDragStart(index: number, event: DragEvent): void {
   if (!displaySlots.value[index]) { event.preventDefault(); return; }
   dragSourceIndex.value = index;
@@ -473,19 +492,8 @@ function onDrop(event: DragEvent): void {
 
   if (from === null || to === null || from === to) return;
 
-  const targetItem = displaySlots.value[to];
-  const draggedItem = displaySlots.value[from];
-  if (targetItem && targetItem.isDirectory && targetItem.name !== 'trash' && draggedItem) {
-    // Drop onto a folder: move items into it
-    let namesToMove: string[];
-    if (selectedNames.has(draggedItem.name)) {
-      namesToMove = [...selectedNames].filter(n => n !== targetItem.name && n !== 'trash');
-    } else {
-      namesToMove = [draggedItem.name];
-    }
-    if (namesToMove.length > 0) {
-      doMoveIntoFolder(DESKTOP_PATH, targetItem.name, namesToMove);
-    }
+  if (isDropFolderTarget(displaySlots.value[to]) && displaySlots.value[from]) {
+    handleDropOnFolder(from, to);
   } else {
     reorderItems(from, to);
   }
@@ -551,18 +559,8 @@ function onTouchEnd(index: number): void {
     const from = touchDragSourceIndex;
     const to = dropTargetIndex.value;
     if (from !== to) {
-      const targetItem = displaySlots.value[to];
-      const draggedItem = displaySlots.value[from];
-      if (targetItem && targetItem.isDirectory && targetItem.name !== 'trash' && draggedItem) {
-        let namesToMove: string[];
-        if (selectedNames.has(draggedItem.name)) {
-          namesToMove = [...selectedNames].filter(n => n !== targetItem.name && n !== 'trash');
-        } else {
-          namesToMove = [draggedItem.name];
-        }
-        if (namesToMove.length > 0) {
-          doMoveIntoFolder(DESKTOP_PATH, targetItem.name, namesToMove);
-        }
+      if (isDropFolderTarget(displaySlots.value[to]) && displaySlots.value[from]) {
+        handleDropOnFolder(from, to);
       } else {
         reorderItems(from, to);
       }
@@ -862,10 +860,7 @@ async function doMoveIntoFolder(srcPath: string, folderName: string, names: stri
   try {
     const conflicts = await moveItems(opfsRoot, srcPath, destPath, names, false);
     if (conflicts.length > 0) {
-      const ok = confirm(
-        `Some items already exist in "${folderName}". Do you want to replace them?`,
-      );
-      if (!ok) return;
+      if (!confirm(conflictMessage(folderName))) return;
       await moveItems(opfsRoot, srcPath, destPath, names, true);
     }
     selectedNames.clear();
@@ -915,10 +910,7 @@ async function clipboardPaste(): Promise<void> {
     const op = parsed.mode === 'cut' ? moveItems : copyItems;
     const conflicts = await op(opfsRoot, srcDir, DESKTOP_PATH, names, false);
     if (conflicts.length > 0) {
-      const ok = confirm(
-        'Some items already exist in the destination. Do you want to replace them?',
-      );
-      if (!ok) return;
+      if (!confirm(conflictMessage())) return;
       await op(opfsRoot, srcDir, DESKTOP_PATH, names, true);
     }
 

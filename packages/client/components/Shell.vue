@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
 defineProps<{ connectionState: string; nodeName: string }>();
@@ -105,6 +105,15 @@ function onDesktopClick(e: MouseEvent) {
 function onDesktopOverlayClick() {
   shell.clearFocus();
   shell.hideStartMenu();
+  // Transfer keyboard focus to the desktop iframe so shortcuts work
+  nextTick(() => {
+    const container = document.getElementById(shell.desktopContainerId);
+    if (!container) return;
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement | null;
+    if (iframe) {
+      try { iframe.contentWindow?.focus(); } catch (_) { /* cross-origin */ }
+    }
+  });
 }
 
 /** Hide start menu when signalled by the start-menu app (same-origin CustomEvent) */

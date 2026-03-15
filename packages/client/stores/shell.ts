@@ -102,16 +102,32 @@ export const useShellStore = defineStore('shell', () => {
   /** Taskbar is always visible */
   const taskbarVisible = ref(true);
 
-  /** Taskbar position: 'top' for desktop, 'left' for mobile landscape, 'bottom' for mobile portrait */
-  const taskbarPosition = computed<'top' | 'bottom' | 'left'>(() => {
+  /** User-chosen taskbar side (null = auto-detect based on layout mode) */
+  const taskbarSide = ref<'top' | 'bottom' | 'left' | 'right' | null>(null);
+
+  /** Taskbar position: respects manual taskbarSide, otherwise auto-detects */
+  const taskbarPosition = computed<'top' | 'bottom' | 'left' | 'right'>(() => {
+    if (taskbarSide.value) return taskbarSide.value;
     if (layoutMode.value === 'desktop') return 'top';
     if (!isPortrait.value) return 'left';
     return 'bottom';
   });
 
+  function setTaskbarSide(side: 'top' | 'bottom' | 'left' | 'right' | null) {
+    taskbarSide.value = side;
+  }
+
   function showTaskbar() { taskbarVisible.value = true; }
   function hideTaskbar() { taskbarVisible.value = false; }
   function toggleTaskbar() { taskbarVisible.value = !taskbarVisible.value; }
+
+  /** Minimize all windows in the active workspace */
+  function minimizeAll() {
+    for (const win of activeWindows.value) {
+      win.minimized = true;
+    }
+    focusedWindowId.value = null;
+  }
 
   /* ── Workspaces ── */
   const workspaces = ref<Workspace[]>([
@@ -318,10 +334,13 @@ export const useShellStore = defineStore('shell', () => {
     detectLayoutMode,
     isPortrait,
     taskbarVisible,
+    taskbarSide,
     taskbarPosition,
+    setTaskbarSide,
     showTaskbar,
     hideTaskbar,
     toggleTaskbar,
+    minimizeAll,
     /* Workspaces */
     workspaces,
     activeWorkspaceId,

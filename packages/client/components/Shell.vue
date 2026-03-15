@@ -4,7 +4,6 @@
     <Taskbar
       :connectionState="connectionState"
       :nodeName="nodeName"
-      @signout="$emit('signout')"
       @toggle-status="statusPanelOpen = !statusPanelOpen"
       @rename-node="(name: string) => $emit('rename-node', name)"
     />
@@ -14,6 +13,7 @@
       'taskbar-visible-top': shell.taskbarPosition === 'top',
       'taskbar-visible-bottom': shell.taskbarPosition === 'bottom',
       'taskbar-visible-left': shell.taskbarPosition === 'left',
+      'taskbar-visible-right': shell.taskbarPosition === 'right',
     }">
       <!-- Render ALL windows; hide those not on active workspace via v-show -->
       <WindowFrame
@@ -171,6 +171,9 @@ onUnmounted(() => {
 }
 .desktop.taskbar-visible-left {
   left: 36px;
+}
+.desktop.taskbar-visible-right {
+  right: 36px;
 }
 
 /* Desktop watermark (always visible, behind windows) */

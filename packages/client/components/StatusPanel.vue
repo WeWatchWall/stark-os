@@ -50,6 +50,30 @@
             </div>
           </div>
 
+          <!-- Taskbar side -->
+          <div class="status-row">
+            <span class="status-label">Taskbar</span>
+            <div class="toggle-group">
+              <button
+                v-for="side in sides"
+                :key="side.value"
+                class="toggle-btn"
+                :class="{ active: shell.taskbarPosition === side.value }"
+                @click="setSide(side.value)"
+              >
+                {{ side.label }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Full screen toggle -->
+          <div class="status-row">
+            <span class="status-label">Full Screen</span>
+            <button class="toggle-btn" :class="{ active: isFullscreen }" @click="toggleFullscreen">
+              {{ isFullscreen ? '⛶ Exit' : '⛶ Enter' }}
+            </button>
+          </div>
+
           <!-- Quick actions -->
           <div class="status-row actions-row">
             <button class="action-btn" @click="$emit('signout')">
@@ -69,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
 const props = defineProps<{ visible: boolean; connectionState: string; nodeName: string }>();
@@ -77,6 +101,14 @@ const emit = defineEmits<{ close: []; signout: []; 'rename-node': [name: string]
 
 const shell = useShellStore();
 const renameValue = ref(props.nodeName);
+const isFullscreen = ref(false);
+
+const sides: { value: 'top' | 'bottom' | 'left' | 'right'; label: string }[] = [
+  { value: 'top', label: '⬆ Top' },
+  { value: 'bottom', label: '⬇ Bottom' },
+  { value: 'left', label: '⬅ Left' },
+  { value: 'right', label: '➡ Right' },
+];
 
 // Keep rename input in sync when panel opens or nodeName changes
 watch(() => props.nodeName, (n) => { renameValue.value = n; });
@@ -107,6 +139,35 @@ function setMode(mode: 'desktop' | 'mobile') {
     shell.setManualLayoutMode(mode);
   }
 }
+
+function setSide(side: 'top' | 'bottom' | 'left' | 'right') {
+  if (shell.taskbarPosition === side && shell.taskbarSide !== null) {
+    shell.setTaskbarSide(null); // back to auto
+  } else {
+    shell.setTaskbarSide(side);
+  }
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => { /* ignore */ });
+  } else {
+    document.exitFullscreen().catch(() => { /* ignore */ });
+  }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement;
+}
+
+onMounted(() => {
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  isFullscreen.value = !!document.fullscreenElement;
+});
+
+onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', onFullscreenChange);
+});
 </script>
 
 <style scoped>

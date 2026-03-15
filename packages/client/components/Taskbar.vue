@@ -1,7 +1,7 @@
 <template>
   <header
     class="taskbar"
-    :class="{ bottom: isMobile && shell.isPortrait, left: isMobile && !shell.isPortrait }"
+    :class="shell.taskbarPosition"
   >
     <!-- Logo / Start Menu -->
     <button class="logo-btn" @click="shell.toggleStartMenu()" title="Start Menu" aria-label="Start Menu">
@@ -41,29 +41,20 @@
         </button>
       </div>
 
-      <!-- Desktop right controls -->
+      <!-- Desktop right controls: minimize-all + settings gear -->
       <div class="taskbar-right">
-        <div class="ws-grid">
-          <button
-            v-for="ws in shell.workspaces"
-            :key="ws.id"
-            class="ws-cell"
-            :class="{ active: ws.id === shell.activeWorkspaceId }"
-            @click="shell.switchWorkspace(ws.id)"
-            :title="'Workspace ' + ws.name"
-          />
-        </div>
-
-        <button class="icon-btn" :title="`Mode: ${shell.layoutMode}`" @click="toggleLayout">
-          {{ shell.layoutMode === 'desktop' ? '🖥' : '📱' }}
+        <button class="minimize-all-btn" title="Minimize All" aria-label="Minimize All" @click="shell.minimizeAll()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="18" x2="19" y2="18" />
+          </svg>
         </button>
 
-        <button class="icon-btn sign-out" title="Sign Out" aria-label="Sign Out" @click="$emit('signout')">
+        <button class="icon-btn" @click="$emit('toggle-status')" title="Settings" aria-label="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
       </div>
@@ -95,19 +86,20 @@
         </svg>
       </button>
 
+      <!-- Minimize all (half-width, half-height on landscape) -->
+      <button class="minimize-all-btn" title="Minimize All" aria-label="Minimize All" @click="shell.minimizeAll()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="18" x2="19" y2="18" />
+        </svg>
+      </button>
+
       <!-- Mobile mode/settings toggle (opens status panel) -->
       <button class="icon-btn-mobile" @click="$emit('toggle-status')" title="Settings" aria-label="Settings">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="4" y1="21" x2="4" y2="14" />
-          <line x1="4" y1="10" x2="4" y2="3" />
-          <line x1="12" y1="21" x2="12" y2="12" />
-          <line x1="12" y1="8" x2="12" y2="3" />
-          <line x1="20" y1="21" x2="20" y2="16" />
-          <line x1="20" y1="12" x2="20" y2="3" />
-          <line x1="1" y1="14" x2="7" y2="14" />
-          <line x1="9" y1="8" x2="15" y2="8" />
-          <line x1="17" y1="16" x2="23" y2="16" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
     </template>
@@ -119,7 +111,7 @@ import { ref, computed, nextTick } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
 const props = defineProps<{ connectionState: string; nodeName: string }>();
-const emit = defineEmits<{ signout: []; 'toggle-status': []; 'rename-node': [name: string] }>();
+const emit = defineEmits<{ 'toggle-status': []; 'rename-node': [name: string] }>();
 
 const shell = useShellStore();
 
@@ -152,14 +144,6 @@ function submitRename() {
   }
   renameOpen.value = false;
 }
-
-function toggleLayout() {
-  if (shell.manualOverride) {
-    shell.setManualLayoutMode(null);
-  } else {
-    shell.setManualLayoutMode(shell.layoutMode === 'desktop' ? 'mobile' : 'desktop');
-  }
-}
 </script>
 
 <style scoped>
@@ -180,7 +164,7 @@ function toggleLayout() {
   user-select: none;
 }
 
-/* ── Mobile bottom taskbar ── */
+/* ── Bottom taskbar ── */
 .taskbar.bottom {
   top: auto;
   bottom: 0;
@@ -191,7 +175,7 @@ function toggleLayout() {
   border-top: 1px solid rgba(255,255,255,0.06);
 }
 
-/* ── Mobile landscape left taskbar ── */
+/* ── Left taskbar ── */
 .taskbar.left {
   top: 0;
   left: 0;
@@ -206,6 +190,24 @@ function toggleLayout() {
   border-right: 1px solid rgba(255,255,255,0.06);
 }
 .taskbar.left .taskbar-logo {
+  height: 26px;
+}
+
+/* ── Right taskbar ── */
+.taskbar.right {
+  top: 0;
+  left: auto;
+  right: 0;
+  bottom: 0;
+  width: 36px;
+  height: auto;
+  flex-direction: column;
+  padding: 8px 0;
+  gap: 6px;
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.4);
+  border-left: 1px solid rgba(255,255,255,0.06);
+}
+.taskbar.right .taskbar-logo {
   height: 26px;
 }
 
@@ -366,25 +368,6 @@ function toggleLayout() {
   margin-left: auto;
 }
 
-.ws-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 12px);
-  grid-template-rows: repeat(2, 12px);
-  gap: 2px;
-}
-.ws-cell {
-  width: 12px;
-  height: 12px;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 2px;
-  padding: 0;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.ws-cell:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); }
-.ws-cell.active { background: rgba(59,130,246,0.5); border-color: rgba(59,130,246,0.7); }
-
 .icon-btn {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.08);
@@ -395,9 +378,43 @@ function toggleLayout() {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .icon-btn:hover { background: rgba(255,255,255,0.12); color: #e2e8f0; }
-.icon-btn.sign-out:hover { background: rgba(220,38,38,0.25); color: #fca5a5; border-color: rgba(220,38,38,0.4); }
+
+/* ── Minimize-all button ── */
+.minimize-all-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  width: 16px;
+  height: 26px;
+  padding: 0;
+}
+.minimize-all-btn:hover,
+.minimize-all-btn:active {
+  background: rgba(255,255,255,0.12);
+  color: #e2e8f0;
+}
+/* Bottom / left / right taskbar: smaller minimize-all */
+.taskbar.bottom .minimize-all-btn {
+  width: 14px;
+  height: 22px;
+}
+.taskbar.left .minimize-all-btn,
+.taskbar.right .minimize-all-btn {
+  width: 26px;
+  height: 14px;
+}
 
 /* ── Mobile: current window button ── */
 .mobile-current-window {
@@ -442,25 +459,30 @@ function toggleLayout() {
   flex-shrink: 0;
 }
 
-/* ── Left taskbar: vertical text for mobile landscape ── */
-.taskbar.left .mobile-current-window {
+/* ── Left/right taskbar: vertical text for landscape ── */
+.taskbar.left .mobile-current-window,
+.taskbar.right .mobile-current-window {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   padding: 10px 3px;
   min-width: unset;
   min-height: 0;
 }
-.taskbar.left .current-title {
+.taskbar.left .current-title,
+.taskbar.right .current-title {
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
 }
-.taskbar.left .window-count {
+.taskbar.left .window-count,
+.taskbar.right .window-count {
   min-width: 16px;
   min-height: 16px;
 }
 .taskbar.left .switcher-btn,
-.taskbar.left .icon-btn-mobile {
+.taskbar.left .icon-btn-mobile,
+.taskbar.right .switcher-btn,
+.taskbar.right .icon-btn-mobile {
   width: 26px;
   height: 26px;
 }

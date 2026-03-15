@@ -49,6 +49,12 @@ export interface PackResult<T> {
 }
 
 /**
+ * Subset of PackRow columns used by the list endpoint.
+ * Avoids fetching the potentially large bundle_content column.
+ */
+type PackListRow = Pick<PackRow, 'id' | 'name' | 'version' | 'runtime_tag' | 'owner_id' | 'description' | 'granted_capabilities' | 'metadata' | 'created_at'>;
+
+/**
  * Converts a database row to a Pack entity
  */
 function rowToPack(row: PackRow): Pack {
@@ -74,7 +80,7 @@ function rowToPack(row: PackRow): Pack {
 /**
  * Converts a database row to a PackListItem
  */
-function rowToPackListItem(row: Pick<PackRow, 'id' | 'name' | 'version' | 'runtime_tag' | 'owner_id' | 'description' | 'granted_capabilities' | 'metadata' | 'created_at'> & { version_count?: number }): PackListItem {
+function rowToPackListItem(row: PackListRow & { version_count?: number }): PackListItem {
   return {
     id: row.id,
     name: row.name,
@@ -244,7 +250,6 @@ export class PackQueries {
     }
 
     // Group by pack name and get the latest version for each
-    type PackListRow = Pick<PackRow, 'id' | 'name' | 'version' | 'runtime_tag' | 'owner_id' | 'description' | 'granted_capabilities' | 'metadata' | 'created_at'>;
     const packMap = new Map<string, { pack: PackListRow; count: number }>();
     for (const row of data as PackListRow[]) {
       const existing = packMap.get(row.name);

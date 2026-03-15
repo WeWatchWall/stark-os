@@ -92,6 +92,7 @@ export {
   loadPacksWithCache,
   categoryIcon,
   hasServiceLabel,
+  fetchDynamicServicesForPack,
   HIDDEN_LABEL,
   START_LABEL_PREFIX,
   SERVICE_LABEL,
@@ -100,4 +101,5 @@ export {
   type AppEntry,
   type LabelGroup,
   type PackCache,
+  type DynamicServiceItem,
 } from './lib/packs';

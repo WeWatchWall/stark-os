@@ -102,16 +102,40 @@ export const useShellStore = defineStore('shell', () => {
   /** Taskbar is always visible */
   const taskbarVisible = ref(true);
 
-  /** Taskbar position: 'top' for desktop, 'left' for mobile landscape, 'bottom' for mobile portrait */
-  const taskbarPosition = computed<'top' | 'bottom' | 'left'>(() => {
+  /** Whether the taskbar is flipped to the opposite side */
+  const taskbarFlipped = ref(false);
+
+  /** Default taskbar position based on layout mode */
+  const defaultTaskbarPosition = computed<'top' | 'bottom' | 'left'>(() => {
     if (layoutMode.value === 'desktop') return 'top';
     if (!isPortrait.value) return 'left';
     return 'bottom';
   });
 
+  /** Taskbar position: flips to opposite side when toggled */
+  const taskbarPosition = computed<'top' | 'bottom' | 'left' | 'right'>(() => {
+    const def = defaultTaskbarPosition.value;
+    if (!taskbarFlipped.value) return def;
+    if (def === 'top') return 'bottom';
+    if (def === 'bottom') return 'top';
+    return 'right'; // left → right
+  });
+
+  function toggleTaskbarSide() {
+    taskbarFlipped.value = !taskbarFlipped.value;
+  }
+
   function showTaskbar() { taskbarVisible.value = true; }
   function hideTaskbar() { taskbarVisible.value = false; }
   function toggleTaskbar() { taskbarVisible.value = !taskbarVisible.value; }
+
+  /** Minimize all windows in the active workspace */
+  function minimizeAll() {
+    for (const win of activeWindows.value) {
+      win.minimized = true;
+    }
+    focusedWindowId.value = null;
+  }
 
   /* ── Workspaces ── */
   const workspaces = ref<Workspace[]>([
@@ -318,10 +342,13 @@ export const useShellStore = defineStore('shell', () => {
     detectLayoutMode,
     isPortrait,
     taskbarVisible,
+    taskbarFlipped,
     taskbarPosition,
+    toggleTaskbarSide,
     showTaskbar,
     hideTaskbar,
     toggleTaskbar,
+    minimizeAll,
     /* Workspaces */
     workspaces,
     activeWorkspaceId,

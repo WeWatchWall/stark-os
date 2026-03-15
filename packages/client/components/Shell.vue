@@ -4,7 +4,6 @@
     <Taskbar
       :connectionState="connectionState"
       :nodeName="nodeName"
-      @signout="$emit('signout')"
       @toggle-status="statusPanelOpen = !statusPanelOpen"
       @rename-node="(name: string) => $emit('rename-node', name)"
     />
@@ -14,6 +13,8 @@
       'taskbar-visible-top': shell.taskbarPosition === 'top',
       'taskbar-visible-bottom': shell.taskbarPosition === 'bottom',
       'taskbar-visible-left': shell.taskbarPosition === 'left',
+      'taskbar-visible-right': shell.taskbarPosition === 'right',
+      'taskbar-mobile': shell.layoutMode === 'mobile',
     }">
       <!-- Render ALL windows; hide those not on active workspace via v-show -->
       <WindowFrame
@@ -37,6 +38,9 @@
         :class="{
           visible: shell.startMenuVisible,
           'mobile-start': shell.layoutMode === 'mobile',
+          'start-bottom': shell.taskbarPosition === 'bottom',
+          'start-right': shell.taskbarPosition === 'right',
+          'mobile-start-top': shell.layoutMode === 'mobile' && shell.taskbarPosition === 'top',
         }"
         @mousedown.stop
         @touchstart.stop
@@ -162,15 +166,31 @@ onUnmounted(() => {
   transition: top 0.3s ease, bottom 0.3s ease;
 }
 
-/* Offset desktop area when taskbar is visible */
+/* Offset desktop area when taskbar is visible (desktop mode: 48px) */
 .desktop.taskbar-visible-top {
   top: 48px;
 }
 .desktop.taskbar-visible-bottom {
-  bottom: 36px;
+  bottom: 48px;
 }
 .desktop.taskbar-visible-left {
+  left: 48px;
+}
+.desktop.taskbar-visible-right {
+  right: 48px;
+}
+/* Mobile mode: 36px offsets */
+.desktop.taskbar-mobile.taskbar-visible-top {
+  top: 36px;
+}
+.desktop.taskbar-mobile.taskbar-visible-bottom {
+  bottom: 36px;
+}
+.desktop.taskbar-mobile.taskbar-visible-left {
   left: 36px;
+}
+.desktop.taskbar-mobile.taskbar-visible-right {
+  right: 36px;
 }
 
 /* Desktop watermark (always visible, behind windows) */
@@ -259,5 +279,30 @@ onUnmounted(() => {
   max-height: 100%;
   border-radius: 12px 12px 0 0;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+
+/* ── Start menu follows taskbar side ── */
+/* Taskbar on bottom → start menu at bottom-left */
+.start-menu-panel.start-bottom {
+  top: auto;
+  bottom: 0;
+  border-radius: 0 8px 0 0;
+}
+/* Taskbar on right → start menu at top-right */
+.start-menu-panel.start-right {
+  left: auto;
+  right: 0;
+  border-radius: 0 0 0 8px;
+}
+/* Mobile + taskbar flipped to top → top sheet */
+.start-menu-panel.mobile-start-top {
+  top: 0;
+  bottom: auto;
+  left: 0;
+  width: 100%;
+  height: 70%;
+  max-height: 100%;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(59, 130, 246, 0.15);
 }
 </style>

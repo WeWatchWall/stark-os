@@ -6,6 +6,14 @@
           <!-- Drag handle -->
           <div class="panel-handle" />
 
+          <!-- Time & Date (shown on mobile) -->
+          <div v-if="isMobile" class="status-row clock-row">
+            <div class="panel-clock">
+              <span class="panel-clock-time">{{ clockTime }}</span>
+              <span class="panel-clock-date">{{ clockDate }}</span>
+            </div>
+          </div>
+
           <!-- Connection status -->
           <div class="status-row">
             <span class="status-label">Connection</span>
@@ -50,6 +58,26 @@
             </div>
           </div>
 
+          <!-- Taskbar side (opposite toggle) -->
+          <div class="status-row">
+            <span class="status-label">Taskbar Side</span>
+            <button
+              class="toggle-btn"
+              :class="{ active: shell.taskbarFlipped }"
+              @click="shell.toggleTaskbarSide()"
+            >
+              {{ shell.taskbarFlipped ? '↩ Default' : '↔ Opposite' }}
+            </button>
+          </div>
+
+          <!-- Full screen toggle -->
+          <div class="status-row">
+            <span class="status-label">Full Screen</span>
+            <button class="toggle-btn" :class="{ active: isFullscreen }" @click="toggleFullscreen">
+              {{ isFullscreen ? '⛶ Exit' : '⛶ Enter' }}
+            </button>
+          </div>
+
           <!-- Quick actions -->
           <div class="status-row actions-row">
             <button class="action-btn" @click="$emit('signout')">
@@ -69,14 +97,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useShellStore } from '~/stores/shell';
+import { useClock } from '~/composables/useClock';
 
 const props = defineProps<{ visible: boolean; connectionState: string; nodeName: string }>();
 const emit = defineEmits<{ close: []; signout: []; 'rename-node': [name: string] }>();
 
 const shell = useShellStore();
 const renameValue = ref(props.nodeName);
+const isFullscreen = ref(false);
+
+const isMobile = computed(() => shell.layoutMode === 'mobile');
+
+const { clockTime, clockDate } = useClock();
 
 // Keep rename input in sync when panel opens or nodeName changes
 watch(() => props.nodeName, (n) => { renameValue.value = n; });
@@ -107,6 +141,27 @@ function setMode(mode: 'desktop' | 'mobile') {
     shell.setManualLayoutMode(mode);
   }
 }
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => { /* ignore */ });
+  } else {
+    document.exitFullscreen().catch(() => { /* ignore */ });
+  }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement;
+}
+
+onMounted(() => {
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  isFullscreen.value = !!document.fullscreenElement;
+});
+
+onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', onFullscreenChange);
+});
 </script>
 
 <style scoped>
@@ -155,6 +210,35 @@ function setMode(mode: 'desktop' | 'mobile') {
   color: #94a3b8;
   font-size: 0.78rem;
   font-weight: 500;
+}
+
+/* ── Panel clock (mobile) ── */
+.clock-row {
+  justify-content: center;
+  padding: 8px 0 12px;
+}
+.panel-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 20px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.panel-clock-time {
+  color: #e2e8f0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.panel-clock-date {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin-top: 2px;
 }
 
 /* Connection badge */

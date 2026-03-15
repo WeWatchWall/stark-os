@@ -102,19 +102,27 @@ export const useShellStore = defineStore('shell', () => {
   /** Taskbar is always visible */
   const taskbarVisible = ref(true);
 
-  /** User-chosen taskbar side (null = auto-detect based on layout mode) */
-  const taskbarSide = ref<'top' | 'bottom' | 'left' | 'right' | null>(null);
+  /** Whether the taskbar is flipped to the opposite side */
+  const taskbarFlipped = ref(false);
 
-  /** Taskbar position: respects manual taskbarSide, otherwise auto-detects */
-  const taskbarPosition = computed<'top' | 'bottom' | 'left' | 'right'>(() => {
-    if (taskbarSide.value) return taskbarSide.value;
+  /** Default taskbar position based on layout mode */
+  const defaultTaskbarPosition = computed<'top' | 'bottom' | 'left'>(() => {
     if (layoutMode.value === 'desktop') return 'top';
     if (!isPortrait.value) return 'left';
     return 'bottom';
   });
 
-  function setTaskbarSide(side: 'top' | 'bottom' | 'left' | 'right' | null) {
-    taskbarSide.value = side;
+  /** Taskbar position: flips to opposite side when toggled */
+  const taskbarPosition = computed<'top' | 'bottom' | 'left' | 'right'>(() => {
+    const def = defaultTaskbarPosition.value;
+    if (!taskbarFlipped.value) return def;
+    if (def === 'top') return 'bottom';
+    if (def === 'bottom') return 'top';
+    return 'right'; // left → right
+  });
+
+  function toggleTaskbarSide() {
+    taskbarFlipped.value = !taskbarFlipped.value;
   }
 
   function showTaskbar() { taskbarVisible.value = true; }

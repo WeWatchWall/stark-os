@@ -278,7 +278,7 @@ async function launchWithService(app: AppEntry, svc: DynamicServiceItem): Promis
     await api.pod.create(app.pack.name, opts);
     emit('update:visible', false);
   } catch (err: unknown) {
-    console.error('Failed to launch with service:', err);
+    console.error(`Failed to launch ${app.pack.name} with service ${svc.name}:`, err);
   }
 }
 

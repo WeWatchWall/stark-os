@@ -20,6 +20,9 @@ export {
   ICON_SPREADSHEET,
   ICON_CONFIG,
   ICON_TRASH,
+  ICON_CTX_COPY,
+  ICON_CTX_CUT,
+  ICON_CTX_PASTE,
   type IconCategory,
 } from './lib/icons';
 

@@ -81,6 +81,14 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           Zip
         </div>
+        <div v-if="ctxMenu.itemName !== 'trash'" class="ctx-item" @click="ctxCopy">
+          <span v-html="ICON_CTX_COPY"></span>
+          Copy
+        </div>
+        <div v-if="ctxMenu.itemName !== 'trash'" class="ctx-item" @click="ctxCut">
+          <span v-html="ICON_CTX_CUT"></span>
+          Cut
+        </div>
         <div v-if="ctxMenu.itemName !== 'trash'" class="ctx-item" @click="ctxRename">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           Rename
@@ -95,6 +103,11 @@
         </div>
         <div class="ctx-separator"></div>
       </template>
+      <div class="ctx-item" @click="ctxPaste">
+        <span v-html="ICON_CTX_PASTE"></span>
+        Paste
+      </div>
+      <div class="ctx-separator"></div>
       <div class="ctx-item" @click="ctxNewFile">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
         New File
@@ -946,6 +959,23 @@ async function clipboardPaste(): Promise<void> {
   } catch (err) {
     console.warn('Desktop clipboard paste failed:', err);
   }
+}
+
+// ── Context menu: Copy / Cut / Paste ──
+
+function ctxCopy(): void {
+  ctxMenu.show = false;
+  clipboardCopy();
+}
+
+function ctxCut(): void {
+  ctxMenu.show = false;
+  clipboardCut();
+}
+
+function ctxPaste(): void {
+  ctxMenu.show = false;
+  clipboardPaste();
 }
 
 // ── Keyboard handler ──

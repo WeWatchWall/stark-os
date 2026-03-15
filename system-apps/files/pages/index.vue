@@ -222,22 +222,37 @@
       :style="ctxMenuStyle"
       @click.stop
     >
-      <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
-      <div class="ctx-item" @click="ctxDownload">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download
-      </div>
-      <div class="ctx-item" @click="ctxZip">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-        Zip
-      </div>
-      <div v-if="selectedNames.size === 1" class="ctx-item" @click="ctxRename">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        Rename
-      </div>
-      <div class="ctx-item ctx-item-danger" @click="ctxDelete">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-        Delete
+      <template v-if="selectedNames.size > 0">
+        <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
+        <div class="ctx-item" @click="ctxDownload">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </div>
+        <div class="ctx-item" @click="ctxZip">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Zip
+        </div>
+        <div class="ctx-item" @click="ctxCopy">
+          <span v-html="ICON_CTX_COPY"></span>
+          Copy
+        </div>
+        <div class="ctx-item" @click="ctxCut">
+          <span v-html="ICON_CTX_CUT"></span>
+          Cut
+        </div>
+        <div v-if="selectedNames.size === 1" class="ctx-item" @click="ctxRename">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Rename
+        </div>
+        <div class="ctx-item ctx-item-danger" @click="ctxDelete">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          Delete
+        </div>
+        <div class="ctx-separator"></div>
+      </template>
+      <div class="ctx-item" @click="ctxPaste">
+        <span v-html="ICON_CTX_PASTE"></span>
+        Paste
       </div>
     </div>
 
@@ -703,6 +718,23 @@ async function clipboardPaste(): Promise<void> {
   }
 }
 
+/* ── Context menu: Copy / Cut / Paste ── */
+
+function ctxCopy(): void {
+  ctxMenu.show = false;
+  clipboardCopy();
+}
+
+function ctxCut(): void {
+  ctxMenu.show = false;
+  clipboardCut();
+}
+
+function ctxPaste(): void {
+  ctxMenu.show = false;
+  clipboardPaste();
+}
+
 /* ── Touch: single-tap opens (mobile), long-press → context menu ── */
 
 function onTouchStart(item: FileItem, event: TouchEvent): void {
@@ -773,10 +805,9 @@ function onItemContext(item: FileItem, event: MouseEvent): void {
 }
 
 function onContentContext(event: MouseEvent): void {
-  // Right-click on background: only show menu if there is a selection
-  if (selectedNames.value.size > 0) {
-    showContextMenu(event.clientX, event.clientY);
-  }
+  // Right-click on background: clear selection, show paste-only menu
+  selectedNames.value = new Set();
+  showContextMenu(event.clientX, event.clientY);
 }
 
 /* ── Open With dialog ── */

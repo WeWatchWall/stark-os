@@ -6,6 +6,14 @@
           <!-- Drag handle -->
           <div class="panel-handle" />
 
+          <!-- Time & Date (shown on mobile) -->
+          <div v-if="isMobile" class="status-row clock-row">
+            <div class="panel-clock">
+              <span class="panel-clock-time">{{ clockTime }}</span>
+              <span class="panel-clock-date">{{ clockDate }}</span>
+            </div>
+          </div>
+
           <!-- Connection status -->
           <div class="status-row">
             <span class="status-label">Connection</span>
@@ -50,20 +58,16 @@
             </div>
           </div>
 
-          <!-- Taskbar side -->
+          <!-- Taskbar side (opposite toggle) -->
           <div class="status-row">
-            <span class="status-label">Taskbar</span>
-            <div class="toggle-group">
-              <button
-                v-for="side in sides"
-                :key="side.value"
-                class="toggle-btn"
-                :class="{ active: shell.taskbarPosition === side.value }"
-                @click="setSide(side.value)"
-              >
-                {{ side.label }}
-              </button>
-            </div>
+            <span class="status-label">Taskbar Side</span>
+            <button
+              class="toggle-btn"
+              :class="{ active: shell.taskbarFlipped }"
+              @click="shell.toggleTaskbarSide()"
+            >
+              {{ shell.taskbarFlipped ? '↩ Default' : '↔ Opposite' }}
+            </button>
           </div>
 
           <!-- Full screen toggle -->
@@ -103,12 +107,25 @@ const shell = useShellStore();
 const renameValue = ref(props.nodeName);
 const isFullscreen = ref(false);
 
-const sides: { value: 'top' | 'bottom' | 'left' | 'right'; label: string }[] = [
-  { value: 'top', label: '⬆ Top' },
-  { value: 'bottom', label: '⬇ Bottom' },
-  { value: 'left', label: '⬅ Left' },
-  { value: 'right', label: '➡ Right' },
-];
+const isMobile = computed(() => shell.layoutMode === 'mobile');
+
+/* ── Clock ── */
+const now = ref(new Date());
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+
+const clockTime = computed(() => {
+  const h = now.value.getHours();
+  const m = now.value.getMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${m} ${ampm}`;
+});
+
+const clockDate = computed(() => {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${days[now.value.getDay()]}, ${months[now.value.getMonth()]} ${now.value.getDate()}`;
+});
 
 // Keep rename input in sync when panel opens or nodeName changes
 watch(() => props.nodeName, (n) => { renameValue.value = n; });
@@ -140,14 +157,6 @@ function setMode(mode: 'desktop' | 'mobile') {
   }
 }
 
-function setSide(side: 'top' | 'bottom' | 'left' | 'right') {
-  if (shell.taskbarPosition === side && shell.taskbarSide !== null) {
-    shell.setTaskbarSide(null); // back to auto
-  } else {
-    shell.setTaskbarSide(side);
-  }
-}
-
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => { /* ignore */ });
@@ -163,10 +172,12 @@ function onFullscreenChange() {
 onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange);
   isFullscreen.value = !!document.fullscreenElement;
+  clockTimer = setInterval(() => { now.value = new Date(); }, 1000);
 });
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange);
+  if (clockTimer) clearInterval(clockTimer);
 });
 </script>
 
@@ -216,6 +227,35 @@ onUnmounted(() => {
   color: #94a3b8;
   font-size: 0.78rem;
   font-weight: 500;
+}
+
+/* ── Panel clock (mobile) ── */
+.clock-row {
+  justify-content: center;
+  padding: 8px 0 12px;
+}
+.panel-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 20px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.panel-clock-time {
+  color: #e2e8f0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.panel-clock-date {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin-top: 2px;
 }
 
 /* Connection badge */

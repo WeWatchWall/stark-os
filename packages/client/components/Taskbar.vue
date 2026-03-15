@@ -1,7 +1,7 @@
 <template>
   <header
     class="taskbar"
-    :class="shell.taskbarPosition"
+    :class="[shell.taskbarPosition, { mobile: isMobile }]"
   >
     <!-- Logo / Start Menu -->
     <button class="logo-btn" @click="shell.toggleStartMenu()" title="Start Menu" aria-label="Start Menu">
@@ -41,20 +41,26 @@
         </button>
       </div>
 
-      <!-- Desktop right controls: minimize-all + settings gear -->
+      <!-- Desktop right controls: clock → settings → minimize-all (corner) -->
       <div class="taskbar-right">
-        <button class="minimize-all-btn" title="Minimize All" aria-label="Minimize All" @click="shell.minimizeAll()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="5" y1="18" x2="19" y2="18" />
-          </svg>
-        </button>
+        <!-- Stylish clock -->
+        <div class="clock-box">
+          <span class="clock-time">{{ clockTime }}</span>
+          <span class="clock-date">{{ clockDate }}</span>
+        </div>
 
         <button class="icon-btn" @click="$emit('toggle-status')" title="Settings" aria-label="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+
+        <button class="minimize-all-btn" title="Minimize All" aria-label="Minimize All" @click="shell.minimizeAll()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="18" x2="19" y2="18" />
           </svg>
         </button>
       </div>
@@ -86,14 +92,6 @@
         </svg>
       </button>
 
-      <!-- Minimize all (half-width, half-height on landscape) -->
-      <button class="minimize-all-btn" title="Minimize All" aria-label="Minimize All" @click="shell.minimizeAll()">
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="5" y1="18" x2="19" y2="18" />
-        </svg>
-      </button>
-
       <!-- Mobile mode/settings toggle (opens status panel) -->
       <button class="icon-btn-mobile" @click="$emit('toggle-status')" title="Settings" aria-label="Settings">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -102,12 +100,20 @@
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
+
+      <!-- Minimize all (half-width in corner, half-height on landscape) -->
+      <button class="minimize-all-btn" title="Minimize All" aria-label="Minimize All" @click="shell.minimizeAll()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="18" x2="19" y2="18" />
+        </svg>
+      </button>
     </template>
   </header>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import { useShellStore } from '~/stores/shell';
 
 const props = defineProps<{ connectionState: string; nodeName: string }>();
@@ -121,6 +127,32 @@ const currentWindowTitle = computed(() => {
   if (!shell.focusedWindowId) return props.nodeName;
   const win = shell.activeWindows.find(w => w.id === shell.focusedWindowId);
   return win?.title ?? props.nodeName;
+});
+
+/* ── Clock ── */
+const now = ref(new Date());
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+
+const clockTime = computed(() => {
+  const h = now.value.getHours();
+  const m = now.value.getMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${m} ${ampm}`;
+});
+
+const clockDate = computed(() => {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${days[now.value.getDay()]}, ${months[now.value.getMonth()]} ${now.value.getDate()}`;
+});
+
+onMounted(() => {
+  clockTimer = setInterval(() => { now.value = new Date(); }, 1000);
+});
+
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer);
 });
 
 /* ── Rename dropdown state ── */
@@ -147,7 +179,7 @@ function submitRename() {
 </script>
 
 <style scoped>
-/* ── Base taskbar (desktop: top) ── */
+/* ── Base taskbar (desktop: horizontal top, 48px) ── */
 .taskbar {
   position: fixed;
   top: 0;
@@ -164,18 +196,22 @@ function submitRename() {
   user-select: none;
 }
 
-/* ── Bottom taskbar ── */
+/* ── Bottom position (desktop: stays 48px) ── */
 .taskbar.bottom {
   top: auto;
   bottom: 0;
-  height: 36px;
-  padding: 0 8px;
-  gap: 6px;
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.4);
   border-top: 1px solid rgba(255,255,255,0.06);
 }
 
-/* ── Left taskbar ── */
+/* ── Mobile size override (36px for horizontal) ── */
+.taskbar.mobile {
+  height: 36px;
+  padding: 0 8px;
+  gap: 6px;
+}
+
+/* ── Left position (mobile landscape) ── */
 .taskbar.left {
   top: 0;
   left: 0;
@@ -189,11 +225,8 @@ function submitRename() {
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4);
   border-right: 1px solid rgba(255,255,255,0.06);
 }
-.taskbar.left .taskbar-logo {
-  height: 26px;
-}
 
-/* ── Right taskbar ── */
+/* ── Right position (mobile landscape flipped) ── */
 .taskbar.right {
   top: 0;
   left: auto;
@@ -206,9 +239,6 @@ function submitRename() {
   gap: 6px;
   box-shadow: -2px 0 12px rgba(0, 0, 0, 0.4);
   border-left: 1px solid rgba(255,255,255,0.06);
-}
-.taskbar.right .taskbar-logo {
-  height: 26px;
 }
 
 /* ── Logo ── */
@@ -234,7 +264,11 @@ function submitRename() {
   filter: blur(0.4px) drop-shadow(0 0 6px rgba(99, 179, 237, 0.45));
   transition: filter 0.2s ease;
 }
-.taskbar.bottom .taskbar-logo {
+.taskbar.mobile .taskbar-logo {
+  height: 26px;
+}
+.taskbar.left .taskbar-logo,
+.taskbar.right .taskbar-logo {
   height: 26px;
 }
 .logo-btn:hover .taskbar-logo {
@@ -368,6 +402,32 @@ function submitRename() {
   margin-left: auto;
 }
 
+/* ── Desktop: clock box ── */
+.clock-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.clock-time {
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.clock-date {
+  color: #64748b;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
 .icon-btn {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.08);
@@ -384,7 +444,7 @@ function submitRename() {
 }
 .icon-btn:hover { background: rgba(255,255,255,0.12); color: #e2e8f0; }
 
-/* ── Minimize-all button ── */
+/* ── Minimize-all button (in the corner) ── */
 .minimize-all-btn {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.08);
@@ -397,7 +457,7 @@ function submitRename() {
   transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
   width: 16px;
-  height: 26px;
+  height: 32px;
   padding: 0;
 }
 .minimize-all-btn:hover,
@@ -405,11 +465,12 @@ function submitRename() {
   background: rgba(255,255,255,0.12);
   color: #e2e8f0;
 }
-/* Bottom / left / right taskbar: smaller minimize-all */
-.taskbar.bottom .minimize-all-btn {
+/* Mobile horizontal: half-width */
+.taskbar.mobile .minimize-all-btn {
   width: 14px;
   height: 22px;
 }
+/* Mobile vertical (left/right): half-height */
 .taskbar.left .minimize-all-btn,
 .taskbar.right .minimize-all-btn {
   width: 26px;

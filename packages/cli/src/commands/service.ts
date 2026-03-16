@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createApiClient, requireAuth, loadConfig, resolveNodeId } from '../config.js';
+import { createApiClient, requireAuth, loadConfig, resolveNodeId, resolveDisplayName, getNameMaps } from '../config.js';
 import {
   success,
   error,
@@ -431,7 +431,7 @@ async function statusHandler(name: string, options: { namespace?: string }): Pro
       'ID': service.id,
       'Status': statusBadge(service.status),
       'Message': service.statusMessage ?? chalk.gray('(none)'),
-      'Pack ID': service.packId,
+      'Pack': await resolveDisplayName(service.packId, 'pack', api),
       'Pack Version': service.packVersion,
       'Namespace': service.namespace,
       'Mode': serviceMode,

@@ -264,6 +264,60 @@ export async function resolveNodeId(
 }
 
 /**
+ * Name lookup maps for resolving UUIDs to human-readable names.
+ * Cached per CLI invocation.
+ */
+interface NameMaps {
+  nodeMap: Map<string, string>;
+  packMap: Map<string, string>;
+}
+let _nameMaps: NameMaps | null = null;
+
+/**
+ * Build/return cached maps of nodeId→name and packId→name.
+ * Falls back gracefully on errors (returns empty maps).
+ */
+export async function getNameMaps(api: ReturnType<typeof createApiClient>): Promise<NameMaps> {
+  if (_nameMaps) return _nameMaps;
+  const nodeMap = new Map<string, string>();
+  const packMap = new Map<string, string>();
+  try {
+    const [nodesRes, packsRes] = await Promise.all([
+      api.get('/api/nodes?pageSize=1000').catch(() => null),
+      api.get('/api/packs?pageSize=1000').catch(() => null),
+    ]);
+    if (nodesRes) {
+      const nr = (await nodesRes.json()) as { success: boolean; data?: { nodes: Array<{ id: string; name: string }> } };
+      if (nr.success && nr.data) {
+        for (const n of nr.data.nodes) nodeMap.set(n.id, n.name);
+      }
+    }
+    if (packsRes) {
+      const pr = (await packsRes.json()) as { success: boolean; data?: { packs: Array<{ id: string; name: string }> } };
+      if (pr.success && pr.data) {
+        for (const p of pr.data.packs) packMap.set(p.id, p.name);
+      }
+    }
+  } catch { /* non-fatal */ }
+  _nameMaps = { nodeMap, packMap };
+  return _nameMaps;
+}
+
+/**
+ * Resolve a UUID to a human-readable name, falling back to the UUID itself.
+ */
+export async function resolveDisplayName(
+  id: string | null | undefined,
+  kind: 'node' | 'pack',
+  api: ReturnType<typeof createApiClient>,
+): Promise<string> {
+  if (!id) return '';
+  const maps = await getNameMaps(api);
+  const map = kind === 'node' ? maps.nodeMap : maps.packMap;
+  return map.get(id) || id;
+}
+
+/**
  * Requires authentication, exits with error if not authenticated
  */
 export function requireAuth(): Credentials {

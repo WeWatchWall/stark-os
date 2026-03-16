@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createApiClient, requireAuth, loadConfig, resolveNodeId } from '../config.js';
+import { createApiClient, requireAuth, loadConfig, resolveNodeId, resolveDisplayName, getNameMaps } from '../config.js';
 import {
   success,
   error,
@@ -231,12 +231,13 @@ async function createHandler(
     }
 
     console.log();
+    const maps = await getNameMaps(api);
     table(
       createdPods.map((p) => ({
         id: p.id,
         pack: packName,
         version: p.packVersion,
-        node: p.nodeId ?? chalk.gray('pending'),
+        node: p.nodeId ? (maps.nodeMap.get(p.nodeId) || p.nodeId) : chalk.gray('pending'),
         status: statusBadge(p.status),
         namespace: p.namespace,
       })),
@@ -244,7 +245,7 @@ async function createHandler(
         { key: 'id', header: 'Pod ID', width: 38 },
         { key: 'pack', header: 'Pack', width: 20 },
         { key: 'version', header: 'Version', width: 12 },
-        { key: 'node', header: 'Node', width: 38 },
+        { key: 'node', header: 'Node', width: 25 },
         { key: 'status', header: 'Status', width: 15 },
         { key: 'namespace', header: 'Namespace', width: 15 },
       ]
@@ -286,9 +287,9 @@ async function statusHandler(podId: string): Promise<void> {
     keyValue({
       'Status': statusBadge(pod.status),
       'Message': pod.statusMessage ?? chalk.gray('(none)'),
-      'Pack ID': pod.packId,
+      'Pack': await resolveDisplayName(pod.packId, 'pack', api),
       'Pack Version': pod.packVersion,
-      'Node ID': pod.nodeId ?? chalk.gray('(not scheduled)'),
+      'Node': pod.nodeId ? await resolveDisplayName(pod.nodeId, 'node', api) : chalk.gray('(not scheduled)'),
       'Namespace': pod.namespace,
       'Priority': pod.priority,
       'Created By': pod.createdBy,
@@ -378,21 +379,23 @@ async function listHandler(options: {
 
     console.log(chalk.bold(`\nPods (${pods.length} of ${total})\n`));
 
+    const maps = await getNameMaps(api);
+
     table(
       pods.map((p) => ({
         id: p.id,
-        pack: p.packId,
+        pack: maps.packMap.get(p.packId) || p.packId,
         version: p.packVersion,
-        node: p.nodeId ?? chalk.gray('pending'),
+        node: p.nodeId ? (maps.nodeMap.get(p.nodeId) || p.nodeId) : chalk.gray('pending'),
         status: statusBadge(p.status),
         namespace: p.namespace,
         age: relativeTime(p.createdAt),
       })),
       [
         { key: 'id', header: 'Pod ID', width: 38 },
-        { key: 'pack', header: 'Pack', width: 38 },
+        { key: 'pack', header: 'Pack', width: 25 },
         { key: 'version', header: 'Version', width: 12 },
-        { key: 'node', header: 'Node', width: 38 },
+        { key: 'node', header: 'Node', width: 25 },
         { key: 'status', header: 'Status', width: 15 },
         { key: 'namespace', header: 'Namespace', width: 12 },
         { key: 'age', header: 'Age', width: 12 },

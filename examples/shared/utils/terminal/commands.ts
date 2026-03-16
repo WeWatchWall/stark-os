@@ -2469,10 +2469,12 @@ commands['stark'] = async (ctx) => {
 
 // Git status matrix column indices & values (see isomorphic-git docs)
 // Row: [filepath, HEAD, WORKDIR, STAGE]
-const GIT_ABSENT    = 0;  // file does not exist in this location
-const GIT_PRESENT   = 1;  // HEAD: file exists; WORKDIR: identical to HEAD; STAGE: identical to HEAD
-const GIT_MODIFIED  = 2;  // WORKDIR: differs from HEAD; STAGE: differs from HEAD (i.e. staged)
-const GIT_MIXED     = 3;  // STAGE only: differs from both HEAD and WORKDIR (partially staged)
+const GitSt = {
+  ABSENT:   0,  // file does not exist in this location
+  PRESENT:  1,  // HEAD: file exists; WORKDIR: identical to HEAD; STAGE: identical to HEAD
+  MODIFIED: 2,  // WORKDIR: differs from HEAD; STAGE: differs from HEAD (i.e. staged)
+  MIXED:    3,  // STAGE only: differs from both HEAD and WORKDIR (partially staged)
+} as const;
 
 commands['git'] = async (ctx) => {
   const [subcommand, ...args] = ctx.args;
@@ -2582,11 +2584,11 @@ commands['git'] = async (ctx) => {
         const unstaged: string[] = [];
         const untracked: string[] = [];
         for (const [filepath, head, workdir, stage] of matrix) {
-          if (head === GIT_ABSENT && workdir === GIT_MODIFIED && stage === GIT_ABSENT) { untracked.push(filepath); }
-          else if (stage === GIT_MODIFIED) { staged.push(`  ${head === GIT_ABSENT ? 'new file' : 'modified'}:   ${filepath}`); }
-          else if (stage === GIT_MIXED) { staged.push(`  modified:   ${filepath}`); unstaged.push(`  modified:   ${filepath}`); }
-          else if (head === GIT_PRESENT && workdir === GIT_MODIFIED) { unstaged.push(`  modified:   ${filepath}`); }
-          else if (head === GIT_PRESENT && workdir === GIT_ABSENT) { unstaged.push(`  deleted:    ${filepath}`); }
+          if (head === GitSt.ABSENT && workdir === GitSt.MODIFIED && stage === GitSt.ABSENT) { untracked.push(filepath); }
+          else if (stage === GitSt.MODIFIED) { staged.push(`  ${head === GitSt.ABSENT ? 'new file' : 'modified'}:   ${filepath}`); }
+          else if (stage === GitSt.MIXED) { staged.push(`  modified:   ${filepath}`); unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === GitSt.PRESENT && workdir === GitSt.MODIFIED) { unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === GitSt.PRESENT && workdir === GitSt.ABSENT) { unstaged.push(`  deleted:    ${filepath}`); }
         }
         if (staged.length > 0) {
           out += 'Changes to be committed:\n';
@@ -2615,8 +2617,8 @@ commands['git'] = async (ctx) => {
           const matrix = await gitStatusMatrix(rootHandle, dir);
           let count = 0;
           for (const [filepath, head, workdir, stage] of matrix) {
-            if (stage !== GIT_PRESENT || (head === GIT_ABSENT && workdir === GIT_MODIFIED) || (head === GIT_PRESENT && workdir !== GIT_PRESENT)) {
-              if (workdir === GIT_ABSENT) {
+            if (stage !== GitSt.PRESENT || (head === GitSt.ABSENT && workdir === GitSt.MODIFIED) || (head === GitSt.PRESENT && workdir !== GitSt.PRESENT)) {
+              if (workdir === GitSt.ABSENT) {
                 await gitRemove(rootHandle, dir, filepath);
               } else {
                 await gitAdd(rootHandle, dir, filepath);
@@ -2691,8 +2693,8 @@ commands['git'] = async (ctx) => {
         let out = '';
         for (const [filepath, head, workdir, stage] of matrix) {
           const isChanged = staged
-            ? (stage === GIT_MODIFIED || stage === GIT_MIXED)
-            : (head === GIT_PRESENT && workdir === GIT_MODIFIED) || (head === GIT_PRESENT && workdir === GIT_ABSENT);
+            ? (stage === GitSt.MODIFIED || stage === GitSt.MIXED)
+            : (head === GitSt.PRESENT && workdir === GitSt.MODIFIED) || (head === GitSt.PRESENT && workdir === GitSt.ABSENT);
           if (isChanged) {
             const diff = await gitDiffWorkingFile(rootHandle, dir, filepath, staged);
             out += diff.patch + '\n';

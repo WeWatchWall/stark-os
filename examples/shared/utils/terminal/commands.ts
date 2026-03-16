@@ -28,6 +28,14 @@
  * @module @stark-o/terminal/utils/commands
  */
 
+import {
+  gitInit, gitClone, gitAdd, gitRemove, gitCommit, gitPush, gitPull, gitFetch,
+  gitCurrentBranch, gitLog, gitStatusMatrix, gitIsRepo, gitDiffWorkingFile,
+  gitListBranches, gitCreateBranch, gitCheckout, gitDeleteBranch, gitListRemotes,
+  gitSetConfig, gitMerge,
+  type GitAuth, type GitStatusRow,
+} from '../git';
+
 /**
  * Minimal filesystem interface for terminal commands.
  * Compatible with IStorageAdapter from @stark-o/shared.
@@ -1555,6 +1563,38 @@ commands['stark'] = async (ctx) => {
     return { positionals, options };
   };
 
+  // Unwrap single-item API responses: { pod: {...} } → {...}
+  const unwrap = (data: unknown, key: string): Record<string, unknown> => {
+    const obj = data as Record<string, unknown>;
+    return (obj[key] as Record<string, unknown>) ?? obj;
+  };
+
+  // Lazy name lookup maps for resolving IDs to human-readable names
+  let _nameMaps: { nodeMap: Map<string, string>; packMap: Map<string, string> } | null = null;
+  const getNameMaps = async () => {
+    if (_nameMaps) return _nameMaps;
+    const [nodesRaw, packsRaw] = await Promise.all([
+      api.node.list({ pageSize: 1000 }).catch(() => ({})),
+      api.pack.list({ pageSize: 1000 }).catch(() => ({})),
+    ]);
+    const nd = nodesRaw as { nodes?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+    const pd = packsRaw as { packs?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+    const nodeList = Array.isArray(nd) ? nd : (nd.nodes ?? []);
+    const packList = Array.isArray(pd) ? pd : (pd.packs ?? []);
+    const nodeMap = new Map<string, string>();
+    const packMap = new Map<string, string>();
+    for (const n of nodeList) nodeMap.set(String(n.id), String(n.name));
+    for (const p of packList) packMap.set(String(p.id), String(p.name));
+    _nameMaps = { nodeMap, packMap };
+    return _nameMaps;
+  };
+  const resolveName = async (id: unknown, kind: 'node' | 'pack'): Promise<string> => {
+    if (!id) return '';
+    const maps = await getNameMaps();
+    const map = kind === 'node' ? maps.nodeMap : maps.packMap;
+    return map.get(String(id)) || String(id);
+  };
+
   if (!subcmd || subcmd === 'help') {
     return 'Stark Orchestrator CLI\n\n' +
       'Commands:\n' +
@@ -1728,7 +1768,7 @@ commands['stark'] = async (ctx) => {
           }
           case 'info': {
             const n = positionals[0]; if (!n) return 'Usage: stark pack info <name>\n';
-            const pack = await api.pack.info(n) as Record<string, unknown>;
+            const pack = unwrap(await api.pack.info(n), 'pack');
             return `\nPack: ${pack.name}\n\n` + fmtKeyValue({
               'ID': pack.id,
               'Name': pack.name,
@@ -1783,7 +1823,7 @@ commands['stark'] = async (ctx) => {
           }
           case 'status': case 'info': {
             const n = positionals[0]; if (!n) return 'Usage: stark node status <name>\n';
-            const node = await api.node.status(n) as Record<string, unknown>;
+            const node = unwrap(await api.node.status(n), 'node');
             const alloc = (node.allocated ?? {}) as Record<string, number>;
             const cap = (node.allocatable ?? {}) as Record<string, number>;
             let out = `\nNode: ${node.name}\n\n`;
@@ -1894,21 +1934,22 @@ commands['stark'] = async (ctx) => {
             });
             const total = Array.isArray(data) ? pods.length : (data.total ?? pods.length);
             if (pods.length === 0) return 'ℹ No pods found\n';
+            const maps = await getNameMaps();
             return `\nPods (${pods.length} of ${total})\n\n` + fmtTable(
               pods.map((p: Record<string, unknown>) => ({
                 id: String(p.id ?? ''),
-                pack: String(p.packId ?? ''),
+                pack: maps.packMap.get(String(p.packId)) || String(p.packId ?? ''),
                 version: String(p.packVersion ?? ''),
-                node: String(p.nodeId ?? 'pending'),
+                node: p.nodeId ? (maps.nodeMap.get(String(p.nodeId)) || String(p.nodeId)) : 'pending',
                 status: statusBadge(String(p.status ?? '')),
                 namespace: String(p.namespace ?? ''),
                 age: p.createdAt ? relativeTime(String(p.createdAt)) : '',
               })),
               [
                 { key: 'id', header: 'Pod ID', width: 38 },
-                { key: 'pack', header: 'Pack', width: 38 },
+                { key: 'pack', header: 'Pack', width: 25 },
                 { key: 'version', header: 'Version', width: 12 },
-                { key: 'node', header: 'Node', width: 38 },
+                { key: 'node', header: 'Node', width: 25 },
                 { key: 'status', header: 'Status', width: 15 },
                 { key: 'namespace', header: 'Namespace', width: 12 },
                 { key: 'age', header: 'Age', width: 12 },
@@ -1917,14 +1958,14 @@ commands['stark'] = async (ctx) => {
           }
           case 'status': {
             const id = positionals[0]; if (!id) return 'Usage: stark pod status <podId>\n';
-            const pod = await api.pod.status(id) as Record<string, unknown>;
+            const pod = unwrap(await api.pod.status(id), 'pod');
             let out = `\nPod: ${pod.id}\n\n`;
             out += fmtKeyValue({
               'Status': statusBadge(String(pod.status ?? '')),
               'Message': pod.statusMessage ?? '(none)',
-              'Pack ID': pod.packId,
+              'Pack': await resolveName(pod.packId, 'pack'),
               'Pack Version': pod.packVersion,
-              'Node ID': pod.nodeId ?? '(not scheduled)',
+              'Node': pod.nodeId ? await resolveName(pod.nodeId, 'node') : '(not scheduled)',
               'Namespace': pod.namespace,
               'Priority': pod.priority,
               'Created By': pod.createdBy,
@@ -1961,7 +2002,7 @@ commands['stark'] = async (ctx) => {
                 id: String(pod.id ?? ''),
                 pack: String(pack),
                 version: String(pod.packVersion ?? ''),
-                node: String(pod.nodeId ?? 'pending'),
+                node: pod.nodeId ? await resolveName(pod.nodeId, 'node') : 'pending',
                 status: statusBadge(String(pod.status ?? '')),
                 namespace: String(pod.namespace ?? ''),
               }],
@@ -1969,7 +2010,7 @@ commands['stark'] = async (ctx) => {
                 { key: 'id', header: 'Pod ID', width: 38 },
                 { key: 'pack', header: 'Pack', width: 20 },
                 { key: 'version', header: 'Version', width: 12 },
-                { key: 'node', header: 'Node', width: 38 },
+                { key: 'node', header: 'Node', width: 25 },
                 { key: 'status', header: 'Status', width: 15 },
                 { key: 'namespace', header: 'Namespace', width: 15 },
               ],
@@ -1984,7 +2025,7 @@ commands['stark'] = async (ctx) => {
           }
           case 'rollback': {
             const id = positionals[0]; if (!id) return 'Usage: stark pod rollback <podId>\n';
-            const pod = await api.pod.rollback(id) as Record<string, unknown>;
+            const pod = unwrap(await api.pod.rollback(id), 'pod');
             return `✓ Rolled back to version ${pod.packVersion ?? 'unknown'}\n` +
               fmtKeyValue({ 'Pod ID': pod.id, 'New Version': pod.packVersion, 'Status': statusBadge(String(pod.status ?? '')) });
           }
@@ -2058,14 +2099,14 @@ commands['stark'] = async (ctx) => {
           }
           case 'status': {
             const n = positionals[0]; if (!n) return 'Usage: stark service status <name>\n';
-            const svc = await api.service.status(n) as Record<string, unknown>;
+            const svc = unwrap(await api.service.status(n), 'service');
             const svcMode = String(svc.mode ?? 'replica');
             const replicaDisplay = svcMode === 'daemon' ? 'N/A (daemon)' : svcMode === 'dynamic' ? 'N/A (dynamic)' : String(svc.replicas);
             return `\nService: ${svc.name}\n\n` + fmtKeyValue({
               'ID': svc.id,
               'Status': statusBadge(String(svc.status ?? '')),
               'Message': svc.statusMessage ?? '(none)',
-              'Pack ID': svc.packId,
+              'Pack': await resolveName(svc.packId, 'pack'),
               'Pack Version': svc.packVersion,
               'Namespace': svc.namespace,
               'Mode': svcMode,
@@ -2139,7 +2180,7 @@ commands['stark'] = async (ctx) => {
           }
           case 'get': {
             const n = positionals[0]; if (!n) return 'Usage: stark namespace get <name>\n';
-            const ns = await api.namespace.get(n) as Record<string, unknown>;
+            const ns = unwrap(await api.namespace.get(n), 'namespace');
             let out = `\nNamespace: ${ns.name}\n\n`;
             out += 'General\n';
             out += fmtKeyValue({
@@ -2169,7 +2210,7 @@ commands['stark'] = async (ctx) => {
           }
           case 'create': {
             const n = positionals[0]; if (!n) return 'Usage: stark namespace create <name>\n';
-            const ns = await api.namespace.create(n) as Record<string, unknown>;
+            const ns = unwrap(await api.namespace.create(n), 'namespace');
             return `✓ Namespace created: ${ns.name ?? n}\n` + fmtKeyValue({
               'ID': ns.id,
               'Name': ns.name,
@@ -2215,7 +2256,7 @@ commands['stark'] = async (ctx) => {
           case 'get': {
             const n = positionals[0]; if (!n) return 'Usage: stark secret get <name>\n';
             const ns = String(options['namespace'] || options['n'] || 'default');
-            const secret = await api.secret.get(n, ns) as Record<string, unknown>;
+            const secret = unwrap(await api.secret.get(n, ns), 'secret');
             let out = `\nSecret: ${secret.name}\n\n`;
             out += fmtKeyValue({
               'ID': secret.id,
@@ -2242,15 +2283,16 @@ commands['stark'] = async (ctx) => {
             const data = await api.volume.list({ nodeNameOrId: node ? String(node) : undefined }) as { volumes?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
             const volumes = Array.isArray(data) ? data : (data.volumes ?? []);
             if (volumes.length === 0) return 'ℹ No volumes found\n';
+            const volMaps = await getNameMaps();
             return `\nVolumes (${volumes.length})\n\n` + fmtTable(
               volumes.map((v: Record<string, unknown>) => ({
                 name: String(v.name ?? ''),
-                node: String(v.nodeId ?? ''),
+                node: v.nodeId ? (volMaps.nodeMap.get(String(v.nodeId)) || String(v.nodeId)) : '',
                 age: v.createdAt ? relativeTime(String(v.createdAt)) : '',
               })),
               [
                 { key: 'name', header: 'Name', width: 25 },
-                { key: 'node', header: 'Node', width: 40 },
+                { key: 'node', header: 'Node', width: 25 },
                 { key: 'age', header: 'Age', width: 15 },
               ],
             );
@@ -2259,11 +2301,11 @@ commands['stark'] = async (ctx) => {
             const n = positionals[0] || options['name'];
             const node = options['node'] || options['n'];
             if (!n || !node) return 'Usage: stark volume create <name> --node <nodeNameOrId>\n';
-            const vol = await api.volume.create(String(n), String(node)) as Record<string, unknown>;
+            const vol = unwrap(await api.volume.create(String(n), String(node)), 'volume');
             return `✓ Volume '${vol.name ?? n}' created\n\n` + fmtKeyValue({
               'ID': vol.id,
               'Name': vol.name,
-              'Node': vol.nodeId,
+              'Node': vol.nodeId ? await resolveName(vol.nodeId, 'node') : String(node),
               'Created': vol.createdAt ? new Date(String(vol.createdAt)).toLocaleString() : '(none)',
             });
           }
@@ -2420,5 +2462,353 @@ commands['stark'] = async (ctx) => {
     }
   } catch (err) {
     return `stark: ${err instanceof Error ? err.message : 'Network error — is the orchestrator running?'}\n`;
+  }
+};
+
+// ── Git commands (backed by isomorphic-git + OPFS) ──────────────────────────
+
+// Git status matrix column indices & values (see isomorphic-git docs)
+// Row: [filepath, HEAD, WORKDIR, STAGE]
+const GitSt = {
+  ABSENT:   0,  // file does not exist in this location
+  PRESENT:  1,  // HEAD: file exists; WORKDIR: identical to HEAD; STAGE: identical to HEAD
+  MODIFIED: 2,  // WORKDIR: differs from HEAD; STAGE: differs from HEAD (i.e. staged)
+  MIXED:    3,  // STAGE only: differs from both HEAD and WORKDIR (partially staged)
+} as const;
+
+commands['git'] = async (ctx) => {
+  const [subcommand, ...args] = ctx.args;
+
+  // Obtain the OPFS root — same root the terminal filesystem uses (stark-orchestrator)
+  const opfsRoot = await navigator.storage.getDirectory();
+  const rootHandle = await opfsRoot.getDirectoryHandle('stark-orchestrator', { create: true });
+  const dir = ctx.cwd;
+
+  // Parse --flag value pairs and positionals from args
+  const parseGitOpts = (a: string[]) => {
+    const positionals: string[] = [];
+    const opts: Record<string, string | boolean> = {};
+    for (let i = 0; i < a.length; i++) {
+      const v = a[i]!;
+      if (v.startsWith('--')) {
+        const key = v.slice(2);
+        const next = a[i + 1];
+        if (next && !next.startsWith('-')) { opts[key] = next; i++; } else { opts[key] = true; }
+      } else if (v.startsWith('-') && v.length === 2) {
+        const key = v.slice(1);
+        const next = a[i + 1];
+        if (next && !next.startsWith('-')) { opts[key] = next; i++; } else { opts[key] = true; }
+      } else { positionals.push(v); }
+    }
+    return { positionals, opts };
+  };
+
+  // Auth helper — reads from env vars or prompts
+  const getAuth = async (): Promise<GitAuth | undefined> => {
+    const username = ctx.env['GIT_USERNAME'] || ctx.env['GIT_USER'];
+    const password = ctx.env['GIT_PASSWORD'] || ctx.env['GIT_TOKEN'];
+    if (username && password) return { username, password };
+    if (ctx.prompt) {
+      const u = await ctx.prompt('Username (or token): ');
+      if (!u) return undefined;
+      const p = ctx.promptPassword ? await ctx.promptPassword('Password / token: ') : await ctx.prompt('Password / token: ');
+      if (!p) return undefined;
+      return { username: u, password: String(p) };
+    }
+    return undefined;
+  };
+
+  const author = {
+    name: ctx.env['GIT_AUTHOR_NAME'] || ctx.env['USER'] || 'user',
+    email: ctx.env['GIT_AUTHOR_EMAIL'] || `${ctx.env['USER'] || 'user'}@stark-os`,
+  };
+
+  if (!subcommand || subcommand === 'help' || subcommand === '--help') {
+    return 'Git commands (backed by isomorphic-git + OPFS)\n\n' +
+      'Usage: git <command> [options]\n\n' +
+      'Commands:\n' +
+      '  git init              Initialize a new repository\n' +
+      '  git clone <url>       Clone a remote repository\n' +
+      '  git status            Show working tree status\n' +
+      '  git add <file...>     Stage files for commit\n' +
+      '  git rm <file>         Unstage a file\n' +
+      '  git commit -m <msg>   Create a commit\n' +
+      '  git log               Show commit history\n' +
+      '  git diff [file]       Show changes in working directory\n' +
+      '  git branch [name]     List or create branches\n' +
+      '  git checkout <ref>    Switch branches or restore files\n' +
+      '  git merge <branch>    Merge a branch into current\n' +
+      '  git remote            List remotes\n' +
+      '  git fetch             Fetch from remote\n' +
+      '  git pull              Pull changes from remote\n' +
+      '  git push              Push commits to remote\n' +
+      '  git config <k> <v>    Set git config value\n\n' +
+      'Environment variables:\n' +
+      '  GIT_USERNAME / GIT_USER          Auth username\n' +
+      '  GIT_PASSWORD / GIT_TOKEN         Auth password / PAT\n' +
+      '  GIT_AUTHOR_NAME                  Commit author name\n' +
+      '  GIT_AUTHOR_EMAIL                 Commit author email\n';
+  }
+
+  try {
+    switch (subcommand) {
+      case 'init': {
+        const { opts } = parseGitOpts(args);
+        const branch = String(opts['b'] || opts['branch'] || 'main');
+        await gitInit(rootHandle, dir, branch);
+        return `Initialized empty Git repository in ${dir}/ (branch: ${branch})\n`;
+      }
+
+      case 'clone': {
+        const { positionals, opts } = parseGitOpts(args);
+        const url = positionals[0];
+        if (!url) return 'Usage: git clone <url> [directory]\n';
+        const targetDir = positionals[1]
+          ? normalizePath(positionals[1], ctx.cwd)
+          : normalizePath(url.split('/').pop()?.replace(/\.git$/, '') || 'repo', ctx.cwd);
+        try { await ctx.fs.mkdir(targetDir, true); } catch { /* may exist */ }
+        ctx.write(`Cloning into '${targetDir}'...\n`);
+        const auth = await getAuth();
+        const depth = opts['depth'] ? parseInt(String(opts['depth']), 10) : undefined;
+        await gitClone(rootHandle, targetDir, url, auth, undefined, (msg: string) => ctx.write(msg + '\n'), depth);
+        return `✓ Clone complete.\n`;
+      }
+
+      case 'status': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const branch = await gitCurrentBranch(rootHandle, dir);
+        let out = `On branch ${branch}\n\n`;
+        const matrix: GitStatusRow[] = await gitStatusMatrix(rootHandle, dir);
+        const staged: string[] = [];
+        const unstaged: string[] = [];
+        const untracked: string[] = [];
+        for (const [filepath, head, workdir, stage] of matrix) {
+          if (head === GitSt.ABSENT && workdir === GitSt.MODIFIED && stage === GitSt.ABSENT) { untracked.push(filepath); }
+          else if (stage === GitSt.MODIFIED) { staged.push(`  ${head === GitSt.ABSENT ? 'new file' : 'modified'}:   ${filepath}`); }
+          else if (stage === GitSt.MIXED) { staged.push(`  modified:   ${filepath}`); unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === GitSt.PRESENT && workdir === GitSt.MODIFIED) { unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === GitSt.PRESENT && workdir === GitSt.ABSENT) { unstaged.push(`  deleted:    ${filepath}`); }
+        }
+        if (staged.length > 0) {
+          out += 'Changes to be committed:\n';
+          out += staged.join('\n') + '\n\n';
+        }
+        if (unstaged.length > 0) {
+          out += 'Changes not staged for commit:\n';
+          out += unstaged.join('\n') + '\n\n';
+        }
+        if (untracked.length > 0) {
+          out += 'Untracked files:\n';
+          out += untracked.map(f => `  ${f}`).join('\n') + '\n\n';
+        }
+        if (staged.length === 0 && unstaged.length === 0 && untracked.length === 0) {
+          out += 'nothing to commit, working tree clean\n';
+        }
+        return out;
+      }
+
+      case 'add': {
+        if (args.length === 0) return 'Usage: git add <file...> or git add .\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (args[0] === '.') {
+          // Stage all changes
+          const matrix = await gitStatusMatrix(rootHandle, dir);
+          let count = 0;
+          for (const [filepath, head, workdir, stage] of matrix) {
+            if (stage !== GitSt.PRESENT || (head === GitSt.ABSENT && workdir === GitSt.MODIFIED) || (head === GitSt.PRESENT && workdir !== GitSt.PRESENT)) {
+              if (workdir === GitSt.ABSENT) {
+                await gitRemove(rootHandle, dir, filepath);
+              } else {
+                await gitAdd(rootHandle, dir, filepath);
+              }
+              count++;
+            }
+          }
+          return count > 0 ? `✓ Staged ${count} file(s)\n` : 'Nothing to stage.\n';
+        }
+        for (const file of args) {
+          await gitAdd(rootHandle, dir, file);
+        }
+        return `✓ Staged ${args.length} file(s)\n`;
+      }
+
+      case 'rm': case 'reset': {
+        if (args.length === 0) return 'Usage: git rm <file>\n';
+        for (const file of args) {
+          await gitRemove(rootHandle, dir, file);
+        }
+        return `✓ Unstaged ${args.length} file(s)\n`;
+      }
+
+      case 'commit': {
+        const { opts } = parseGitOpts(args);
+        const message = opts['m'] || opts['message'];
+        if (!message) return 'Usage: git commit -m "message"\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const oid = await gitCommit(rootHandle, dir, String(message), author);
+        return `[${await gitCurrentBranch(rootHandle, dir)} ${oid.slice(0, 7)}] ${message}\n`;
+      }
+
+      case 'log': {
+        const { opts } = parseGitOpts(args);
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const depth = opts['n'] ? parseInt(String(opts['n']), 10) : 20;
+        const oneline = opts['oneline'] === true;
+        const entries = await gitLog(rootHandle, dir, depth);
+        if (entries.length === 0) return 'No commits yet.\n';
+        let out = '';
+        for (const entry of entries) {
+          if (oneline) {
+            out += `${entry.oid.slice(0, 7)} ${entry.message.split('\n')[0]}\n`;
+          } else {
+            out += `commit ${entry.oid}\n`;
+            out += `Author: ${entry.author.name} <${entry.author.email}>\n`;
+            out += `Date:   ${new Date(entry.author.timestamp * 1000).toLocaleString()}\n\n`;
+            out += `    ${entry.message.trim()}\n\n`;
+          }
+        }
+        return out;
+      }
+
+      case 'diff': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const { positionals, opts } = parseGitOpts(args);
+        const staged = opts['staged'] === true || opts['cached'] === true;
+        if (positionals.length > 0) {
+          // Diff specific file(s)
+          let out = '';
+          for (const file of positionals) {
+            const diff = await gitDiffWorkingFile(rootHandle, dir, file, staged);
+            out += diff.patch + '\n';
+          }
+          return out || 'No changes.\n';
+        }
+        // Diff all changed files
+        const matrix = await gitStatusMatrix(rootHandle, dir);
+        let out = '';
+        for (const [filepath, head, workdir, stage] of matrix) {
+          const isChanged = staged
+            ? (stage === GitSt.MODIFIED || stage === GitSt.MIXED)
+            : (head === GitSt.PRESENT && workdir === GitSt.MODIFIED) || (head === GitSt.PRESENT && workdir === GitSt.ABSENT);
+          if (isChanged) {
+            const diff = await gitDiffWorkingFile(rootHandle, dir, filepath, staged);
+            out += diff.patch + '\n';
+          }
+        }
+        return out || 'No changes.\n';
+      }
+
+      case 'branch': {
+        const { positionals, opts } = parseGitOpts(args);
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (opts['d'] || opts['delete']) {
+          const name = String(opts['d'] || opts['delete'] || positionals[0]);
+          if (!name || name === 'true') return 'Usage: git branch -d <name>\n';
+          await gitDeleteBranch(rootHandle, dir, name);
+          return `Deleted branch ${name}\n`;
+        }
+        if (positionals.length > 0) {
+          await gitCreateBranch(rootHandle, dir, positionals[0]!, false);
+          return `Created branch ${positionals[0]}\n`;
+        }
+        // List branches
+        const current = await gitCurrentBranch(rootHandle, dir);
+        const branches = await gitListBranches(rootHandle, dir);
+        let out = '';
+        for (const b of branches) {
+          out += b === current ? `* ${b}\n` : `  ${b}\n`;
+        }
+        return out || 'No branches.\n';
+      }
+
+      case 'checkout': {
+        if (args.length === 0) return 'Usage: git checkout <branch|ref>\n';
+        const { positionals, opts } = parseGitOpts(args);
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (opts['b']) {
+          // Create and checkout new branch
+          const name = String(opts['b']);
+          await gitCreateBranch(rootHandle, dir, name, true);
+          return `Switched to a new branch '${name}'\n`;
+        }
+        const ref = positionals[0];
+        if (!ref) return 'Usage: git checkout <branch|ref>\n';
+        await gitCheckout(rootHandle, dir, ref);
+        return `Switched to branch '${ref}'\n`;
+      }
+
+      case 'merge': {
+        if (args.length === 0) return 'Usage: git merge <branch>\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const theirs = args[0]!;
+        const oid = await gitMerge(rootHandle, dir, theirs, author);
+        return `Merge made. New commit: ${oid.slice(0, 7)}\n`;
+      }
+
+      case 'remote': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (args[0] === '-v' || args[0] === '--verbose') {
+          const remotes = await gitListRemotes(rootHandle, dir);
+          if (remotes.length === 0) return 'No remotes configured.\n';
+          let out = '';
+          for (const r of remotes) {
+            out += `${r.remote}\t${r.url} (fetch)\n`;
+            out += `${r.remote}\t${r.url} (push)\n`;
+          }
+          return out;
+        }
+        const remotes = await gitListRemotes(rootHandle, dir);
+        return remotes.map(r => r.remote).join('\n') + (remotes.length ? '\n' : 'No remotes configured.\n');
+      }
+
+      case 'fetch': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        ctx.write('Fetching...\n');
+        const auth = await getAuth();
+        await gitFetch(rootHandle, dir, auth);
+        return '✓ Fetch complete.\n';
+      }
+
+      case 'pull': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        ctx.write('Pulling...\n');
+        const auth = await getAuth();
+        await gitPull(rootHandle, dir, auth, author);
+        return '✓ Pull complete.\n';
+      }
+
+      case 'push': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        ctx.write('Pushing...\n');
+        const auth = await getAuth();
+        await gitPush(rootHandle, dir, auth);
+        return '✓ Push complete.\n';
+      }
+
+      case 'config': {
+        if (args.length < 2) return 'Usage: git config <key> <value>\n  e.g. git config user.name "John"\n       git config user.email john@example.com\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        await gitSetConfig(rootHandle, dir, args[0]!, args[1]!);
+        return `✓ Set ${args[0]} = ${args[1]}\n`;
+      }
+
+      default:
+        return `git: '${subcommand}' is not a git command. See 'git help'.\n`;
+    }
+  } catch (err) {
+    return `git: ${err instanceof Error ? err.message : String(err)}\n`;
   }
 };

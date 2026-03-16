@@ -28,6 +28,14 @@
  * @module @stark-o/terminal/utils/commands
  */
 
+import {
+  gitInit, gitClone, gitAdd, gitRemove, gitCommit, gitPush, gitPull, gitFetch,
+  gitCurrentBranch, gitLog, gitStatusMatrix, gitIsRepo, gitDiffWorkingFile,
+  gitListBranches, gitCreateBranch, gitCheckout, gitDeleteBranch, gitListRemotes,
+  gitSetConfig, gitMerge,
+  type GitAuth, type GitStatusRow,
+} from '../git';
+
 /**
  * Minimal filesystem interface for terminal commands.
  * Compatible with IStorageAdapter from @stark-o/shared.
@@ -2459,18 +2467,15 @@ commands['stark'] = async (ctx) => {
 
 // ── Git commands (backed by isomorphic-git + OPFS) ──────────────────────────
 
+// Git status matrix column indices & values (see isomorphic-git docs)
+// Row: [filepath, HEAD, WORKDIR, STAGE]
+const GIT_ABSENT    = 0;  // file does not exist in this location
+const GIT_PRESENT   = 1;  // HEAD: file exists; WORKDIR: identical to HEAD; STAGE: identical to HEAD
+const GIT_MODIFIED  = 2;  // WORKDIR: differs from HEAD; STAGE: differs from HEAD (i.e. staged)
+const GIT_MIXED     = 3;  // STAGE only: differs from both HEAD and WORKDIR (partially staged)
+
 commands['git'] = async (ctx) => {
   const [subcommand, ...args] = ctx.args;
-
-  // Lazy import to avoid bundling isomorphic-git and heavy deps at module load time
-  const {
-    gitInit, gitClone, gitAdd, gitRemove, gitCommit, gitPush, gitPull, gitFetch,
-    gitCurrentBranch, gitLog, gitStatusMatrix, gitIsRepo, gitDiffWorkingFile,
-    gitListBranches, gitCreateBranch, gitCheckout, gitDeleteBranch, gitListRemotes,
-    gitSetConfig, gitMerge,
-  } = await import('../git');
-  type GitAuth = { username: string; password: string };
-  type GitStatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
   // Obtain the OPFS root — same root the terminal filesystem uses (stark-orchestrator)
   const opfsRoot = await navigator.storage.getDirectory();
@@ -2577,11 +2582,11 @@ commands['git'] = async (ctx) => {
         const unstaged: string[] = [];
         const untracked: string[] = [];
         for (const [filepath, head, workdir, stage] of matrix) {
-          if (head === 0 && workdir === 2 && stage === 0) { untracked.push(filepath); }
-          else if (stage === 2) { staged.push(`  ${head === 0 ? 'new file' : 'modified'}:   ${filepath}`); }
-          else if (stage === 3) { staged.push(`  modified:   ${filepath}`); unstaged.push(`  modified:   ${filepath}`); }
-          else if (head === 1 && workdir === 2) { unstaged.push(`  modified:   ${filepath}`); }
-          else if (head === 1 && workdir === 0) { unstaged.push(`  deleted:    ${filepath}`); }
+          if (head === GIT_ABSENT && workdir === GIT_MODIFIED && stage === GIT_ABSENT) { untracked.push(filepath); }
+          else if (stage === GIT_MODIFIED) { staged.push(`  ${head === GIT_ABSENT ? 'new file' : 'modified'}:   ${filepath}`); }
+          else if (stage === GIT_MIXED) { staged.push(`  modified:   ${filepath}`); unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === GIT_PRESENT && workdir === GIT_MODIFIED) { unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === GIT_PRESENT && workdir === GIT_ABSENT) { unstaged.push(`  deleted:    ${filepath}`); }
         }
         if (staged.length > 0) {
           out += 'Changes to be committed:\n';
@@ -2610,8 +2615,8 @@ commands['git'] = async (ctx) => {
           const matrix = await gitStatusMatrix(rootHandle, dir);
           let count = 0;
           for (const [filepath, head, workdir, stage] of matrix) {
-            if (stage !== 1 || (head === 0 && workdir === 2) || (head === 1 && workdir !== 1)) {
-              if (workdir === 0) {
+            if (stage !== GIT_PRESENT || (head === GIT_ABSENT && workdir === GIT_MODIFIED) || (head === GIT_PRESENT && workdir !== GIT_PRESENT)) {
+              if (workdir === GIT_ABSENT) {
                 await gitRemove(rootHandle, dir, filepath);
               } else {
                 await gitAdd(rootHandle, dir, filepath);
@@ -2686,8 +2691,8 @@ commands['git'] = async (ctx) => {
         let out = '';
         for (const [filepath, head, workdir, stage] of matrix) {
           const isChanged = staged
-            ? (stage === 2 || stage === 3)
-            : (head === 1 && workdir === 2) || (head === 1 && workdir === 0);
+            ? (stage === GIT_MODIFIED || stage === GIT_MIXED)
+            : (head === GIT_PRESENT && workdir === GIT_MODIFIED) || (head === GIT_PRESENT && workdir === GIT_ABSENT);
           if (isChanged) {
             const diff = await gitDiffWorkingFile(rootHandle, dir, filepath, staged);
             out += diff.patch + '\n';

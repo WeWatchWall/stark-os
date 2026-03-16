@@ -2456,3 +2456,352 @@ commands['stark'] = async (ctx) => {
     return `stark: ${err instanceof Error ? err.message : 'Network error — is the orchestrator running?'}\n`;
   }
 };
+
+// ── Git commands (backed by isomorphic-git + OPFS) ──────────────────────────
+
+commands['git'] = async (ctx) => {
+  const [subcommand, ...args] = ctx.args;
+
+  // Lazy import to avoid bundling isomorphic-git and heavy deps at module load time
+  const {
+    gitInit, gitClone, gitAdd, gitRemove, gitCommit, gitPush, gitPull, gitFetch,
+    gitCurrentBranch, gitLog, gitStatusMatrix, gitIsRepo, gitDiffWorkingFile,
+    gitListBranches, gitCreateBranch, gitCheckout, gitDeleteBranch, gitListRemotes,
+    gitSetConfig, gitMerge,
+  } = await import('../git');
+  type GitAuth = { username: string; password: string };
+  type GitStatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
+
+  // Obtain the OPFS root — same root the terminal filesystem uses (stark-orchestrator)
+  const opfsRoot = await navigator.storage.getDirectory();
+  const rootHandle = await opfsRoot.getDirectoryHandle('stark-orchestrator', { create: true });
+  const dir = ctx.cwd;
+
+  // Parse --flag value pairs and positionals from args
+  const parseGitOpts = (a: string[]) => {
+    const positionals: string[] = [];
+    const opts: Record<string, string | boolean> = {};
+    for (let i = 0; i < a.length; i++) {
+      const v = a[i]!;
+      if (v.startsWith('--')) {
+        const key = v.slice(2);
+        const next = a[i + 1];
+        if (next && !next.startsWith('-')) { opts[key] = next; i++; } else { opts[key] = true; }
+      } else if (v.startsWith('-') && v.length === 2) {
+        const key = v.slice(1);
+        const next = a[i + 1];
+        if (next && !next.startsWith('-')) { opts[key] = next; i++; } else { opts[key] = true; }
+      } else { positionals.push(v); }
+    }
+    return { positionals, opts };
+  };
+
+  // Auth helper — reads from env vars or prompts
+  const getAuth = async (): Promise<GitAuth | undefined> => {
+    const username = ctx.env['GIT_USERNAME'] || ctx.env['GIT_USER'];
+    const password = ctx.env['GIT_PASSWORD'] || ctx.env['GIT_TOKEN'];
+    if (username && password) return { username, password };
+    if (ctx.prompt) {
+      const u = await ctx.prompt('Username (or token): ');
+      if (!u) return undefined;
+      const p = ctx.promptPassword ? await ctx.promptPassword('Password / token: ') : await ctx.prompt('Password / token: ');
+      if (!p) return undefined;
+      return { username: u, password: String(p) };
+    }
+    return undefined;
+  };
+
+  const author = {
+    name: ctx.env['GIT_AUTHOR_NAME'] || ctx.env['USER'] || 'user',
+    email: ctx.env['GIT_AUTHOR_EMAIL'] || `${ctx.env['USER'] || 'user'}@stark-os`,
+  };
+
+  if (!subcommand || subcommand === 'help' || subcommand === '--help') {
+    return 'Git commands (backed by isomorphic-git + OPFS)\n\n' +
+      'Usage: git <command> [options]\n\n' +
+      'Commands:\n' +
+      '  git init              Initialize a new repository\n' +
+      '  git clone <url>       Clone a remote repository\n' +
+      '  git status            Show working tree status\n' +
+      '  git add <file...>     Stage files for commit\n' +
+      '  git rm <file>         Unstage a file\n' +
+      '  git commit -m <msg>   Create a commit\n' +
+      '  git log               Show commit history\n' +
+      '  git diff [file]       Show changes in working directory\n' +
+      '  git branch [name]     List or create branches\n' +
+      '  git checkout <ref>    Switch branches or restore files\n' +
+      '  git merge <branch>    Merge a branch into current\n' +
+      '  git remote            List remotes\n' +
+      '  git fetch             Fetch from remote\n' +
+      '  git pull              Pull changes from remote\n' +
+      '  git push              Push commits to remote\n' +
+      '  git config <k> <v>    Set git config value\n\n' +
+      'Environment variables:\n' +
+      '  GIT_USERNAME / GIT_USER          Auth username\n' +
+      '  GIT_PASSWORD / GIT_TOKEN         Auth password / PAT\n' +
+      '  GIT_AUTHOR_NAME                  Commit author name\n' +
+      '  GIT_AUTHOR_EMAIL                 Commit author email\n';
+  }
+
+  try {
+    switch (subcommand) {
+      case 'init': {
+        const { opts } = parseGitOpts(args);
+        const branch = String(opts['b'] || opts['branch'] || 'main');
+        await gitInit(rootHandle, dir, branch);
+        return `Initialized empty Git repository in ${dir}/ (branch: ${branch})\n`;
+      }
+
+      case 'clone': {
+        const { positionals, opts } = parseGitOpts(args);
+        const url = positionals[0];
+        if (!url) return 'Usage: git clone <url> [directory]\n';
+        const targetDir = positionals[1]
+          ? normalizePath(positionals[1], ctx.cwd)
+          : normalizePath(url.split('/').pop()?.replace(/\.git$/, '') || 'repo', ctx.cwd);
+        try { await ctx.fs.mkdir(targetDir, true); } catch { /* may exist */ }
+        ctx.write(`Cloning into '${targetDir}'...\n`);
+        const auth = await getAuth();
+        const depth = opts['depth'] ? parseInt(String(opts['depth']), 10) : undefined;
+        await gitClone(rootHandle, targetDir, url, auth, undefined, (msg: string) => ctx.write(msg + '\n'), depth);
+        return `✓ Clone complete.\n`;
+      }
+
+      case 'status': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const branch = await gitCurrentBranch(rootHandle, dir);
+        let out = `On branch ${branch}\n\n`;
+        const matrix: GitStatusRow[] = await gitStatusMatrix(rootHandle, dir);
+        const staged: string[] = [];
+        const unstaged: string[] = [];
+        const untracked: string[] = [];
+        for (const [filepath, head, workdir, stage] of matrix) {
+          if (head === 0 && workdir === 2 && stage === 0) { untracked.push(filepath); }
+          else if (stage === 2) { staged.push(`  ${head === 0 ? 'new file' : 'modified'}:   ${filepath}`); }
+          else if (stage === 3) { staged.push(`  modified:   ${filepath}`); unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === 1 && workdir === 2) { unstaged.push(`  modified:   ${filepath}`); }
+          else if (head === 1 && workdir === 0) { unstaged.push(`  deleted:    ${filepath}`); }
+        }
+        if (staged.length > 0) {
+          out += 'Changes to be committed:\n';
+          out += staged.join('\n') + '\n\n';
+        }
+        if (unstaged.length > 0) {
+          out += 'Changes not staged for commit:\n';
+          out += unstaged.join('\n') + '\n\n';
+        }
+        if (untracked.length > 0) {
+          out += 'Untracked files:\n';
+          out += untracked.map(f => `  ${f}`).join('\n') + '\n\n';
+        }
+        if (staged.length === 0 && unstaged.length === 0 && untracked.length === 0) {
+          out += 'nothing to commit, working tree clean\n';
+        }
+        return out;
+      }
+
+      case 'add': {
+        if (args.length === 0) return 'Usage: git add <file...> or git add .\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (args[0] === '.') {
+          // Stage all changes
+          const matrix = await gitStatusMatrix(rootHandle, dir);
+          let count = 0;
+          for (const [filepath, head, workdir, stage] of matrix) {
+            if (stage !== 1 || (head === 0 && workdir === 2) || (head === 1 && workdir !== 1)) {
+              if (workdir === 0) {
+                await gitRemove(rootHandle, dir, filepath);
+              } else {
+                await gitAdd(rootHandle, dir, filepath);
+              }
+              count++;
+            }
+          }
+          return count > 0 ? `✓ Staged ${count} file(s)\n` : 'Nothing to stage.\n';
+        }
+        for (const file of args) {
+          await gitAdd(rootHandle, dir, file);
+        }
+        return `✓ Staged ${args.length} file(s)\n`;
+      }
+
+      case 'rm': case 'reset': {
+        if (args.length === 0) return 'Usage: git rm <file>\n';
+        for (const file of args) {
+          await gitRemove(rootHandle, dir, file);
+        }
+        return `✓ Unstaged ${args.length} file(s)\n`;
+      }
+
+      case 'commit': {
+        const { opts } = parseGitOpts(args);
+        const message = opts['m'] || opts['message'];
+        if (!message) return 'Usage: git commit -m "message"\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const oid = await gitCommit(rootHandle, dir, String(message), author);
+        return `[${await gitCurrentBranch(rootHandle, dir)} ${oid.slice(0, 7)}] ${message}\n`;
+      }
+
+      case 'log': {
+        const { opts } = parseGitOpts(args);
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const depth = opts['n'] ? parseInt(String(opts['n']), 10) : 20;
+        const oneline = opts['oneline'] === true;
+        const entries = await gitLog(rootHandle, dir, depth);
+        if (entries.length === 0) return 'No commits yet.\n';
+        let out = '';
+        for (const entry of entries) {
+          if (oneline) {
+            out += `${entry.oid.slice(0, 7)} ${entry.message.split('\n')[0]}\n`;
+          } else {
+            out += `commit ${entry.oid}\n`;
+            out += `Author: ${entry.author.name} <${entry.author.email}>\n`;
+            out += `Date:   ${new Date(entry.author.timestamp * 1000).toLocaleString()}\n\n`;
+            out += `    ${entry.message.trim()}\n\n`;
+          }
+        }
+        return out;
+      }
+
+      case 'diff': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const { positionals, opts } = parseGitOpts(args);
+        const staged = opts['staged'] === true || opts['cached'] === true;
+        if (positionals.length > 0) {
+          // Diff specific file(s)
+          let out = '';
+          for (const file of positionals) {
+            const diff = await gitDiffWorkingFile(rootHandle, dir, file, staged);
+            out += diff.patch + '\n';
+          }
+          return out || 'No changes.\n';
+        }
+        // Diff all changed files
+        const matrix = await gitStatusMatrix(rootHandle, dir);
+        let out = '';
+        for (const [filepath, head, workdir, stage] of matrix) {
+          const isChanged = staged
+            ? (stage === 2 || stage === 3)
+            : (head === 1 && workdir === 2) || (head === 1 && workdir === 0);
+          if (isChanged) {
+            const diff = await gitDiffWorkingFile(rootHandle, dir, filepath, staged);
+            out += diff.patch + '\n';
+          }
+        }
+        return out || 'No changes.\n';
+      }
+
+      case 'branch': {
+        const { positionals, opts } = parseGitOpts(args);
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (opts['d'] || opts['delete']) {
+          const name = String(opts['d'] || opts['delete'] || positionals[0]);
+          if (!name || name === 'true') return 'Usage: git branch -d <name>\n';
+          await gitDeleteBranch(rootHandle, dir, name);
+          return `Deleted branch ${name}\n`;
+        }
+        if (positionals.length > 0) {
+          await gitCreateBranch(rootHandle, dir, positionals[0]!, false);
+          return `Created branch ${positionals[0]}\n`;
+        }
+        // List branches
+        const current = await gitCurrentBranch(rootHandle, dir);
+        const branches = await gitListBranches(rootHandle, dir);
+        let out = '';
+        for (const b of branches) {
+          out += b === current ? `* ${b}\n` : `  ${b}\n`;
+        }
+        return out || 'No branches.\n';
+      }
+
+      case 'checkout': {
+        if (args.length === 0) return 'Usage: git checkout <branch|ref>\n';
+        const { positionals, opts } = parseGitOpts(args);
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (opts['b']) {
+          // Create and checkout new branch
+          const name = String(opts['b']);
+          await gitCreateBranch(rootHandle, dir, name, true);
+          return `Switched to a new branch '${name}'\n`;
+        }
+        const ref = positionals[0];
+        if (!ref) return 'Usage: git checkout <branch|ref>\n';
+        await gitCheckout(rootHandle, dir, ref);
+        return `Switched to branch '${ref}'\n`;
+      }
+
+      case 'merge': {
+        if (args.length === 0) return 'Usage: git merge <branch>\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        const theirs = args[0]!;
+        const oid = await gitMerge(rootHandle, dir, theirs, author);
+        return `Merge made. New commit: ${oid.slice(0, 7)}\n`;
+      }
+
+      case 'remote': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        if (args[0] === '-v' || args[0] === '--verbose') {
+          const remotes = await gitListRemotes(rootHandle, dir);
+          if (remotes.length === 0) return 'No remotes configured.\n';
+          let out = '';
+          for (const r of remotes) {
+            out += `${r.remote}\t${r.url} (fetch)\n`;
+            out += `${r.remote}\t${r.url} (push)\n`;
+          }
+          return out;
+        }
+        const remotes = await gitListRemotes(rootHandle, dir);
+        return remotes.map(r => r.remote).join('\n') + (remotes.length ? '\n' : 'No remotes configured.\n');
+      }
+
+      case 'fetch': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        ctx.write('Fetching...\n');
+        const auth = await getAuth();
+        await gitFetch(rootHandle, dir, auth);
+        return '✓ Fetch complete.\n';
+      }
+
+      case 'pull': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        ctx.write('Pulling...\n');
+        const auth = await getAuth();
+        await gitPull(rootHandle, dir, auth, author);
+        return '✓ Pull complete.\n';
+      }
+
+      case 'push': {
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        ctx.write('Pushing...\n');
+        const auth = await getAuth();
+        await gitPush(rootHandle, dir, auth);
+        return '✓ Push complete.\n';
+      }
+
+      case 'config': {
+        if (args.length < 2) return 'Usage: git config <key> <value>\n  e.g. git config user.name "John"\n       git config user.email john@example.com\n';
+        const isRepo = await gitIsRepo(rootHandle, dir);
+        if (!isRepo) return `fatal: not a git repository: ${dir}\n`;
+        await gitSetConfig(rootHandle, dir, args[0]!, args[1]!);
+        return `✓ Set ${args[0]} = ${args[1]}\n`;
+      }
+
+      default:
+        return `git: '${subcommand}' is not a git command. See 'git help'.\n`;
+    }
+  } catch (err) {
+    return `git: ${err instanceof Error ? err.message : String(err)}\n`;
+  }
+};

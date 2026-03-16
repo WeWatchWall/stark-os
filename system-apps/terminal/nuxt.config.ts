@@ -59,6 +59,18 @@ export default defineNuxtConfig({
         },
       },
     },
+
+    resolve: {
+      alias: {
+        // Point the Node.js `buffer` built-in at the npm polyfill so
+        // isomorphic-git's `Buffer` import works in the browser.
+        buffer: 'buffer/',
+      },
+    },
+
+    optimizeDeps: {
+      include: ['buffer'],
+    },
   },
 
   // Inline all CSS

@@ -284,7 +284,7 @@ watch(() => props.visible, async (val) => {
   form.resourceNamespace = userInfo.value.defaultNamespace;
   form.labels = [];
   form.entrypoint = '';
-  form.timeout = null as unknown as number;
+  form.timeout = null;
   form.minNodeVersion = '';
   form.enableEphemeral = false;
   form.requestedCapabilities = [];

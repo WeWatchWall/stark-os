@@ -1,5 +1,5 @@
 <template>
-  <div class="start-menu" @click.stop @click="ctxMenu.show = false">
+  <div class="start-menu" @click.stop="ctxMenu.show = false">
     <!-- Header: clickable title / search box -->
     <div class="menu-header">
       <div v-if="!searchActive" class="menu-title-row" @click="activateSearch">

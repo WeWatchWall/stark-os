@@ -464,7 +464,7 @@ watch(() => props.visible, async (val) => {
   form.tolerations = [];
   form.resourceRequests = { cpu: 100, memory: 128 };
   form.resourceLimits = { cpu: 500, memory: 512 };
-  form.ingressPort = null as unknown as number;
+  form.ingressPort = null;
   form.visibility = 'private';
   form.exposed = false;
   form.enableEphemeral = false;

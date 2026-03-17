@@ -64,7 +64,7 @@ export interface StarkAPI {
   service: {
     list(options?: { namespace?: string }): Promise<unknown>;
     status(name: string): Promise<unknown>;
-    create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string; args?: string[] }): Promise<unknown>;
+    create(input: Record<string, unknown>): Promise<unknown>;
   };
   namespace: {
     list(): Promise<unknown>;
@@ -380,10 +380,8 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         return handleResponse<unknown>(await apiGet(`/api/services${qs ? '?' + qs : ''}`));
       },
       async status(name: string) { return handleResponse<unknown>(await apiGet(`/api/services/name/${encodeURIComponent(name)}`)); },
-      async create(packName: string, options?: { namespace?: string; replicas?: number; visibility?: string; args?: string[] }) {
-        const body: Record<string, unknown> = { packName, namespace: options?.namespace ?? 'default', replicas: options?.replicas ?? 1, visibility: options?.visibility ?? 'private' };
-        if (options?.args) body.args = options.args;
-        return handleResponse<unknown>(await apiPost('/api/services', body));
+      async create(input: Record<string, unknown>) {
+        return handleResponse<unknown>(await apiPost('/api/services', input));
       },
     },
     namespace: {

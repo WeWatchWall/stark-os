@@ -2132,11 +2132,13 @@ commands['stark'] = async (ctx) => {
               }
             }
             const svcOpts: Record<string, unknown> = {
+              name: String(options['name'] || (pack + '-svc')),
+              packName: String(pack),
               namespace: String(options['namespace'] || 'default'),
               replicas: parseInt(String(options['replicas'] || '1'), 10),
             };
             if (svcArgs.length > 0) svcOpts.args = svcArgs;
-            const svc = await api.service.create(String(pack), svcOpts) as { service?: Record<string, unknown> } | Record<string, unknown>;
+            const svc = await api.service.create(svcOpts) as { service?: Record<string, unknown> } | Record<string, unknown>;
             const service = (svc as { service?: Record<string, unknown> }).service ?? svc as Record<string, unknown>;
             let out = `✓ Service '${service.name ?? pack}' created\n\n`;
             out += fmtKeyValue({

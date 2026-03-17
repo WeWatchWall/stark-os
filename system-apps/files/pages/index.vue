@@ -869,7 +869,7 @@ async function onOpenWithSelect(packName: string, setDefault: boolean, volumeMou
 
 function ctxInstallPack(): void {
   ctxMenu.show = false;
-  const names = [...selectedNames];
+  const names = [...selectedNames.value];
   if (names.length !== 1) return;
   const name = names[0];
   if (!name.endsWith('.pack.js')) return;

@@ -44,6 +44,7 @@ export interface StarkAPI {
     versions(name: string): Promise<unknown>;
     info(name: string): Promise<unknown>;
     delete(name: string): Promise<void>;
+    register(input: Record<string, unknown>): Promise<unknown>;
   };
   node: {
     list(options?: { pageSize?: number }): Promise<unknown>;
@@ -290,6 +291,7 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       async versions(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}/versions`)); },
       async info(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}`)); },
       async delete(name: string) { await handleDeleteResponse(await apiDelete(`/api/packs/name/${encodeURIComponent(name)}`)); },
+      async register(input: Record<string, unknown>) { return handleResponse<unknown>(await apiPost('/api/packs', input)); },
     },
     node: {
       async list(options?: { pageSize?: number }) {

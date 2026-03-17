@@ -91,6 +91,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
       versions: base.pack.versions.bind(base.pack),
       info: base.pack.info.bind(base.pack),
       delete: base.pack.delete.bind(base.pack),
+      register: base.pack.register.bind(base.pack),
     },
     node: {
       async list(options) { return base.node.list(options ?? { pageSize: DEFAULT_BROWSER_PAGE_SIZE }); },

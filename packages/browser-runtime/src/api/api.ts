@@ -126,7 +126,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           accessToken: string;
           refreshToken?: string;
           expiresAt: string;
-          user: { id: string; email: string };
+          user: { id: string; email: string; username?: string; roles?: string[] };
         }>(response);
         saveCredentials({
           accessToken: data.accessToken,
@@ -134,6 +134,8 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           expiresAt: data.expiresAt,
           userId: data.user.id,
           email: data.user.email,
+          username: data.user.username,
+          roles: data.user.roles,
         });
         // Keep the base API's in-memory token in sync
         base.auth.updateAccessToken(data.accessToken);
@@ -143,7 +145,12 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
       whoami() {
         const creds = loadCredentials();
         if (!creds || !isAuthenticated()) return null;
-        return { email: creds.email, userId: creds.userId };
+        return {
+          email: creds.email,
+          userId: creds.userId,
+          username: creds.username,
+          roles: creds.roles,
+        };
       },
       isAuthenticated() { return isAuthenticated(); },
       status() {
@@ -163,7 +170,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           accessToken: string;
           refreshToken?: string;
           expiresAt: string;
-          user: { id: string; email: string; username: string };
+          user: { id: string; email: string; username: string; roles?: string[] };
         }>(response);
         saveCredentials({
           accessToken: data.accessToken,
@@ -171,6 +178,8 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
           expiresAt: data.expiresAt,
           userId: data.user.id,
           email: data.user.email,
+          username: data.user.username,
+          roles: data.user.roles,
         });
         base.auth.updateAccessToken(data.accessToken);
         return data;

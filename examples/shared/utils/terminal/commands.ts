@@ -1646,7 +1646,10 @@ commands['stark'] = async (ctx) => {
           case 'whoami': {
             const info = api.auth.whoami();
             if (!info) return 'Not authenticated.\n';
-            return `Email: ${info.email}\nUser ID: ${info.userId}\n`;
+            let out = `Email: ${info.email}\nUser ID: ${info.userId}\n`;
+            if (info.username) out += `Username: ${info.username}\n`;
+            if (info.roles && info.roles.length > 0) out += `Roles: ${info.roles.join(', ')}\n`;
+            return out;
           }
           case 'status': {
             const s = api.auth.status();

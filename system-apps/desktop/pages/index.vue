@@ -72,6 +72,10 @@
       @click.stop
     >
       <template v-if="ctxMenu.itemName">
+        <div v-if="ctxMenu.itemName && ctxMenu.itemName.endsWith('.pack.js')" class="ctx-item ctx-item-install" @click="ctxInstallPack">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Install
+        </div>
         <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
         <div class="ctx-item" @click="ctxDownload">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -140,6 +144,16 @@
       @select="onOpenWithSelect"
       @cancel="owDialog.show = false"
       @update:visible="owDialog.show = $event"
+    />
+
+    <!-- Install Pack dialog for .pack.js files -->
+    <InstallPackDialog
+      :visible="installPackDialog.show"
+      :file-name="installPackDialog.fileName"
+      :file-path="installPackDialog.filePath"
+      @cancel="installPackDialog.show = false"
+      @installed="onPackInstalled"
+      @update:visible="installPackDialog.show = $event"
     />
   </div>
 </template>
@@ -213,6 +227,13 @@ const owDialog = reactive({
   filePaths: [] as string[],
   packs: [] as IntentPackInfo[],
   loading: false,
+});
+
+/** Install pack dialog for .pack.js files */
+const installPackDialog = reactive({
+  show: false,
+  fileName: '',
+  filePath: '',
 });
 
 // ── Grid slot computation ──
@@ -725,6 +746,21 @@ async function onOpenWithSelect(packName: string, setDefault: boolean, volumeMou
   intentStore = await handleOpenWithSelection(
     intentStore, packName, owDialog.filenames, owDialog.filePaths, setDefault, volumeMounts,
   );
+}
+
+// ── Install Pack dialog ──
+
+function ctxInstallPack(): void {
+  ctxMenu.show = false;
+  const name = ctxMenu.itemName;
+  if (!name || !name.endsWith('.pack.js')) return;
+  installPackDialog.fileName = name;
+  installPackDialog.filePath = '/home/desktop/' + name;
+  installPackDialog.show = true;
+}
+
+function onPackInstalled(): void {
+  installPackDialog.show = false;
 }
 
 // ── Context menu: Download ──
@@ -1254,6 +1290,13 @@ onBeforeUnmount(() => {
 }
 .ctx-item-danger:hover {
   background: rgba(239, 68, 68, 0.15);
+}
+.ctx-item-install {
+  color: #c084fc;
+  font-weight: 600;
+}
+.ctx-item-install:hover {
+  background: rgba(168, 85, 247, 0.15);
 }
 .ctx-icon {
   flex-shrink: 0;

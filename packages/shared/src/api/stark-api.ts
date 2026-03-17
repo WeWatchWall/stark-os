@@ -29,7 +29,7 @@ export interface StarkAPI {
   auth: {
     login(email: string, password: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
     logout(): void;
-    whoami(): { email: string; userId: string } | null;
+    whoami(): { email: string; userId: string; username?: string; roles?: string[] } | null;
     isAuthenticated(): boolean;
     status(): { authenticated: boolean; email?: string; expiresAt?: string };
     /** Update the in-memory access token (called by runtime on auth:token-refreshed) */

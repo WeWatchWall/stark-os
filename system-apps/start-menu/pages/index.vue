@@ -129,7 +129,7 @@
     </div>
 
     <!-- Context menu -->
-    <div v-if="ctxMenu.show" class="sm-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+    <div v-if="ctxMenu.show" ref="ctxMenuEl" class="sm-ctx-menu" :style="ctxMenuStyle" @click.stop>
       <div class="sm-ctx-item sm-ctx-item-primary" @click="ctxRunAdvanced">
         <span class="sm-ctx-icon">▶</span> Run…
       </div>
@@ -139,6 +139,10 @@
       <div class="sm-ctx-separator"></div>
       <div class="sm-ctx-item" @click="ctxLaunchDefault">
         <span class="sm-ctx-icon">⚡</span> Quick Launch
+      </div>
+      <div class="sm-ctx-separator"></div>
+      <div class="sm-ctx-item sm-ctx-item-danger" @click="ctxUninstall">
+        <span class="sm-ctx-icon">🗑</span> Uninstall
       </div>
     </div>
 
@@ -213,6 +217,21 @@ const dynamicServicesLoading = ref(false);
 
 /** Context menu */
 const ctxMenu = reactive({ show: false, x: 0, y: 0, app: null as AppEntry | null });
+const ctxMenuEl = ref<HTMLDivElement | null>(null);
+
+/** Context menu position with auto-flip near edges */
+const ctxMenuStyle = computed(() => {
+  const style: Record<string, string> = {};
+  const menuW = ctxMenuEl.value?.offsetWidth ?? 180;
+  const menuH = ctxMenuEl.value?.offsetHeight ?? 200;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  style.left = (ctxMenu.x + menuW > vw ? Math.max(0, ctxMenu.x - menuW) : ctxMenu.x) + 'px';
+  style.top = (ctxMenu.y + menuH > vh ? Math.max(0, ctxMenu.y - menuH) : ctxMenu.y) + 'px';
+
+  return style;
+});
 
 /** Run Pod dialog */
 const runDialog = reactive({ show: false, app: null as AppEntry | null });
@@ -419,6 +438,24 @@ function ctxLaunchDefault(): void {
   ctxMenu.show = false;
   if (!ctxMenu.app) return;
   launchApp(ctxMenu.app);
+}
+
+async function ctxUninstall(): Promise<void> {
+  ctxMenu.show = false;
+  const app = ctxMenu.app;
+  if (!app) return;
+  if (!confirm(`Uninstall "${app.name}"? This will permanently remove the pack.`)) return;
+  try {
+    const api = createStarkAPI();
+    await api.pack.delete(app.name);
+    // Remove from the local list immediately
+    allApps.value = allApps.value.filter((a) => a.name !== app.name);
+    labelGroups.value = buildLabelGroups(allApps.value);
+    writePackCache({ apps: allApps.value, labelGroups: labelGroups.value, timestamp: Date.now() });
+  } catch (err: unknown) {
+    console.error('Failed to uninstall pack:', err);
+    alert(`Failed to uninstall ${app.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
 }
 
 function onRunLaunched(): void {
@@ -807,5 +844,13 @@ onMounted(() => {
   height: 1px;
   background: rgba(255, 255, 255, 0.06);
   margin: 4px 0;
+}
+
+.sm-ctx-item-danger {
+  color: #f87171;
+}
+.sm-ctx-item-danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
 }
 </style>

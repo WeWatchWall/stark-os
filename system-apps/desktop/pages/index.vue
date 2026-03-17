@@ -1050,8 +1050,9 @@ function openSelectedItems(): void {
 }
 
 function onKeyDown(event: KeyboardEvent): void {
-  // Don't intercept keys while a rename input is active
+  // Don't intercept keys while a rename input or dialog is active
   if (renaming.active) return;
+  if (owDialog.show || installPackDialog.show) return;
 
   if (event.key === 'Enter') {
     openSelectedItems();

@@ -376,7 +376,7 @@ async function deleteSecretByName(req: Request, res: Response): Promise<void> {
     }
 
     logger.info('Secret deleted', { name, namespace, correlationId });
-    res.status(204).send();
+    sendSuccess(res, { deleted: true });
   } catch (err) {
     logger.error('Error deleting secret', err instanceof Error ? err : undefined, { correlationId });
     sendError(res, 'INTERNAL_ERROR', 'Internal server error', 500);

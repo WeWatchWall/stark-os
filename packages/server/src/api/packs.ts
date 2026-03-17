@@ -665,7 +665,7 @@ async function deletePack(req: Request, res: Response): Promise<void> {
     }
 
     logger.info('Pack deleted successfully', { packId: id, userId });
-    res.status(204).send();
+    sendSuccess(res, { deleted: true });
   } catch (error) {
     logger.error('Error deleting pack', error instanceof Error ? error : undefined, {
       packId: req.params.id,

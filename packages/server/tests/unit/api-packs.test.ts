@@ -784,7 +784,8 @@ describe('Pack API Handlers', () => {
 
       await deletePack(req, res);
 
-      expect(res._status).toBe(204);
+      expect(res._status).toBe(200);
+      expect(res._json).toEqual({ success: true, data: { deleted: true } });
       expect(mockPackQueries.deletePack).toHaveBeenCalledWith(samplePack.id);
     });
   });

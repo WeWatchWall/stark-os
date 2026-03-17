@@ -121,6 +121,10 @@ export async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export async function handleDeleteResponse(response: Response): Promise<void> {
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    if (!response.ok) throw new Error('Request failed');
+    return;
+  }
   const result = (await response.json()) as ApiResponse<unknown>;
   if (!result.success) {
     throw new Error(result.error?.message ?? 'Request failed');

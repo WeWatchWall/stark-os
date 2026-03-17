@@ -42,8 +42,8 @@ export interface StarkAPI {
   pack: {
     list(options?: { pageSize?: number }): Promise<unknown>;
     versions(name: string): Promise<unknown>;
-    info(name: string): Promise<unknown>;
-    delete(name: string): Promise<void>;
+    info(nameOrId: string): Promise<unknown>;
+    delete(nameOrId: string): Promise<void>;
     register(input: Record<string, unknown>): Promise<unknown>;
   };
   node: {
@@ -144,6 +144,27 @@ export async function resolveNodeId(
     throw new Error(`Node not found: ${nameOrId}`);
   }
   return result.data.node.id;
+}
+
+export async function resolvePackId(
+  nameOrId: string,
+  apiFetch: (path: string) => Promise<Response>,
+): Promise<string> {
+  if (UUID_PATTERN.test(nameOrId)) return nameOrId;
+  const response = await apiFetch(`/api/packs?search=${encodeURIComponent(nameOrId)}&pageSize=100`);
+  const result = (await response.json()) as {
+    success: boolean;
+    data?: { packs: Array<{ id: string; name: string }> };
+    error?: { code: string; message: string };
+  };
+  if (!result.success || !result.data) {
+    throw new Error(`Pack not found: ${nameOrId}`);
+  }
+  const pack = result.data.packs.find((p) => p.name === nameOrId);
+  if (!pack) {
+    throw new Error(`Pack not found: ${nameOrId}`);
+  }
+  return pack.id;
 }
 
 /**
@@ -288,9 +309,15 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         const qs = params.toString();
         return handleResponse<unknown>(await apiGet(`/api/packs${qs ? '?' + qs : ''}`));
       },
-      async versions(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}/versions`)); },
-      async info(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}`)); },
-      async delete(name: string) { await handleDeleteResponse(await apiDelete(`/api/packs/name/${encodeURIComponent(name)}`)); },
+      async versions(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/${encodeURIComponent(name)}/versions`)); },
+      async info(nameOrId: string) {
+        const packId = await resolvePackId(nameOrId, apiGet);
+        return handleResponse<unknown>(await apiGet(`/api/packs/${packId}`));
+      },
+      async delete(nameOrId: string) {
+        const packId = await resolvePackId(nameOrId, apiGet);
+        await handleDeleteResponse(await apiDelete(`/api/packs/${packId}`));
+      },
       async register(input: Record<string, unknown>) { return handleResponse<unknown>(await apiPost('/api/packs', input)); },
     },
     node: {

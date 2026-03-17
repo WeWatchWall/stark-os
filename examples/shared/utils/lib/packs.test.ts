@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractVolumeMounts,
+  validateNamespace,
   VOLUME_LABEL_PREFIX,
   type PackEntry,
+  type UserInfo,
 } from './packs';
 
 describe('VOLUME_LABEL_PREFIX', () => {
@@ -81,5 +83,67 @@ describe('extractVolumeMounts', () => {
   it('handles pack with no metadata', () => {
     const pack: PackEntry = { name: 'bare', runtimeTag: 'node' };
     expect(extractVolumeMounts(pack)).toEqual([]);
+  });
+});
+
+describe('validateNamespace', () => {
+  const adminUser: UserInfo = {
+    email: 'admin@example.com',
+    userId: 'admin-1',
+    username: 'admin',
+    roles: ['admin'],
+    isAdmin: true,
+    defaultNamespace: 'default',
+  };
+
+  const regularUser: UserInfo = {
+    email: 'alice@example.com',
+    userId: 'user-1',
+    username: 'alice',
+    roles: ['user'],
+    isAdmin: false,
+    defaultNamespace: 'alice',
+  };
+
+  it('allows admin to use any namespace', () => {
+    expect(validateNamespace('default', adminUser)).toBe('');
+    expect(validateNamespace('alice', adminUser)).toBe('');
+    expect(validateNamespace('bob/project', adminUser)).toBe('');
+    expect(validateNamespace('stark-system', adminUser)).toBe('');
+  });
+
+  it('allows regular user to use their own namespace', () => {
+    expect(validateNamespace('alice', regularUser)).toBe('');
+  });
+
+  it('allows regular user to use sub-namespaces', () => {
+    expect(validateNamespace('alice/my-project', regularUser)).toBe('');
+    expect(validateNamespace('alice/deep/path', regularUser)).toBe('');
+  });
+
+  it('rejects regular user using another namespace', () => {
+    const error = validateNamespace('bob', regularUser);
+    expect(error).toBeTruthy();
+    expect(error).toContain('alice');
+  });
+
+  it('rejects regular user using default namespace', () => {
+    const error = validateNamespace('default', regularUser);
+    expect(error).toBeTruthy();
+  });
+
+  it('returns empty string for empty namespace', () => {
+    expect(validateNamespace('', regularUser)).toBe('');
+    expect(validateNamespace('  ', regularUser)).toBe('');
+  });
+
+  it('returns empty when user has no username', () => {
+    const noUsername: UserInfo = {
+      email: 'anon@example.com',
+      userId: 'user-2',
+      isAdmin: false,
+      defaultNamespace: 'default',
+    };
+    expect(validateNamespace('anything', noUsername)).toBe('');
   });
 });

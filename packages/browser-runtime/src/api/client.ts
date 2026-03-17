@@ -27,6 +27,8 @@ export interface BrowserCredentials {
   expiresAt: string;
   userId: string;
   email: string;
+  username?: string;
+  roles?: string[];
 }
 
 const DEFAULT_CONFIG: BrowserApiConfig = {

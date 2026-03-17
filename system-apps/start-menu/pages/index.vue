@@ -1,5 +1,5 @@
 <template>
-  <div class="start-menu" @click.stop>
+  <div class="start-menu" @click.stop="ctxMenu.show = false">
     <!-- Header: clickable title / search box -->
     <div class="menu-header">
       <div v-if="!searchActive" class="menu-title-row" @click="activateSearch">
@@ -76,6 +76,7 @@
             :key="app.name"
             class="app-item"
             @click="launchApp(app)"
+            @contextmenu.prevent="showCtxMenu($event, app)"
           >
             <span class="app-icon" :class="app.category">{{ iconFor(app.category) }}</span>
             <span class="app-name">{{ app.name }}</span>
@@ -98,6 +99,7 @@
               :key="app.name"
               class="app-item"
               @click="launchApp(app)"
+              @contextmenu.prevent="showCtxMenu($event, app)"
             >
               <span class="app-icon" :class="app.category">{{ iconFor(app.category) }}</span>
               <span class="app-name">{{ app.name }}</span>
@@ -116,6 +118,7 @@
             :key="app.name"
             class="app-item"
             @click="launchApp(app)"
+            @contextmenu.prevent="showCtxMenu($event, app)"
           >
             <span class="app-icon" :class="app.category">{{ iconFor(app.category) }}</span>
             <span class="app-name">{{ app.name }}</span>
@@ -124,11 +127,47 @@
         <div v-if="allApps.length === 0" class="menu-empty">No applications available.</div>
       </template>
     </div>
+
+    <!-- Context menu -->
+    <div v-if="ctxMenu.show" ref="ctxMenuEl" class="sm-ctx-menu" :style="ctxMenuStyle" @click.stop>
+      <div class="sm-ctx-item sm-ctx-item-primary" @click="ctxRunAdvanced">
+        <span class="sm-ctx-icon">▶</span> Run…
+      </div>
+      <div class="sm-ctx-item" @click="ctxInstallService">
+        <span class="sm-ctx-icon">📦</span> Install Service
+      </div>
+      <div class="sm-ctx-separator"></div>
+      <div class="sm-ctx-item" @click="ctxLaunchDefault">
+        <span class="sm-ctx-icon">⚡</span> Quick Launch
+      </div>
+      <div class="sm-ctx-separator"></div>
+      <div class="sm-ctx-item sm-ctx-item-danger" @click="ctxUninstall">
+        <span class="sm-ctx-icon">🗑</span> Uninstall
+      </div>
+    </div>
+
+    <!-- Run Pod dialog -->
+    <RunPodDialog
+      :visible="runDialog.show"
+      :app="runDialog.app"
+      @cancel="runDialog.show = false"
+      @launched="onRunLaunched"
+      @update:visible="runDialog.show = $event"
+    />
+
+    <!-- Install Service dialog -->
+    <InstallServiceDialog
+      :visible="svcDialog.show"
+      :app="svcDialog.app"
+      @cancel="svcDialog.show = false"
+      @installed="onServiceInstalled"
+      @update:visible="svcDialog.show = $event"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, reactive, onMounted, nextTick } from 'vue';
 import { createStarkAPI } from '@stark-o/browser-runtime';
 import type { PackMessageHandler } from '@stark-o/shared';
 import {
@@ -149,6 +188,8 @@ import {
   type LabelGroup,
   type DynamicServiceItem,
 } from '../../../examples/shared/utils/lib/packs';
+import RunPodDialog from '../../../examples/shared/components/RunPodDialog.vue';
+import InstallServiceDialog from '../../../examples/shared/components/InstallServiceDialog.vue';
 
 /* ── State ── */
 
@@ -173,6 +214,30 @@ const expandedGroups = ref(new Set<string>());
 const servicePickerApp = ref<AppEntry | null>(null);
 const dynamicServices = ref<DynamicServiceItem[]>([]);
 const dynamicServicesLoading = ref(false);
+
+/** Context menu */
+const ctxMenu = reactive({ show: false, x: 0, y: 0, app: null as AppEntry | null });
+const ctxMenuEl = ref<HTMLDivElement | null>(null);
+
+/** Context menu position with auto-flip near edges */
+const ctxMenuStyle = computed(() => {
+  const style: Record<string, string> = {};
+  const menuW = ctxMenuEl.value?.offsetWidth ?? 180;
+  const menuH = ctxMenuEl.value?.offsetHeight ?? 200;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  style.left = (ctxMenu.x + menuW > vw ? Math.max(0, ctxMenu.x - menuW) : ctxMenu.x) + 'px';
+  style.top = (ctxMenu.y + menuH > vh ? Math.max(0, ctxMenu.y - menuH) : ctxMenu.y) + 'px';
+
+  return style;
+});
+
+/** Run Pod dialog */
+const runDialog = reactive({ show: false, app: null as AppEntry | null });
+
+/** Install Service dialog */
+const svcDialog = reactive({ show: false, app: null as AppEntry | null });
 
 /* ── Computed ── */
 
@@ -344,6 +409,62 @@ async function launchAppDirect(app: AppEntry): Promise<void> {
     console.error('Failed to launch app:', err);
     alert(`Failed to launch ${app.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
+}
+
+/* ── Context menu ── */
+
+function showCtxMenu(event: MouseEvent, app: AppEntry): void {
+  ctxMenu.app = app;
+  ctxMenu.x = event.clientX;
+  ctxMenu.y = event.clientY;
+  ctxMenu.show = true;
+}
+
+function ctxRunAdvanced(): void {
+  ctxMenu.show = false;
+  if (!ctxMenu.app) return;
+  runDialog.app = ctxMenu.app;
+  runDialog.show = true;
+}
+
+function ctxInstallService(): void {
+  ctxMenu.show = false;
+  if (!ctxMenu.app) return;
+  svcDialog.app = ctxMenu.app;
+  svcDialog.show = true;
+}
+
+function ctxLaunchDefault(): void {
+  ctxMenu.show = false;
+  if (!ctxMenu.app) return;
+  launchApp(ctxMenu.app);
+}
+
+async function ctxUninstall(): Promise<void> {
+  ctxMenu.show = false;
+  const app = ctxMenu.app;
+  if (!app) return;
+  if (!confirm(`Uninstall "${app.name}"? This will permanently remove the pack.`)) return;
+  try {
+    const api = createStarkAPI();
+    await api.pack.delete(app.name);
+    // Remove from the local list immediately
+    allApps.value = allApps.value.filter((a) => a.name !== app.name);
+    labelGroups.value = buildLabelGroups(allApps.value);
+    writePackCache({ apps: allApps.value, labelGroups: labelGroups.value, timestamp: Date.now() });
+  } catch (err: unknown) {
+    console.error('Failed to uninstall pack:', err);
+    alert(`Failed to uninstall ${app.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
+}
+
+function onRunLaunched(): void {
+  runDialog.show = false;
+  requestHide();
+}
+
+function onServiceInstalled(): void {
+  svcDialog.show = false;
 }
 
 /* ── Message listener ── */
@@ -677,5 +798,59 @@ onMounted(() => {
   padding: 1px 6px;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 4px;
+}
+
+/* ── Context menu ── */
+.sm-ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.sm-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.sm-ctx-item:hover {
+  background: rgba(59, 130, 246, 0.15);
+  color: #f1f5f9;
+}
+.sm-ctx-item-primary {
+  font-weight: 600;
+  color: #60a5fa;
+}
+.sm-ctx-item-primary:hover {
+  color: #93c5fd;
+}
+
+.sm-ctx-icon {
+  font-size: 0.85rem;
+  width: 16px;
+  text-align: center;
+}
+
+.sm-ctx-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 4px 0;
+}
+
+.sm-ctx-item-danger {
+  color: #f87171;
+}
+.sm-ctx-item-danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
 }
 </style>

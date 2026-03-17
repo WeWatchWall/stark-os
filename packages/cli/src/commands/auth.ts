@@ -190,18 +190,23 @@ async function whoamiHandler(): Promise<void> {
       authenticated: true,
       userId: creds.userId,
       email: creds.email,
+      username: creds.username,
+      roles: creds.roles,
       expiresAt: creds.expiresAt,
       expiresInMinutes: expiresIn,
     }, null, 2));
   } else {
     console.log(chalk.bold('\nCurrent User'));
     console.log('─'.repeat(40));
-    keyValue({
+    const fields: Record<string, string> = {
       'Email': creds.email,
       'User ID': creds.userId,
-      'Session Expires': expiresAt.toLocaleString(),
-      'Expires In': `${expiresIn} minutes`,
-    });
+    };
+    if (creds.username) fields['Username'] = creds.username;
+    if (creds.roles && creds.roles.length > 0) fields['Roles'] = creds.roles.join(', ');
+    fields['Session Expires'] = expiresAt.toLocaleString();
+    fields['Expires In'] = `${expiresIn} minutes`;
+    keyValue(fields);
     console.log();
   }
 }

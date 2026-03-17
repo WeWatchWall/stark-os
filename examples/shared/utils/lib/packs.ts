@@ -371,3 +371,75 @@ export function categoryIcon(cat: AppCategory): string {
     case 'universal': return '⊕';
   }
 }
+
+/** Cached user info for namespace defaulting. */
+export interface UserInfo {
+  email: string;
+  userId: string;
+  username?: string;
+  roles?: string[];
+  isAdmin: boolean;
+  defaultNamespace: string;
+}
+
+/**
+ * Fetch the current user's info from the browser API.
+ * Used for namespace defaulting and validation in dialogs.
+ *
+ * Admin users default to 'default' namespace.
+ * Regular users default to their personal namespace (derived from username).
+ */
+export function fetchUserInfo(): UserInfo {
+  const api = createStarkAPI();
+  const info = api.auth.whoami();
+  if (!info) {
+    return {
+      email: '',
+      userId: '',
+      isAdmin: false,
+      defaultNamespace: 'default',
+    };
+  }
+
+  const isAdmin = (info.roles ?? []).includes('admin');
+  let defaultNs = 'default';
+  if (!isAdmin && info.username) {
+    // Derive the user's personal namespace from their username
+    // using the same logic as getUserNamespace from @stark-o/shared
+    defaultNs = info.username
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'user';
+    defaultNs = defaultNs.slice(0, 63);
+  }
+
+  return {
+    email: info.email,
+    userId: info.userId,
+    username: info.username,
+    roles: info.roles,
+    isAdmin,
+    defaultNamespace: defaultNs,
+  };
+}
+
+/**
+ * Validate that a namespace is allowed for the given user.
+ * Admin users can use any namespace.
+ * Regular users can only use their personal namespace or sub-namespaces (prefix + '/').
+ *
+ * Returns an error message if invalid, or empty string if valid.
+ */
+export function validateNamespace(namespace: string, userInfo: UserInfo): string {
+  if (!namespace.trim()) return '';
+  if (userInfo.isAdmin) return '';
+  if (!userInfo.username) return '';
+
+  const allowedPrefix = userInfo.defaultNamespace;
+  if (namespace === allowedPrefix || namespace.startsWith(allowedPrefix + '/')) {
+    return '';
+  }
+
+  return `Non-admin users can only use namespace '${allowedPrefix}' or sub-namespaces like '${allowedPrefix}/my-project'.`;
+}

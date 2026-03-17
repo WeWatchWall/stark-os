@@ -29,7 +29,7 @@ export interface StarkAPI {
   auth: {
     login(email: string, password: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
     logout(): void;
-    whoami(): { email: string; userId: string } | null;
+    whoami(): { email: string; userId: string; username?: string; roles?: string[] } | null;
     isAuthenticated(): boolean;
     status(): { authenticated: boolean; email?: string; expiresAt?: string };
     /** Update the in-memory access token (called by runtime on auth:token-refreshed) */
@@ -42,8 +42,9 @@ export interface StarkAPI {
   pack: {
     list(options?: { pageSize?: number }): Promise<unknown>;
     versions(name: string): Promise<unknown>;
-    info(name: string): Promise<unknown>;
-    delete(name: string): Promise<void>;
+    info(nameOrId: string): Promise<unknown>;
+    delete(nameOrId: string): Promise<void>;
+    register(input: Record<string, unknown>): Promise<unknown>;
   };
   node: {
     list(options?: { pageSize?: number }): Promise<unknown>;
@@ -120,6 +121,10 @@ export async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export async function handleDeleteResponse(response: Response): Promise<void> {
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    if (!response.ok) throw new Error('Request failed');
+    return;
+  }
   const result = (await response.json()) as ApiResponse<unknown>;
   if (!result.success) {
     throw new Error(result.error?.message ?? 'Request failed');
@@ -143,6 +148,27 @@ export async function resolveNodeId(
     throw new Error(`Node not found: ${nameOrId}`);
   }
   return result.data.node.id;
+}
+
+export async function resolvePackId(
+  nameOrId: string,
+  apiFetch: (path: string) => Promise<Response>,
+): Promise<string> {
+  if (UUID_PATTERN.test(nameOrId)) return nameOrId;
+  const response = await apiFetch(`/api/packs?search=${encodeURIComponent(nameOrId)}&pageSize=100`);
+  const result = (await response.json()) as {
+    success: boolean;
+    data?: { packs: Array<{ id: string; name: string }> };
+    error?: { code: string; message: string };
+  };
+  if (!result.success || !result.data) {
+    throw new Error(`Pack not found: ${nameOrId}`);
+  }
+  const pack = result.data.packs.find((p) => p.name === nameOrId);
+  if (!pack) {
+    throw new Error(`Pack not found: ${nameOrId}`);
+  }
+  return pack.id;
 }
 
 /**
@@ -287,9 +313,16 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         const qs = params.toString();
         return handleResponse<unknown>(await apiGet(`/api/packs${qs ? '?' + qs : ''}`));
       },
-      async versions(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}/versions`)); },
-      async info(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/name/${encodeURIComponent(name)}`)); },
-      async delete(name: string) { await handleDeleteResponse(await apiDelete(`/api/packs/name/${encodeURIComponent(name)}`)); },
+      async versions(name: string) { return handleResponse<unknown>(await apiGet(`/api/packs/${encodeURIComponent(name)}/versions`)); },
+      async info(nameOrId: string) {
+        const packId = await resolvePackId(nameOrId, apiGet);
+        return handleResponse<unknown>(await apiGet(`/api/packs/${packId}`));
+      },
+      async delete(nameOrId: string) {
+        const packId = await resolvePackId(nameOrId, apiGet);
+        await handleDeleteResponse(await apiDelete(`/api/packs/${packId}`));
+      },
+      async register(input: Record<string, unknown>) { return handleResponse<unknown>(await apiPost('/api/packs', input)); },
     },
     node: {
       async list(options?: { pageSize?: number }) {

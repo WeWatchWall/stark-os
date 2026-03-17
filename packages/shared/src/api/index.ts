@@ -14,6 +14,7 @@ export {
   handleResponse,
   handleDeleteResponse,
   resolveNodeId,
+  resolvePackId,
   resolveApiUrl,
   base64ToUint8Array,
   UUID_PATTERN,

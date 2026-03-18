@@ -328,7 +328,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'v
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { FileItem, IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage, isZipPath, splitZipPath, readZipDir, extractZip, extractFromZip, downloadZipItems, deleteFromZip } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage, checkConflicts, isZipPath, splitZipPath, readZipDir, extractZip, extractFromZip, downloadZipItems, deleteFromZip } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';
@@ -544,6 +544,18 @@ function goForward(): void {
 
 function goUp(): void {
   if (!canGoUp.value) return;
+
+  // When inside a zip archive, "up" from the zip root should exit to the
+  // containing folder rather than landing on the zip file path itself.
+  if (insideZip.value) {
+    const info = splitZipPath(currentPath.value);
+    if (info && !info.innerPath) {
+      // At zip root — navigate to the directory that contains the zip
+      navigateTo(info.opfsDir);
+      return;
+    }
+  }
+
   const parts = getPathParts(currentPath.value);
   parts.pop();
   navigateTo('/' + parts.join('/'));
@@ -584,11 +596,11 @@ async function openFiles(fileItems: FileItem[]): Promise<void> {
 function onItemActivate(item: FileItem): void {
   if (item.isDirectory) {
     navigateTo(currentPath.value + '/' + item.name);
-  } else if (item.name.toLowerCase().endsWith('.zip')) {
+  } else if (!insideZip.value && item.name.toLowerCase().endsWith('.zip')) {
     // Navigate into zip archive as a virtual folder
     navigateTo(currentPath.value + '/' + item.name + '/root');
-  } else {
-    // Open file(s) via intent system
+  } else if (!insideZip.value) {
+    // Open file(s) via intent system (disabled inside zips — virtual paths can't be opened)
     const selected = selectedFileItems();
     // If the activated item is in the selection, open all selected files
     if (selected.length > 0 && selectedNames.value.has(item.name)) {
@@ -610,10 +622,10 @@ function onKeyDown(event: KeyboardEvent): void {
     const selected = items.value.filter((i) => selectedNames.value.has(i.name));
     if (selected.length === 1 && selected[0].isDirectory) {
       navigateTo(currentPath.value + '/' + selected[0].name);
-    } else if (selected.length === 1 && selected[0].name.toLowerCase().endsWith('.zip')) {
+    } else if (!insideZip.value && selected.length === 1 && selected[0].name.toLowerCase().endsWith('.zip')) {
       // Navigate into zip archive
       navigateTo(currentPath.value + '/' + selected[0].name + '/root');
-    } else {
+    } else if (!insideZip.value) {
       const files = selected.filter((i) => !i.isDirectory);
       if (files.length > 0) openFiles(files);
     }
@@ -850,6 +862,8 @@ function onItemContext(item: FileItem, event: MouseEvent): void {
 
 function onContentContext(event: MouseEvent): void {
   // Right-click on background: clear selection, show paste-only menu
+  // Inside a zip there are no background actions (no paste/create) — skip
+  if (insideZip.value) return;
   selectedNames.value = new Set();
   showContextMenu(event.clientX, event.clientY);
 }
@@ -951,6 +965,11 @@ async function ctxExtractHere(): Promise<void> {
   // Extract to the same directory that contains the zip
   const destPath = info.opfsDir;
   try {
+    // Check for conflicts before extracting
+    const conflicts = await checkConflicts(opfsRoot, destPath, names);
+    if (conflicts.length > 0) {
+      if (!confirm(conflictMessage())) return;
+    }
     await extractFromZip(opfsRoot, currentPath.value, names, destPath);
   } catch (err) {
     console.warn('Extract from zip failed:', err);

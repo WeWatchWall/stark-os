@@ -226,10 +226,14 @@ async function refresh() {
 
 async function createVolume() {
   if (!newVolume.name || !newVolume.nodeId) return;
+  const node = nodes.value.find((n) => n.id === newVolume.nodeId);
+  if (!node) {
+    toast.add({ severity: 'error', summary: 'Create Failed', detail: 'Selected node no longer available', life: 5000 });
+    return;
+  }
   creating.value = true;
   try {
-    const node = nodes.value.find((n) => n.id === newVolume.nodeId);
-    await api.volume.create(newVolume.name, node?.name ?? newVolume.nodeId);
+    await api.volume.create(newVolume.name, node.name);
     toast.add({ severity: 'success', summary: 'Volume Created', detail: `Volume "${newVolume.name}" created`, life: 5000 });
     newVolume.name = '';
     newVolume.nodeId = '';

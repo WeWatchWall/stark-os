@@ -479,35 +479,60 @@ export class PackExecutor {
       },
       // Volume mounts — expose to pack code so it can detect mounted volumes
       volumeMounts: pod.volumeMounts && pod.volumeMounts.length > 0 ? pod.volumeMounts : undefined,
-      // Volume I/O helpers — backed by OPFS via StorageAdapter
-      // Uses storageAdapter consistently so collectVolumeFiles sees the same data.
+      // Volume I/O helpers — backed by OPFS under stark-orchestrator/volumes/
+      // Must use the same OPFS store as the pack-worker so collectVolumeFiles
+      // can find data written by either the main thread or Web Workers.
       ...(pod.volumeMounts && pod.volumeMounts.length > 0 ? {
         readFile: async (filePath: string): Promise<string> => {
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const volumeRoot = `/volumes/${mount.name}`;
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
-          return this.storageAdapter.readFile(`${volumeRoot}/${relative}`);
+          const volumeDir = await this.getVolumeHandle(mount.name, false);
+          if (!volumeDir) throw new Error(`Volume '${mount.name}' not found`);
+          const parts = relative.split('/').filter(Boolean);
+          const fileName = parts.pop()!;
+          let dir = volumeDir;
+          for (const part of parts) {
+            dir = await dir.getDirectoryHandle(part);
+          }
+          const fh = await dir.getFileHandle(fileName);
+          const file = await fh.getFile();
+          return file.text();
         },
         writeFile: async (filePath: string, content: string): Promise<void> => {
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const volumeRoot = `/volumes/${mount.name}`;
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
-          const fullPath = `${volumeRoot}/${relative}`;
-          const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/'));
-          if (parentDir) await this.storageAdapter.mkdir(parentDir, true);
-          await this.storageAdapter.writeFile(fullPath, content);
+          const volumeDir = await this.getVolumeHandle(mount.name, true);
+          if (!volumeDir) throw new Error(`Failed to create volume directory '${mount.name}'`);
+          const parts = relative.split('/').filter(Boolean);
+          const fileName = parts.pop()!;
+          let dir = volumeDir;
+          for (const part of parts) {
+            dir = await dir.getDirectoryHandle(part, { create: true });
+          }
+          const fh = await dir.getFileHandle(fileName, { create: true });
+          const writable = await fh.createWritable();
+          await writable.write(new TextEncoder().encode(content));
+          await writable.close();
         },
         appendFile: async (filePath: string, content: string): Promise<void> => {
           const mount = pod.volumeMounts!.find(m => filePath.startsWith(m.mountPath));
           if (!mount) throw new Error(`Path '${filePath}' is not inside any mounted volume`);
-          const volumeRoot = `/volumes/${mount.name}`;
           const relative = filePath.slice(mount.mountPath.length).replace(/^\//, '');
-          const fullPath = `${volumeRoot}/${relative}`;
-          const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/'));
-          if (parentDir) await this.storageAdapter.mkdir(parentDir, true);
-          await this.storageAdapter.appendFile(fullPath, content);
+          const volumeDir = await this.getVolumeHandle(mount.name, true);
+          if (!volumeDir) throw new Error(`Failed to create volume directory '${mount.name}'`);
+          const parts = relative.split('/').filter(Boolean);
+          const fileName = parts.pop()!;
+          let dir = volumeDir;
+          for (const part of parts) {
+            dir = await dir.getDirectoryHandle(part, { create: true });
+          }
+          const fh = await dir.getFileHandle(fileName, { create: true });
+          const existing = await (await fh.getFile()).text();
+          const writable = await fh.createWritable();
+          await writable.write(new TextEncoder().encode(existing + content));
+          await writable.close();
         },
       } : {}),
       // Ephemeral data plane: opt-in via pack metadata
@@ -1378,34 +1403,43 @@ export class PackExecutor {
   }
 
   /**
+   * Get the OPFS directory handle for a named volume.
+   *
+   * Volume data lives under `stark-orchestrator/volumes/<name>/` in OPFS.
+   * The pack-worker writes there directly, so we must access the same
+   * store — NOT `this.storageAdapter` which points at `stark-pack-bundles`.
+   */
+  private async getVolumeHandle(
+    volumeName: string,
+    create: boolean,
+  ): Promise<FileSystemDirectoryHandle | null> {
+    try {
+      const opfsRoot = await navigator.storage.getDirectory();
+      const starkRoot = await opfsRoot.getDirectoryHandle('stark-orchestrator', { create });
+      const volumesDir = await starkRoot.getDirectoryHandle('volumes', { create });
+      return await volumesDir.getDirectoryHandle(volumeName, { create });
+    } catch {
+      return null; // Volume directory doesn't exist
+    }
+  }
+
+  /**
    * Clear all data from a named volume.
    * Removes matching entries from both OPFS and the raw IndexedDB store.
    */
   async clearVolume(volumeName: string): Promise<void> {
     this.ensureInitialized();
 
-    // Clear OPFS volume data (both main-thread and worker writes go here)
-    const volumeRoot = `/volumes/${volumeName}`;
+    // Clear OPFS volume data under stark-orchestrator/volumes/<name>
     try {
-      const walkAndDelete = async (dir: string): Promise<void> => {
-        let entries: string[];
-        try {
-          entries = (await this.storageAdapter.readdir(dir)) as unknown as string[];
-        } catch {
-          return;
+      const volumeDir = await this.getVolumeHandle(volumeName, false);
+      if (volumeDir) {
+        const names: string[] = [];
+        for await (const key of volumeDir.keys()) names.push(key);
+        for (const name of names) {
+          await volumeDir.removeEntry(name, { recursive: true });
         }
-        for (const entryName of entries) {
-          const name = typeof entryName === 'string' ? entryName : (entryName as { name: string }).name;
-          const fullPath = `${dir}/${name}`;
-          const isDir = await this.storageAdapter.isDirectory(fullPath);
-          if (isDir) {
-            await walkAndDelete(fullPath);
-          } else {
-            await this.storageAdapter.unlink(fullPath);
-          }
-        }
-      };
-      await walkAndDelete(volumeRoot);
+      }
     } catch {
       // Volume directory may not exist yet — that's fine
     }
@@ -1416,32 +1450,26 @@ export class PackExecutor {
   /**
    * Collect all files from a named volume.
    *
-   * All volume data (both main-thread and Web Worker writes) lives in OPFS
-   * under `stark-orchestrator/volumes/<volumeName>/`.
+   * Volume data lives in OPFS under `stark-orchestrator/volumes/<volumeName>/`.
+   * The pack-worker writes there directly, so we access the same store.
    */
   async collectVolumeFiles(volumeName: string): Promise<VolumeFileEntry[]> {
     this.ensureInitialized();
 
     const opfsFiles: VolumeFileEntry[] = [];
-    const volumeRoot = `/volumes/${volumeName}`;
 
-    const walk = async (dir: string, prefix: string): Promise<void> => {
-      let entries: string[];
-      try {
-        entries = (await this.storageAdapter.readdir(dir)) as unknown as string[];
-      } catch {
-        return; // Directory doesn't exist or not readable
-      }
-      for (const entryName of entries) {
-        const name = typeof entryName === 'string' ? entryName : (entryName as { name: string }).name;
-        const fullPath = `${dir}/${name}`;
+    const volumeDir = await this.getVolumeHandle(volumeName, false);
+    if (!volumeDir) return opfsFiles;
+
+    const walk = async (dirHandle: FileSystemDirectoryHandle, prefix: string): Promise<void> => {
+      for await (const [name, handle] of dirHandle.entries()) {
         const relativePath = prefix ? `${prefix}/${name}` : name;
         try {
-          const isDir = await this.storageAdapter.isDirectory(fullPath);
-          if (isDir) {
-            await walk(fullPath, relativePath);
+          if (handle.kind === 'directory') {
+            await walk(handle as FileSystemDirectoryHandle, relativePath);
           } else {
-            const bytes = await this.storageAdapter.readFileBytes(fullPath);
+            const file = await (handle as FileSystemFileHandle).getFile();
+            const bytes = new Uint8Array(await file.arrayBuffer());
             const CHUNK = 8192;
             const parts: string[] = [];
             for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -1456,7 +1484,7 @@ export class PackExecutor {
       }
     };
 
-    await walk(volumeRoot, '');
+    await walk(volumeDir, '');
 
     return opfsFiles;
   }

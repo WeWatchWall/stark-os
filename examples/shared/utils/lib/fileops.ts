@@ -6,6 +6,7 @@
  */
 
 import {
+  type FileItem,
   getDirectoryHandle,
   getFileHandle,
   getPathParts,
@@ -108,6 +109,419 @@ export async function zipItems(
   }
 
   return zipName;
+}
+
+/* ── Zip navigation & extraction ── */
+
+/**
+ * Check whether a normalized path traverses into a zip archive.
+ * A path like `/home/docs/archive.zip/folder` is inside a zip.
+ */
+export function isZipPath(path: string): boolean {
+  const parts = getPathParts(path);
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i].toLowerCase().endsWith('.zip')) return true;
+  }
+  return false;
+}
+
+/**
+ * Split a zip-traversing path into its OPFS and in-zip components.
+ *
+ * Example: `/home/docs/archive.zip/sub/file.txt`
+ *   → { opfsDir: '/home/docs', zipName: 'archive.zip', innerPath: 'sub/file.txt' }
+ *
+ * The first segment after the `.zip` name is the sentinel `root`, which
+ * represents the zip root directory.  It is stripped from `innerPath`:
+ *   `/home/archive.zip/root`          → innerPath: ''
+ *   `/home/archive.zip/root/sub`      → innerPath: 'sub'
+ *
+ * Returns `null` when the path does not traverse into a zip.
+ */
+export function splitZipPath(
+  path: string,
+): { opfsDir: string; zipName: string; innerPath: string } | null {
+  const parts = getPathParts(path);
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].toLowerCase().endsWith('.zip')) {
+      if (i === parts.length - 1) return null; // path points AT the zip, not inside it
+      const opfsDir = '/' + parts.slice(0, i).join('/');
+      const rawInner = parts.slice(i + 1).join('/');
+      // 'root' is a sentinel representing the zip root — strip it
+      const innerPath = rawInner === 'root'
+        ? ''
+        : rawInner.startsWith('root/')
+          ? rawInner.slice(5)
+          : rawInner;
+      return {
+        opfsDir: normalizePath(opfsDir),
+        zipName: parts[i],
+        innerPath,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Load a JSZip instance for a zip file stored in OPFS.
+ */
+async function loadZip(
+  root: FileSystemDirectoryHandle,
+  opfsDir: string,
+  zipName: string,
+): Promise<InstanceType<typeof import('jszip').default>> {
+  const JSZip = (await import('jszip')).default;
+  const dirHandle = await getDirectoryHandle(root, opfsDir);
+  const fh = await dirHandle.getFileHandle(zipName);
+  const file = await fh.getFile();
+  const data = await file.arrayBuffer();
+  return JSZip.loadAsync(data);
+}
+
+/**
+ * Save a JSZip instance back to the same OPFS file.
+ */
+async function saveZip(
+  root: FileSystemDirectoryHandle,
+  opfsDir: string,
+  zipName: string,
+  zip: InstanceType<typeof import('jszip').default>,
+): Promise<void> {
+  const dirHandle = await getDirectoryHandle(root, opfsDir);
+  const fh = await dirHandle.getFileHandle(zipName, { create: true });
+  const writable = await fh.createWritable();
+  try {
+    const data = await zip.generateAsync({ type: 'uint8array' });
+    await writable.write(data);
+  } finally {
+    await writable.close();
+  }
+}
+
+/**
+ * Read directory contents inside a zip archive and return FileItem entries.
+ *
+ * @param root       OPFS root handle
+ * @param path       A path that traverses into a zip (e.g. `/home/archive.zip/sub`)
+ * @returns          FileItem[] representing the entries at the given zip-internal directory
+ */
+export async function readZipDir(
+  root: FileSystemDirectoryHandle,
+  path: string,
+): Promise<FileItem[]> {
+  const info = splitZipPath(path);
+  if (!info) throw new Error('Not a zip path: ' + path);
+
+  const zip = await loadZip(root, info.opfsDir, info.zipName);
+
+  // Normalize the inner prefix (ensure trailing slash for directory matching)
+  const prefix = info.innerPath ? info.innerPath.replace(/\/+$/, '') + '/' : '';
+  const depth = prefix ? prefix.split('/').length : 0;
+
+  const seenDirs = new Set<string>();
+  const items: FileItem[] = [];
+
+  zip.forEach((relativePath, zipEntry) => {
+    // Skip the prefix itself
+    if (!relativePath.startsWith(prefix)) return;
+    const remainder = relativePath.slice(prefix.length);
+    if (!remainder || remainder === '/') return;
+
+    const segments = remainder.split('/').filter(s => s.length > 0);
+    if (segments.length === 0) return;
+
+    if (segments.length === 1) {
+      const name = segments[0];
+      if (zipEntry.dir) {
+        if (!seenDirs.has(name)) {
+          seenDirs.add(name);
+          items.push({ name, isDirectory: true, size: 0 });
+        }
+      } else {
+        items.push({
+          name,
+          isDirectory: false,
+          size: zipEntry._data?.uncompressedSize ?? 0,
+        });
+      }
+    } else {
+      // Deeper entry → its first segment is a subdirectory at this level
+      const dirName = segments[0];
+      if (!seenDirs.has(dirName)) {
+        seenDirs.add(dirName);
+        items.push({ name: dirName, isDirectory: true, size: 0 });
+      }
+    }
+  });
+
+  return items;
+}
+
+/**
+ * Extract a zip archive into the same directory that contains it.
+ *
+ * When `overwrite` is false, the function checks for name collisions between
+ * the zip's top-level entries and the existing directory contents.  If any
+ * conflicts are found, the conflicting names are returned **without writing
+ * anything**.  The caller can prompt the user and re-call with `overwrite`
+ * set to true.
+ *
+ * @param root       OPFS root handle
+ * @param dirPath    The directory containing the zip file
+ * @param zipName    Name of the zip file to extract
+ * @param overwrite  If true, silently replace existing items on conflict
+ * @returns          Empty array on success, or conflicting top-level names
+ *                   when `overwrite` is false
+ */
+export async function extractZip(
+  root: FileSystemDirectoryHandle,
+  dirPath: string,
+  zipName: string,
+  overwrite = false,
+): Promise<string[]> {
+  const zip = await loadZip(root, dirPath, zipName);
+  const parentHandle = await getDirectoryHandle(root, dirPath);
+
+  // Collect top-level entry names from the zip
+  const topLevelNames = new Set<string>();
+  const entries = Object.entries(zip.files);
+  for (const [path] of entries) {
+    const segments = path.split('/').filter(s => s.length > 0);
+    if (segments.length > 0) topLevelNames.add(segments[0]);
+  }
+
+  // Check for conflicts
+  if (!overwrite) {
+    const existingNames = new Set<string>();
+    for await (const key of parentHandle.keys()) existingNames.add(key);
+
+    const conflicts = [...topLevelNames].filter(n => existingNames.has(n));
+    if (conflicts.length > 0) return conflicts;
+  }
+
+  // Remove conflicting entries before extraction when overwriting
+  if (overwrite) {
+    for (const name of topLevelNames) {
+      try { await parentHandle.removeEntry(name, { recursive: true }); } catch { /* may not exist */ }
+    }
+  }
+
+  // Extract all entries directly into the parent directory
+  for (const [path, entry] of entries) {
+    if (entry.dir) {
+      // Create directory
+      await getDirectoryHandle(parentHandle, path, true);
+    } else {
+      // Write file
+      const data = await entry.async('uint8array');
+      const parts = path.split('/').filter(s => s.length > 0);
+      const fileName = parts.pop()!;
+      let parent = parentHandle;
+      for (const part of parts) {
+        parent = await parent.getDirectoryHandle(part, { create: true });
+      }
+      const fh = await parent.getFileHandle(fileName, { create: true });
+      const writable = await fh.createWritable();
+      try {
+        await writable.write(data);
+      } finally {
+        await writable.close();
+      }
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Extract specific items from inside a zip to an OPFS directory.
+ *
+ * @param root       OPFS root handle
+ * @param zipPath    Full zip-traversing path (e.g. `/home/archive.zip/sub`)
+ * @param names      Names of entries at the current zip level to extract
+ * @param destPath   OPFS destination directory for extracted items
+ */
+export async function extractFromZip(
+  root: FileSystemDirectoryHandle,
+  zipPath: string,
+  names: string[],
+  destPath: string,
+): Promise<void> {
+  if (names.length === 0) return;
+
+  const info = splitZipPath(zipPath);
+  if (!info) throw new Error('Not a zip path: ' + zipPath);
+
+  const zip = await loadZip(root, info.opfsDir, info.zipName);
+  const prefix = info.innerPath ? info.innerPath.replace(/\/+$/, '') + '/' : '';
+  const destHandle = await getDirectoryHandle(root, destPath, true);
+
+  for (const name of names) {
+    const entryPath = prefix + name;
+
+    // Check if it's a file entry
+    const fileEntry = zip.file(entryPath);
+    if (fileEntry) {
+      const data = await fileEntry.async('uint8array');
+      const fh = await destHandle.getFileHandle(name, { create: true });
+      const writable = await fh.createWritable();
+      try { await writable.write(data); } finally { await writable.close(); }
+      continue;
+    }
+
+    // Must be a directory — extract all entries under it
+    const dirPrefix = entryPath + '/';
+    const dirHandle = await destHandle.getDirectoryHandle(name, { create: true });
+
+    // Collect and await all sub-entries
+    const subEntries: Array<[string, import('jszip').JSZipObject]> = [];
+    zip.forEach((relPath, entry) => {
+      if (relPath.startsWith(dirPrefix) && relPath !== dirPrefix) {
+        subEntries.push([relPath.slice(dirPrefix.length), entry]);
+      }
+    });
+
+    for (const [subPath, entry] of subEntries) {
+      if (entry.dir) {
+        await getDirectoryHandle(dirHandle, subPath, true);
+      } else {
+        const data = await entry.async('uint8array');
+        const parts = subPath.split('/').filter(s => s.length > 0);
+        const fileName = parts.pop()!;
+        let parent: FileSystemDirectoryHandle = dirHandle;
+        for (const part of parts) {
+          parent = await parent.getDirectoryHandle(part, { create: true });
+        }
+        const fh = await parent.getFileHandle(fileName, { create: true });
+        const writable = await fh.createWritable();
+        try { await writable.write(data); } finally { await writable.close(); }
+      }
+    }
+  }
+}
+
+/**
+ * Download items from inside a zip archive to the user's device.
+ *
+ * @param root       OPFS root handle
+ * @param zipPath    Full zip-traversing path
+ * @param names      Names of entries to download
+ */
+export async function downloadZipItems(
+  root: FileSystemDirectoryHandle,
+  zipPath: string,
+  names: string[],
+): Promise<void> {
+  if (names.length === 0) return;
+
+  const info = splitZipPath(zipPath);
+  if (!info) throw new Error('Not a zip path: ' + zipPath);
+
+  const zip = await loadZip(root, info.opfsDir, info.zipName);
+  const prefix = info.innerPath ? info.innerPath.replace(/\/+$/, '') + '/' : '';
+
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Single file → direct download
+  if (names.length === 1) {
+    const entryPath = prefix + names[0];
+    const fileEntry = zip.file(entryPath);
+    if (fileEntry) {
+      const data = await fileEntry.async('blob');
+      triggerDownload(data, names[0]);
+      return;
+    }
+  }
+
+  // Multiple items or directory: create a new zip for download
+  const JSZip = (await import('jszip')).default;
+  const dlZip = new JSZip();
+
+  for (const name of names) {
+    const entryPath = prefix + name;
+    const fileEntry = zip.file(entryPath);
+    if (fileEntry) {
+      const data = await fileEntry.async('uint8array');
+      dlZip.file(name, data);
+    } else {
+      // Directory — add all sub-entries
+      const dirPrefix = entryPath + '/';
+
+      // Collect sub-entries
+      const subEntries: Array<[string, import('jszip').JSZipObject]> = [];
+      zip.forEach((relPath, entry) => {
+        if (relPath.startsWith(dirPrefix) && relPath !== dirPrefix) {
+          subEntries.push([relPath.slice(dirPrefix.length), entry]);
+        }
+      });
+
+      const folder = dlZip.folder(name)!;
+      for (const [subPath, entry] of subEntries) {
+        if (entry.dir) {
+          folder.folder(subPath);
+        } else {
+          const data = await entry.async('uint8array');
+          folder.file(subPath, data);
+        }
+      }
+    }
+  }
+
+  const blob = await dlZip.generateAsync({ type: 'blob' });
+  const archiveName = names.length === 1 ? `${names[0]}.zip` : 'download.zip';
+  triggerDownload(blob, archiveName);
+}
+
+/**
+ * Delete entries from inside a zip archive (modifies the zip in-place).
+ *
+ * @param root       OPFS root handle
+ * @param zipPath    Full zip-traversing path
+ * @param names      Names of entries to delete from the current zip directory level
+ */
+export async function deleteFromZip(
+  root: FileSystemDirectoryHandle,
+  zipPath: string,
+  names: string[],
+): Promise<void> {
+  if (names.length === 0) return;
+
+  const info = splitZipPath(zipPath);
+  if (!info) throw new Error('Not a zip path: ' + zipPath);
+
+  const zip = await loadZip(root, info.opfsDir, info.zipName);
+  const prefix = info.innerPath ? info.innerPath.replace(/\/+$/, '') + '/' : '';
+
+  for (const name of names) {
+    const entryPath = prefix + name;
+    // Remove exact file entry
+    zip.remove(entryPath);
+    // Remove directory entry and all contents
+    zip.remove(entryPath + '/');
+    // Also remove any entries that start with entryPath/ (children)
+    const childPrefix = entryPath + '/';
+    const toRemove: string[] = [];
+    zip.forEach((relPath) => {
+      if (relPath.startsWith(childPrefix)) {
+        toRemove.push(relPath);
+      }
+    });
+    for (const p of toRemove) {
+      zip.remove(p);
+    }
+  }
+
+  await saveZip(root, info.opfsDir, info.zipName, zip);
 }
 
 /* ── Trash operations ── */

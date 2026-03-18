@@ -131,6 +131,11 @@ export function isZipPath(path: string): boolean {
  * Example: `/home/docs/archive.zip/sub/file.txt`
  *   → { opfsDir: '/home/docs', zipName: 'archive.zip', innerPath: 'sub/file.txt' }
  *
+ * The first segment after the `.zip` name is the sentinel `root`, which
+ * represents the zip root directory.  It is stripped from `innerPath`:
+ *   `/home/archive.zip/root`          → innerPath: ''
+ *   `/home/archive.zip/root/sub`      → innerPath: 'sub'
+ *
  * Returns `null` when the path does not traverse into a zip.
  */
 export function splitZipPath(
@@ -141,10 +146,17 @@ export function splitZipPath(
     if (parts[i].toLowerCase().endsWith('.zip')) {
       if (i === parts.length - 1) return null; // path points AT the zip, not inside it
       const opfsDir = '/' + parts.slice(0, i).join('/');
+      const rawInner = parts.slice(i + 1).join('/');
+      // 'root' is a sentinel representing the zip root — strip it
+      const innerPath = rawInner === 'root'
+        ? ''
+        : rawInner.startsWith('root/')
+          ? rawInner.slice(5)
+          : rawInner;
       return {
         opfsDir: normalizePath(opfsDir),
         zipName: parts[i],
-        innerPath: parts.slice(i + 1).join('/'),
+        innerPath,
       };
     }
   }

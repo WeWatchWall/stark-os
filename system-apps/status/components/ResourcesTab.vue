@@ -304,16 +304,26 @@ async function fetchResources() {
     resources.pods = { total: pods.length, running, pending, failed, stopped };
 
     // Aggregate resources
-    let totalCpu = 0, allocCpu = 0, totalMem = 0, allocMem = 0;
-    let totalStorage = 0, allocStorage = 0, totalPodCap = 0, allocPodCap = 0;
+    let totalCpu = 0;
+    let allocCpu = 0;
+    let totalMem = 0;
+    let allocMem = 0;
+    let totalStorage = 0;
+    let allocStorage = 0;
+    let totalPodCap = 0;
+    let allocPodCap = 0;
 
     for (const n of nodes) {
       const alloc = n.allocatable ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
       const used = n.allocated ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
-      totalCpu += alloc.cpu; allocCpu += used.cpu;
-      totalMem += alloc.memory; allocMem += used.memory;
-      totalStorage += alloc.storage; allocStorage += used.storage;
-      totalPodCap += alloc.pods; allocPodCap += used.pods;
+      totalCpu += alloc.cpu;
+      allocCpu += used.cpu;
+      totalMem += alloc.memory;
+      allocMem += used.memory;
+      totalStorage += alloc.storage;
+      allocStorage += used.storage;
+      totalPodCap += alloc.pods;
+      allocPodCap += used.pods;
     }
 
     resources.cpu = { total: totalCpu, allocated: allocCpu };

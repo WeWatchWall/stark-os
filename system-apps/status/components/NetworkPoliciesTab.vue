@@ -246,7 +246,7 @@ async function deletePolicy(id: string) {
 
 onMounted(() => {
   refresh();
-  refreshIntervalId = setInterval(refresh, 15000);
+  refreshIntervalId = setInterval(refresh, 10000);
 });
 
 onBeforeUnmount(() => {

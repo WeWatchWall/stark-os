@@ -134,8 +134,8 @@ async function listEvents(req: Request, res: Response): Promise<void> {
     }
 
     const result = await queryEvents({
-      ...(category && { category: category as Parameters<typeof queryEvents>[0]['category'] }),
-      ...(severity && { severity: severity as Parameters<typeof queryEvents>[0]['severity'] }),
+      ...(category && { category: category as EventCategory }),
+      ...(severity && { severity: severity as EventSeverity }),
       ...(sinceDate && { since: sinceDate }),
       limit,
       offset,

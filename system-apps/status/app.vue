@@ -200,6 +200,118 @@ html, body, #app, #__nuxt {
   border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
+.p-select-label {
+  color: #e2e8f0 !important;
+}
+
+.p-select-dropdown {
+  color: #94a3b8 !important;
+}
+
+/* Select overlay / dropdown panel dark overrides */
+.p-select-overlay,
+.p-select-panel {
+  background: #1e1e1e !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.p-select-list .p-select-option {
+  color: #e2e8f0 !important;
+}
+
+.p-select-list .p-select-option:hover,
+.p-select-list .p-select-option.p-focus {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: #f1f5f9 !important;
+}
+
+.p-select-list .p-select-option.p-selected,
+.p-select-list .p-select-option.p-highlight {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #93c5fd !important;
+}
+
+.p-select-filter {
+  background: #181818 !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.p-select-empty-message {
+  color: #64748b !important;
+}
+
+/* MultiSelect dark overrides */
+.p-multiselect {
+  background: #1e1e1e !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.p-multiselect-label {
+  color: #e2e8f0 !important;
+}
+
+.p-multiselect-dropdown {
+  color: #94a3b8 !important;
+}
+
+.p-multiselect-overlay,
+.p-multiselect-panel {
+  background: #1e1e1e !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.p-multiselect-header {
+  background: #181818 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.p-multiselect-filter-container .p-inputtext,
+.p-multiselect-filter {
+  background: #181818 !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.p-multiselect-list .p-multiselect-option {
+  color: #e2e8f0 !important;
+}
+
+.p-multiselect-list .p-multiselect-option:hover,
+.p-multiselect-list .p-multiselect-option.p-focus {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: #f1f5f9 !important;
+}
+
+.p-multiselect-list .p-multiselect-option.p-selected,
+.p-multiselect-list .p-multiselect-option.p-highlight {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #93c5fd !important;
+}
+
+.p-multiselect-chip {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #93c5fd !important;
+}
+
+.p-multiselect-empty-message {
+  color: #64748b !important;
+}
+
+/* Checkbox dark overrides (used in MultiSelect) */
+.p-checkbox .p-checkbox-box {
+  background: #181818 !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.p-checkbox .p-checkbox-box.p-highlight {
+  background: #3b82f6 !important;
+  border-color: #3b82f6 !important;
+}
+
 /* Tag overrides for readability */
 .p-tag {
   font-size: 0.75rem;

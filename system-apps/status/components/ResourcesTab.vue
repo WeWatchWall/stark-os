@@ -502,6 +502,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: #181818;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .node-section-header {
@@ -530,6 +531,8 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 12px;
   padding: 12px;
+  overflow-x: auto;
+  min-width: min-content;
 }
 
 .graph-panel {

@@ -27,17 +27,25 @@
       <div class="filter-bar">
         <div class="filter-field">
           <label class="filter-label">Category</label>
-          <select v-model="filters.category" class="filter-select">
-            <option value="">All</option>
-            <option v-for="c in availableCategories" :key="c" :value="c">{{ c }}</option>
-          </select>
+          <MultiSelect
+            v-model="filters.categories"
+            :options="availableCategories"
+            placeholder="All"
+            display="chip"
+            :maxSelectedLabels="2"
+            class="filter-multiselect"
+          />
         </div>
         <div class="filter-field">
           <label class="filter-label">Severity</label>
-          <select v-model="filters.severity" class="filter-select">
-            <option value="">All</option>
-            <option v-for="s in availableSeverities" :key="s" :value="s">{{ s }}</option>
-          </select>
+          <MultiSelect
+            v-model="filters.severities"
+            :options="availableSeverities"
+            placeholder="All"
+            display="chip"
+            :maxSelectedLabels="2"
+            class="filter-multiselect"
+          />
         </div>
         <div class="filter-field filter-field-grow">
           <label class="filter-label">Search</label>
@@ -120,8 +128,8 @@ const events = ref<EventData[]>([]);
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const filters = reactive({
-  category: '',
-  severity: '',
+  categories: [] as string[],
+  severities: [] as string[],
   search: '',
 });
 
@@ -139,15 +147,17 @@ const availableSeverities = computed(() => {
   return [...sevs].sort();
 });
 
-const hasActiveFilters = computed(() => !!filters.category || !!filters.severity || !!filters.search);
+const hasActiveFilters = computed(() => filters.categories.length > 0 || filters.severities.length > 0 || !!filters.search);
 
 const filteredEvents = computed(() => {
   let result = events.value;
-  if (filters.category) {
-    result = result.filter((e) => e.category === filters.category);
+  if (filters.categories.length > 0) {
+    const cats = new Set(filters.categories);
+    result = result.filter((e) => cats.has(e.category));
   }
-  if (filters.severity) {
-    result = result.filter((e) => e.severity === filters.severity);
+  if (filters.severities.length > 0) {
+    const sevs = new Set(filters.severities);
+    result = result.filter((e) => sevs.has(e.severity));
   }
   if (filters.search) {
     const q = filters.search.toLowerCase();
@@ -162,8 +172,8 @@ const filteredEvents = computed(() => {
 });
 
 function clearFilters() {
-  filters.category = '';
-  filters.severity = '';
+  filters.categories = [];
+  filters.severities = [];
   filters.search = '';
 }
 
@@ -304,19 +314,9 @@ onBeforeUnmount(() => {
   letter-spacing: 0.05em;
 }
 
-.filter-select {
-  background: #1e1e1e;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e2e8f0;
-  border-radius: 6px;
-  padding: 5px 8px;
+.filter-multiselect {
+  min-width: 140px;
   font-size: 0.82rem;
-  min-width: 100px;
-}
-
-.filter-select:focus {
-  outline: none;
-  border-color: #3b82f6;
 }
 
 .filter-input {

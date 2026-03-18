@@ -65,7 +65,7 @@ export default defineNuxtConfig({
       },
     },
     components: {
-      include: ['DataTable', 'Column', 'Button', 'Tag', 'ProgressSpinner', 'ProgressBar', 'Card', 'Knob', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel', 'Toast', 'Chart', 'InputText', 'Select'],
+      include: ['DataTable', 'Column', 'Button', 'Tag', 'ProgressSpinner', 'ProgressBar', 'Card', 'Knob', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel', 'Toast', 'Chart', 'InputText', 'Select', 'MultiSelect'],
     },
   },
 
@@ -122,5 +122,5 @@ export default defineNuxtConfig({
   },
 
   // Inline all CSS
-  css: [],
+  css: ['primeicons/primeicons.css'],
 })

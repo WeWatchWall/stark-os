@@ -163,6 +163,8 @@ let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const zipExtensions = [{ label: 'ZIP Archive', extensions: ['.zip'] }];
 
+const UNASSIGNED_NODE = 'Unassigned';
+
 const newVolume = reactive({ name: '', nodeId: '' });
 
 const api = useStarkApi();
@@ -196,7 +198,7 @@ async function refresh() {
     for (const n of nodeList) nodeMap.set(n.id, n.name);
 
     const rows: VolumeRow[] = vols.map((v) => {
-      const nodeName = v.nodeId ? (nodeMap.get(v.nodeId) ?? v.nodeId) : 'Unassigned';
+      const nodeName = v.nodeId ? (nodeMap.get(v.nodeId) ?? v.nodeId) : UNASSIGNED_NODE;
       return {
         id: v.id,
         name: v.name,
@@ -255,7 +257,7 @@ async function deleteVolume(id: string, name: string) {
 }
 
 async function startDownload(row: VolumeRow) {
-  if (!row.nodeName || row.nodeName === 'Unassigned') {
+  if (!row.nodeName || row.nodeName === UNASSIGNED_NODE) {
     toast.add({ severity: 'warn', summary: 'Cannot Download', detail: 'Volume has no assigned node', life: 5000 });
     return;
   }

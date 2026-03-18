@@ -400,7 +400,7 @@ async function deleteNode(nodeId: string, nodeName: string) {
 
 onMounted(() => {
   refresh();
-  // Auto-refresh every 10 seconds (half speed)
+  // Auto-refresh every 10 seconds
   refreshIntervalId = setInterval(refresh, 10000);
 });
 

@@ -259,49 +259,65 @@ export async function readZipDir(
 }
 
 /**
- * Extract a zip archive into a folder of the same name (minus `.zip`).
+ * Extract a zip archive into the same directory that contains it.
+ *
+ * When `overwrite` is false, the function checks for name collisions between
+ * the zip's top-level entries and the existing directory contents.  If any
+ * conflicts are found, the conflicting names are returned **without writing
+ * anything**.  The caller can prompt the user and re-call with `overwrite`
+ * set to true.
  *
  * @param root       OPFS root handle
  * @param dirPath    The directory containing the zip file
  * @param zipName    Name of the zip file to extract
- * @returns          The name of the created folder
+ * @param overwrite  If true, silently replace existing items on conflict
+ * @returns          Empty array on success, or conflicting top-level names
+ *                   when `overwrite` is false
  */
 export async function extractZip(
   root: FileSystemDirectoryHandle,
   dirPath: string,
   zipName: string,
-): Promise<string> {
+  overwrite = false,
+): Promise<string[]> {
   const zip = await loadZip(root, dirPath, zipName);
-
-  // Derive folder name (strip .zip extension)
-  const baseName = zipName.replace(/\.zip$/i, '');
   const parentHandle = await getDirectoryHandle(root, dirPath);
 
-  // Avoid overwriting existing folders
-  const existingNames = new Set<string>();
-  for await (const key of parentHandle.keys()) existingNames.add(key);
-
-  let folderName = baseName;
-  let counter = 1;
-  while (existingNames.has(folderName)) {
-    folderName = `${baseName} (${counter})`;
-    counter++;
+  // Collect top-level entry names from the zip
+  const topLevelNames = new Set<string>();
+  const entries = Object.entries(zip.files);
+  for (const [path] of entries) {
+    const segments = path.split('/').filter(s => s.length > 0);
+    if (segments.length > 0) topLevelNames.add(segments[0]);
   }
 
-  const destHandle = await parentHandle.getDirectoryHandle(folderName, { create: true });
+  // Check for conflicts
+  if (!overwrite) {
+    const existingNames = new Set<string>();
+    for await (const key of parentHandle.keys()) existingNames.add(key);
 
-  // Extract all entries
-  const entries = Object.entries(zip.files);
+    const conflicts = [...topLevelNames].filter(n => existingNames.has(n));
+    if (conflicts.length > 0) return conflicts;
+  }
+
+  // Remove conflicting entries before extraction when overwriting
+  if (overwrite) {
+    for (const name of topLevelNames) {
+      try { await parentHandle.removeEntry(name, { recursive: true }); } catch { /* may not exist */ }
+    }
+  }
+
+  // Extract all entries directly into the parent directory
   for (const [path, entry] of entries) {
     if (entry.dir) {
       // Create directory
-      await getDirectoryHandle(destHandle, path, true);
+      await getDirectoryHandle(parentHandle, path, true);
     } else {
       // Write file
       const data = await entry.async('uint8array');
       const parts = path.split('/').filter(s => s.length > 0);
       const fileName = parts.pop()!;
-      let parent = destHandle;
+      let parent = parentHandle;
       for (const part of parts) {
         parent = await parent.getDirectoryHandle(part, { create: true });
       }
@@ -315,7 +331,7 @@ export async function extractZip(
     }
   }
 
-  return folderName;
+  return [];
 }
 
 /**

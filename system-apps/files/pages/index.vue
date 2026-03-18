@@ -929,7 +929,11 @@ async function ctxExtractZip(): Promise<void> {
   const zipName = names[0];
   if (!zipName.toLowerCase().endsWith('.zip')) return;
   try {
-    await extractZip(opfsRoot, currentPath.value, zipName);
+    const conflicts = await extractZip(opfsRoot, currentPath.value, zipName);
+    if (conflicts.length > 0) {
+      if (!confirm(conflictMessage())) return;
+      await extractZip(opfsRoot, currentPath.value, zipName, true);
+    }
     await readDir(currentPath.value);
   } catch (err) {
     console.warn('Extract zip failed:', err);

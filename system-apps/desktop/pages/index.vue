@@ -811,7 +811,11 @@ async function ctxExtractZip(): Promise<void> {
   const names = [...selectedNames].filter(n => n.toLowerCase().endsWith('.zip'));
   if (names.length !== 1 || !opfsRoot) return;
   try {
-    await extractZip(opfsRoot, '/home/desktop', names[0]);
+    const conflicts = await extractZip(opfsRoot, '/home/desktop', names[0]);
+    if (conflicts.length > 0) {
+      if (!confirm('Some items already exist on the desktop. Do you want to replace them?')) return;
+      await extractZip(opfsRoot, '/home/desktop', names[0], true);
+    }
     await readDesktopDir();
   } catch (err) {
     console.warn('Desktop extract zip failed:', err);

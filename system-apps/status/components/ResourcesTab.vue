@@ -526,8 +526,8 @@ onBeforeUnmount(() => {
 
 /* ── Graph panels ── */
 .graphs-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px;
 }
@@ -539,7 +539,9 @@ onBeforeUnmount(() => {
   padding: 10px;
   display: flex;
   flex-direction: column;
-  min-height: 160px;
+  width: 280px;
+  height: 200px;
+  flex-shrink: 0;
 }
 
 .graph-title {
@@ -577,13 +579,13 @@ onBeforeUnmount(() => {
   }
 
   .graphs-grid {
-    grid-template-columns: 1fr 1fr;
     gap: 8px;
     padding: 8px;
   }
 
   .graph-panel {
-    min-height: 120px;
+    width: calc(50% - 4px);
+    height: 160px;
     padding: 8px;
   }
 
@@ -598,7 +600,11 @@ onBeforeUnmount(() => {
   }
 
   .graphs-grid {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .graph-panel {
+    width: 100%;
   }
 }
 </style>

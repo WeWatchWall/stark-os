@@ -49,6 +49,9 @@ export default defineNuxtConfig({
   // Generate static files for production
   ssr: false,
 
+  // Extend the shared examples layer for FilesPicker + OPFS utilities
+  extends: ['../../examples/shared'],
+
   // PrimeVue Nuxt module
   modules: ['@primevue/nuxt-module'],
 

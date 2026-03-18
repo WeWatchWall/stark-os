@@ -23,9 +23,29 @@
       <div class="create-form">
         <div class="form-title">Create Policy</div>
         <div class="form-row">
-          <input v-model="newPolicy.sourceService" placeholder="Source service" class="form-input" />
+          <Select
+            v-model="newPolicy.sourceService"
+            :options="serviceOptions"
+            optionLabel="label"
+            optionValue="value"
+            filter
+            filterPlaceholder="Search services…"
+            placeholder="Source service"
+            class="form-dropdown"
+            :pt="{ list: { style: 'max-height: 200px' } }"
+          />
           <span class="form-arrow">→</span>
-          <input v-model="newPolicy.targetService" placeholder="Target service" class="form-input" />
+          <Select
+            v-model="newPolicy.targetService"
+            :options="serviceOptions"
+            optionLabel="label"
+            optionValue="value"
+            filter
+            filterPlaceholder="Search services…"
+            placeholder="Target service"
+            class="form-dropdown"
+            :pt="{ list: { style: 'max-height: 200px' } }"
+          />
           <select v-model="newPolicy.action" class="form-select">
             <option value="allow">Allow</option>
             <option value="deny">Deny</option>
@@ -147,6 +167,7 @@ const hasData = ref(false);
 const errorMsg = ref('');
 const creating = ref(false);
 const policies = ref<PolicyRow[]>([]);
+const serviceNames = ref<string[]>([]);
 const deletingPolicies = ref<Set<string>>(new Set());
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -162,6 +183,10 @@ const toast = useToast();
 
 const orphanedPolicies = computed(() =>
   policies.value.filter((p) => p.sourceOrphaned || p.targetOrphaned)
+);
+
+const serviceOptions = computed(() =>
+  serviceNames.value.map((name) => ({ label: name, value: name }))
 );
 
 /* ── Helpers ── */
@@ -191,12 +216,13 @@ async function refresh() {
 
     const rawPolicies: PolicyData[] = Array.isArray(policyResult) ? policyResult : [];
     const services: ServiceData[] = serviceResult.services ?? [];
-    const serviceNames = new Set(services.map((s) => s.name));
+    const svcNames = new Set(services.map((s) => s.name));
+    serviceNames.value = [...svcNames].sort();
 
     policies.value = rawPolicies.map((p) => ({
       ...p,
-      sourceOrphaned: !serviceNames.has(p.sourceService),
-      targetOrphaned: !serviceNames.has(p.targetService),
+      sourceOrphaned: !svcNames.has(p.sourceService),
+      targetOrphaned: !svcNames.has(p.targetService),
     }));
 
     hasData.value = true;
@@ -319,6 +345,11 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.form-dropdown {
+  flex: 1;
+  min-width: 140px;
 }
 
 .form-input {

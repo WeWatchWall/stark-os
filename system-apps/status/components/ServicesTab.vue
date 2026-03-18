@@ -79,9 +79,17 @@
           <span v-else class="muted-text">—</span>
         </template>
       </Column>
-      <Column header="Actions" style="min-width: 120px">
+      <Column header="Actions" style="min-width: 100px">
         <template #body="{ data }">
           <div class="action-btns">
+            <Button
+              icon="pi pi-pencil"
+              severity="info"
+              size="small"
+              text
+              @click="openEditDialog(data)"
+              title="Edit service"
+            />
             <Button
               icon="pi pi-trash"
               severity="danger"
@@ -96,30 +104,30 @@
       </Column>
     </DataTable>
 
-    <!-- Volumes section -->
-    <div v-if="hasData && volumes.length > 0" class="volumes-section">
-      <div class="section-header">
-        <span>💾 Volumes</span>
-        <span class="section-count">{{ volumes.length }}</span>
-      </div>
-      <div class="volumes-grid">
-        <div v-for="vol in volumes" :key="vol.id" class="volume-card">
-          <div class="volume-card-header">
-            <span class="volume-card-name">{{ vol.name }}</span>
-            <Button
-              icon="pi pi-trash"
-              severity="danger"
-              size="small"
-              text
-              :loading="deletingVolumes.has(vol.id)"
-              @click="deleteVolume(vol.id, vol.name)"
-              title="Delete volume"
-            />
+    <!-- Edit service dialog -->
+    <div v-if="editDialog.show" class="dialog-overlay" @click.self="editDialog.show = false">
+      <div class="dialog-box" @click.stop>
+        <div class="dialog-header">
+          <span class="dialog-title">Edit Service — "{{ editDialog.name }}"</span>
+          <button class="dialog-close" @click="editDialog.show = false">&times;</button>
+        </div>
+        <div class="dialog-body">
+          <div class="dialog-field">
+            <label class="dialog-label">Replicas</label>
+            <input v-model.number="editDialog.replicas" type="number" min="0" class="dialog-input" />
           </div>
-          <div class="volume-card-details">
-            <span class="volume-detail"><span class="volume-label">Namespace:</span> {{ vol.namespace ?? 'default' }}</span>
-            <span class="volume-detail"><span class="volume-label">Node:</span> {{ vol.nodeName ?? vol.nodeId ?? '—' }}</span>
+          <div class="dialog-field">
+            <label class="dialog-label">Mode</label>
+            <select v-model="editDialog.mode" class="dialog-select">
+              <option value="replica">Replica</option>
+              <option value="daemon">Daemon</option>
+              <option value="dynamic">Dynamic</option>
+            </select>
           </div>
+        </div>
+        <div class="dialog-footer">
+          <Button label="Cancel" severity="secondary" size="small" text @click="editDialog.show = false" />
+          <Button label="Save" severity="success" size="small" :loading="editDialog.saving" @click="saveEdit" />
         </div>
       </div>
     </div>
@@ -127,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { useStarkApi } from '../composables/useStarkApi';
 
@@ -149,19 +157,6 @@ interface ServiceData {
   volumeMounts?: Array<{ name: string; mountPath: string }>;
 }
 
-interface VolumeData {
-  id: string;
-  name: string;
-  namespace?: string;
-  nodeId?: string;
-  nodeName?: string;
-}
-
-interface NodeData {
-  id: string;
-  name: string;
-}
-
 interface ServiceRow {
   id: string;
   name: string;
@@ -180,11 +175,18 @@ const refreshing = ref(false);
 const hasData = ref(false);
 const errorMsg = ref('');
 const allRows = ref<ServiceRow[]>([]);
-const volumes = ref<VolumeData[]>([]);
 const expandedGroups = ref<string[]>([]);
 const deletingServices = ref<Set<string>>(new Set());
-const deletingVolumes = ref<Set<string>>(new Set());
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
+
+const editDialog = reactive({
+  show: false,
+  saving: false,
+  id: '',
+  name: '',
+  replicas: 1,
+  mode: 'replica',
+});
 
 const api = useStarkApi();
 const toast = useToast();
@@ -218,6 +220,34 @@ function visibilitySeverity(visibility: string): string {
   }
 }
 
+/* ── Edit dialog ── */
+
+function openEditDialog(row: ServiceRow) {
+  editDialog.id = row.id;
+  editDialog.name = row.name;
+  editDialog.replicas = row.replicas;
+  editDialog.mode = row.mode;
+  editDialog.show = true;
+}
+
+async function saveEdit() {
+  editDialog.saving = true;
+  try {
+    await api.service.update(editDialog.id, {
+      replicas: editDialog.replicas,
+      mode: editDialog.mode,
+    });
+    toast.add({ severity: 'success', summary: 'Service Updated', detail: `Service "${editDialog.name}" has been updated`, life: 5000 });
+    editDialog.show = false;
+    await refresh();
+  } catch (err: unknown) {
+    console.error('Failed to update service:', err);
+    toast.add({ severity: 'error', summary: 'Update Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
+  } finally {
+    editDialog.saving = false;
+  }
+}
+
 /* ── Data loading ── */
 
 async function refresh() {
@@ -225,24 +255,8 @@ async function refresh() {
   errorMsg.value = '';
 
   try {
-    const [serviceResult, volumeResult, nodeResult] = await Promise.all([
-      api.service.list() as Promise<{ services: ServiceData[] }>,
-      api.volume.list() as Promise<{ volumes: VolumeData[] }>,
-      api.node.list() as Promise<{ nodes: NodeData[] }>,
-    ]);
-
+    const serviceResult = await api.service.list() as { services: ServiceData[] };
     const services: ServiceData[] = serviceResult.services ?? [];
-    const vols: VolumeData[] = volumeResult.volumes ?? [];
-    const nodes: NodeData[] = nodeResult.nodes ?? [];
-
-    const nodeMap = new Map<string, string>();
-    for (const n of nodes) nodeMap.set(n.id, n.name);
-
-    // Enrich volumes with node names
-    volumes.value = vols.map((v) => ({
-      ...v,
-      nodeName: v.nodeId ? (nodeMap.get(v.nodeId) ?? v.nodeId) : undefined,
-    }));
 
     const rows: ServiceRow[] = services.map((s) => ({
       id: s.id,
@@ -283,20 +297,6 @@ async function deleteService(id: string, name: string) {
     toast.add({ severity: 'error', summary: 'Delete Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
   } finally {
     deletingServices.value.delete(id);
-  }
-}
-
-async function deleteVolume(id: string, name: string) {
-  deletingVolumes.value.add(id);
-  try {
-    await api.volume.delete(id);
-    toast.add({ severity: 'success', summary: 'Volume Deleted', detail: `Volume "${name}" has been removed`, life: 5000 });
-    await refresh();
-  } catch (err: unknown) {
-    console.error('Failed to delete volume:', err);
-    toast.add({ severity: 'error', summary: 'Delete Failed', detail: err instanceof Error ? err.message : 'Unknown error', life: 5000 });
-  } finally {
-    deletingVolumes.value.delete(id);
   }
 }
 
@@ -413,84 +413,109 @@ onBeforeUnmount(() => {
 
 .action-btns {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 
-/* ── Volumes section ── */
-.volumes-section {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 12px;
-  flex-shrink: 0;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.section-header {
+/* ── Edit dialog ── */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: #e2e8f0;
-  margin-bottom: 10px;
+  justify-content: center;
+  z-index: 1000;
 }
 
-.section-count {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+.dialog-box {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  padding: 1px 8px;
-  font-size: 0.75rem;
+  width: 380px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-.volumes-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-}
-
-.volume-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 6px;
-  padding: 8px 10px;
-}
-
-.volume-card-header {
+.dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.volume-card-name {
+.dialog-title {
   font-weight: 600;
   color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.dialog-close:hover {
+  color: #e2e8f0;
+}
+
+.dialog-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dialog-label {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.dialog-input {
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
   font-size: 0.85rem;
 }
 
-.volume-card-details {
+.dialog-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.dialog-select {
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
+.dialog-footer {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 4px;
-}
-
-.volume-detail {
-  font-size: 0.75rem;
-  color: #94a3b8;
-}
-
-.volume-label {
-  color: #64748b;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* ── Mobile responsive ── */
 @media (max-width: 640px) {
   :deep(.hide-on-mobile) {
     display: none !important;
-  }
-
-  .volumes-grid {
-    grid-template-columns: 1fr;
   }
 
   .group-header {

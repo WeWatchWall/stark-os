@@ -7,6 +7,7 @@
         <Tab value="resources">Resources</Tab>
         <Tab value="events">Events</Tab>
         <Tab value="services">Services</Tab>
+        <Tab value="volumes">Volumes</Tab>
         <Tab value="policies">Network</Tab>
       </TabList>
       <TabPanels>
@@ -22,6 +23,9 @@
         <TabPanel value="services">
           <ServicesTab />
         </TabPanel>
+        <TabPanel value="volumes">
+          <VolumesTab />
+        </TabPanel>
         <TabPanel value="policies">
           <NetworkPoliciesTab />
         </TabPanel>
@@ -36,6 +40,7 @@ import PodsTab from '../components/PodsTab.vue';
 import ResourcesTab from '../components/ResourcesTab.vue';
 import EventsTab from '../components/EventsTab.vue';
 import ServicesTab from '../components/ServicesTab.vue';
+import VolumesTab from '../components/VolumesTab.vue';
 import NetworkPoliciesTab from '../components/NetworkPoliciesTab.vue';
 
 const activeTab = ref('pods');

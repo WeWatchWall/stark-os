@@ -18,57 +18,81 @@
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="hasData && events.length === 0" class="state-msg">
-      No events found.
+    <div v-else-if="hasData && filteredEvents.length === 0" class="state-msg">
+      {{ events.length === 0 ? 'No events found.' : 'No events match the current filters.' }}
     </div>
 
-    <!-- Events table -->
-    <DataTable
-      v-else-if="hasData"
-      :value="events"
-      scrollable
-      scrollHeight="flex"
-      :rowHover="true"
-      stripedRows
-      class="events-table"
-    >
-      <Column field="timestamp" header="Time" sortable style="min-width: 110px">
-        <template #body="{ data }">
-          <span class="mono time-cell">{{ formatTime(data.timestamp) }}</span>
-        </template>
-      </Column>
-      <Column field="category" header="Category" sortable style="min-width: 80px">
-        <template #body="{ data }">
-          <Tag :value="data.category" :severity="categorySeverity(data.category)" />
-        </template>
-      </Column>
-      <Column field="severity" header="Severity" sortable class="hide-on-mobile" style="min-width: 80px">
-        <template #body="{ data }">
-          <Tag :value="data.severity" :severity="severityColor(data.severity)" />
-        </template>
-      </Column>
-      <Column field="eventType" header="Event" sortable style="min-width: 120px">
-        <template #body="{ data }">
-          <span class="event-type">{{ humanizeEventType(data.eventType) }}</span>
-        </template>
-      </Column>
-      <Column field="resourceName" header="Resource" sortable class="hide-on-mobile" style="min-width: 100px">
-        <template #body="{ data }">
-          <span v-if="data.resourceName" class="mono">{{ data.resourceName }}</span>
-          <span v-else class="muted-text">—</span>
-        </template>
-      </Column>
-      <Column field="message" header="Message" style="min-width: 180px">
-        <template #body="{ data }">
-          <span class="message-cell">{{ data.message ?? data.reason ?? '—' }}</span>
-        </template>
-      </Column>
-    </DataTable>
+    <!-- Filter bar + Events table -->
+    <template v-if="hasData && (events.length > 0)">
+      <div class="filter-bar">
+        <div class="filter-field">
+          <label class="filter-label">Category</label>
+          <select v-model="filters.category" class="filter-select">
+            <option value="">All</option>
+            <option v-for="c in availableCategories" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Severity</label>
+          <select v-model="filters.severity" class="filter-select">
+            <option value="">All</option>
+            <option v-for="s in availableSeverities" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <div class="filter-field filter-field-grow">
+          <label class="filter-label">Search</label>
+          <input v-model="filters.search" placeholder="Filter by event type, resource, or message…" class="filter-input" />
+        </div>
+        <Button v-if="hasActiveFilters" icon="pi pi-times" label="Clear" severity="secondary" size="small" text @click="clearFilters" class="filter-clear-btn" />
+      </div>
+
+      <DataTable
+        v-if="filteredEvents.length > 0"
+        :value="filteredEvents"
+        scrollable
+        scrollHeight="flex"
+        :rowHover="true"
+        stripedRows
+        class="events-table"
+      >
+        <Column field="timestamp" header="Time" sortable style="min-width: 110px">
+          <template #body="{ data }">
+            <span class="mono time-cell">{{ formatTime(data.timestamp) }}</span>
+          </template>
+        </Column>
+        <Column field="category" header="Category" sortable style="min-width: 80px">
+          <template #body="{ data }">
+            <Tag :value="data.category" :severity="categorySeverity(data.category)" />
+          </template>
+        </Column>
+        <Column field="severity" header="Severity" sortable class="hide-on-mobile" style="min-width: 80px">
+          <template #body="{ data }">
+            <Tag :value="data.severity" :severity="severityColor(data.severity)" />
+          </template>
+        </Column>
+        <Column field="eventType" header="Event" sortable style="min-width: 120px">
+          <template #body="{ data }">
+            <span class="event-type">{{ humanizeEventType(data.eventType) }}</span>
+          </template>
+        </Column>
+        <Column field="resourceName" header="Resource" sortable class="hide-on-mobile" style="min-width: 100px">
+          <template #body="{ data }">
+            <span v-if="data.resourceName" class="mono">{{ data.resourceName }}</span>
+            <span v-else class="muted-text">—</span>
+          </template>
+        </Column>
+        <Column field="message" header="Message" style="min-width: 180px">
+          <template #body="{ data }">
+            <span class="message-cell">{{ data.message ?? data.reason ?? '—' }}</span>
+          </template>
+        </Column>
+      </DataTable>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useStarkApi } from '../composables/useStarkApi';
 
 /* ── Types ── */
@@ -95,7 +119,53 @@ const errorMsg = ref('');
 const events = ref<EventData[]>([]);
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
+const filters = reactive({
+  category: '',
+  severity: '',
+  search: '',
+});
+
 const api = useStarkApi();
+
+/* ── Computed ── */
+
+const availableCategories = computed(() => {
+  const cats = new Set(events.value.map((e) => e.category));
+  return [...cats].sort();
+});
+
+const availableSeverities = computed(() => {
+  const sevs = new Set(events.value.map((e) => e.severity));
+  return [...sevs].sort();
+});
+
+const hasActiveFilters = computed(() => !!filters.category || !!filters.severity || !!filters.search);
+
+const filteredEvents = computed(() => {
+  let result = events.value;
+  if (filters.category) {
+    result = result.filter((e) => e.category === filters.category);
+  }
+  if (filters.severity) {
+    result = result.filter((e) => e.severity === filters.severity);
+  }
+  if (filters.search) {
+    const q = filters.search.toLowerCase();
+    result = result.filter((e) =>
+      (e.eventType ?? '').toLowerCase().includes(q) ||
+      (e.resourceName ?? '').toLowerCase().includes(q) ||
+      (e.message ?? '').toLowerCase().includes(q) ||
+      (e.reason ?? '').toLowerCase().includes(q)
+    );
+  }
+  return result;
+});
+
+function clearFilters() {
+  filters.category = '';
+  filters.severity = '';
+  filters.search = '';
+}
 
 /* ── Helpers ── */
 
@@ -203,6 +273,75 @@ onBeforeUnmount(() => {
   color: #f87171;
 }
 
+/* ── Filter bar ── */
+.filter-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #181818;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.filter-field-grow {
+  flex: 1;
+  min-width: 150px;
+}
+
+.filter-label {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.filter-select {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  min-width: 100px;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.filter-input {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  width: 100%;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.filter-input::placeholder {
+  color: #475569;
+}
+
+.filter-clear-btn {
+  align-self: flex-end;
+}
+
 .events-table {
   flex: 1;
   min-height: 0;
@@ -242,6 +381,15 @@ onBeforeUnmount(() => {
 
   .message-cell {
     max-width: 200px;
+  }
+
+  .filter-bar {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .filter-field-grow {
+    width: 100%;
   }
 }
 </style>

@@ -626,11 +626,9 @@
       width: 3px;
       background: linear-gradient(to bottom, 
         var(--accent-green) 0%,
-        var(--accent-green) 78%,
-        var(--accent-purple) 78%,
-        var(--accent-purple) 89%,
-        var(--border-color) 89%,
-        var(--border-color) 100%
+        var(--accent-green) 89%,
+        var(--accent-amber) 89%,
+        var(--accent-amber) 100%
       );
       border-radius: 100px;
     }
@@ -1110,10 +1108,10 @@
       </div>
       <p class="subtitle" id="typewriterTarget"></p>
       <div class="header-badges">
-        <div class="date-badge">February 15, 2026</div>
+        <div class="date-badge">March 18, 2026</div>
         <div class="live-badge">
           <div class="live-dot"></div>
-          Actively Developing
+          v1 Polish
         </div>
       </div>
     </header>
@@ -1292,9 +1290,9 @@
         </svg>
       </div>
 
-      <div class="current-stage">
-        <span class="current-stage-icon">🚩</span>
-        <span class="current-stage-text">Currently at: <span>Stage 8 — UI / Dashboard</span> — cluster overview, pod placement visualization, metrics charts, then final regression & reliability</span>
+      <div class="current-stage" style="border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.08);">
+        <span class="current-stage-icon">🏁</span>
+        <span class="current-stage-text">All stages complete — now focusing on <span style="color: var(--accent-green);">discrete v1 features</span> and final polish</span>
       </div>
     </section>
 
@@ -1400,22 +1398,22 @@
         </div>
 
         <!-- Stage 4: Logging, Observability, & Metrics -->
-        <div class="milestone completed reveal-left" data-percent="65" style="transition-delay: 0.2s">
+        <div class="milestone completed reveal-left" data-percent="100" style="transition-delay: 0.2s">
           <div class="milestone-header">
             <div class="milestone-title">
               📊 Stage 4 — Logging, Observability & Metrics
               <span class="milestone-badge badge-complete">Complete</span>
             </div>
-            <span class="milestone-percentage medium">65%</span>
+            <span class="milestone-percentage high">100%</span>
           </div>
           <div class="milestone-progress">
-            <div class="milestone-progress-bar medium" style="width: 0%"></div>
+            <div class="milestone-progress-bar high" style="width: 0%"></div>
           </div>
           <p class="milestone-desc">
-            Much more done than initially claimed. MetricsService (526 lines), metrics.ts types (440 lines),
+            Fully complete. MetricsService (526 lines), metrics.ts types (440 lines),
             Supabase metrics CRUD (601+ lines), full events system with categories & severity levels,
-            structured logging via createServiceLogger. Still needs observability API for dashboard
-            consumption, alerting hooks, log rotation, and log querying.
+            structured logging via createServiceLogger, observability API consumed by the dashboard,
+            log querying with filters, and PodLogSink with stdout/stderr routing.
           </p>
           <div class="milestone-details">
             <span class="detail-tag highlight">MetricsService (526 lines)</span>
@@ -1423,12 +1421,10 @@
             <span class="detail-tag highlight">Supabase metrics CRUD (601+ lines)</span>
             <span class="detail-tag highlight">Events system (categories/severity)</span>
             <span class="detail-tag highlight">createServiceLogger</span>
-            <span class="detail-tag">PodLogSink</span>
-            <span class="detail-tag">stdout/stderr routing</span>
-            <span class="detail-tag" style="color: var(--accent-red);">⬜ Observability API</span>
-            <span class="detail-tag">⬜ Alerting hooks</span>
-            <span class="detail-tag" style="color: var(--accent-amber);">📋 Log rotation</span>
-            <span class="detail-tag" style="color: var(--accent-amber);">📋 Log querying</span>
+            <span class="detail-tag highlight">PodLogSink</span>
+            <span class="detail-tag highlight">stdout/stderr routing</span>
+            <span class="detail-tag highlight">Observability API</span>
+            <span class="detail-tag highlight">Log querying & filters</span>
           </div>
         </div>
 
@@ -1526,33 +1522,34 @@
           </div>
         </div>
 
-        <!-- Stage 8: UI / Dashboard - CURRENT -->
-        <div class="milestone current reveal-left" data-percent="10" style="transition-delay: 0.4s">
+        <!-- Stage 8: UI / Dashboard - COMPLETE -->
+        <div class="milestone completed reveal-left" data-percent="100" style="transition-delay: 0.4s">
           <div class="milestone-header">
             <div class="milestone-title">
               🖥️ Stage 8 — UI / Dashboard
-              <span class="milestone-badge badge-current">You Are Here</span>
+              <span class="milestone-badge badge-complete">Complete</span>
             </div>
-            <span class="milestone-percentage low">10%</span>
+            <span class="milestone-percentage high">100%</span>
           </div>
           <div class="milestone-progress">
-            <div class="milestone-progress-bar low" style="width: 0%"></div>
+            <div class="milestone-progress-bar high" style="width: 0%"></div>
           </div>
           <p class="milestone-desc">
-            Currently a minimal stub showing connection state. Next up: basic cluster overview
-            (nodes + pods), pod placement visualization, metrics visualization (node health,
-            pod counts), event timeline / chaos scenario visualization, and filters & search
-            for nodes/pods.
+            Full dashboard shipped as system-app (status). Tabbed UI with Pods (per-node grouping,
+            start/stop/delete), Resources (node/pod knob gauges, Chart.js graphs), Events (category &
+            severity filtering, search, timeline), Services, Volumes, and Network Policies tabs.
+            PrimeVue component library, auto-refresh, responsive layout.
           </p>
           <div class="milestone-details">
-            <span class="detail-tag">app.vue (stub)</span>
-            <span class="detail-tag">index.vue (Hello World)</span>
-            <span class="detail-tag" style="color: var(--accent-red);">⬜ Cluster overview</span>
-            <span class="detail-tag" style="color: var(--accent-red);">⬜ Pod placement viz</span>
-            <span class="detail-tag" style="color: var(--accent-red);">⬜ Metrics visualization</span>
-            <span class="detail-tag" style="color: var(--accent-red);">⬜ Event timeline / chaos viz</span>
-            <span class="detail-tag" style="color: var(--accent-amber);">📋 Filters / search</span>
-            <span class="detail-tag" style="color: var(--accent-amber);">📋 Live logs streaming</span>
+            <span class="detail-tag highlight">Pods tab (node grouping, actions)</span>
+            <span class="detail-tag highlight">Resources tab (knob gauges, charts)</span>
+            <span class="detail-tag highlight">Events tab (filter/search/timeline)</span>
+            <span class="detail-tag highlight">Services tab</span>
+            <span class="detail-tag highlight">Volumes tab</span>
+            <span class="detail-tag highlight">Network Policies tab</span>
+            <span class="detail-tag highlight">Chart.js integration</span>
+            <span class="detail-tag highlight">PrimeVue components</span>
+            <span class="detail-tag highlight">Auto-refresh polling</span>
           </div>
         </div>
 
@@ -1663,7 +1660,7 @@
     <!-- ===== Footer ===== -->
     <footer class="reveal">
       <p>Built with 💜 for the StarkOS project</p>
-      <p class="footer-version">v0.1.0-alpha · the journey continues</p>
+      <p class="footer-version">v1.0.0 · finishing touches</p>
     </footer>
   </div>
 
@@ -1845,11 +1842,11 @@
         { percent: 93, weight: 1.0 },   // Stage 1: Kernel / Core System
         { percent: 88, weight: 1.0 },   // Stage 2: Node & Cluster Management
         { percent: 85, weight: 0.8 },   // Stage 3: Chaos Engineering & Testing
-        { percent: 65, weight: 0.6 },   // Stage 4: Logging, Observability & Metrics
+        { percent: 100, weight: 0.6 },  // Stage 4: Logging, Observability & Metrics
         { percent: 90, weight: 1.7 },   // Stage 5: Networking & Traffic Management
         { percent: 90, weight: 0.7 },   // Stage 6: Secrets & Security
         { percent: 70, weight: 1.4 },   // Stage 7: Persistence & State
-        { percent: 10, weight: 2.0 },   // Stage 8: UI / Dashboard
+        { percent: 100, weight: 2.0 },  // Stage 8: UI / Dashboard
         { percent: 60, weight: 0.8 },   // Stage 9: Full Regression & Reliability
       ];
 

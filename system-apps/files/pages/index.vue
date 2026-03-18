@@ -629,20 +629,18 @@ function onKeyDown(event: KeyboardEvent): void {
       ctxRename(name);
     }
   } else if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
-    event.preventDefault();
-    clipboardCopy();
+    if (!insideZip.value) { event.preventDefault(); clipboardCopy(); }
   } else if ((event.ctrlKey || event.metaKey) && event.key === 'x') {
-    event.preventDefault();
-    clipboardCut();
+    if (!insideZip.value) { event.preventDefault(); clipboardCut(); }
   } else if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
-    event.preventDefault();
-    clipboardPaste();
+    if (!insideZip.value) { event.preventDefault(); clipboardPaste(); }
   }
 }
 
 /* ── Drag & drop into folders ── */
 
 function onFileDragStart(item: FileItem, event: DragEvent): void {
+  if (insideZip.value) return; // No drag-and-drop inside zip archives
   dragSourceName.value = item.name;
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';

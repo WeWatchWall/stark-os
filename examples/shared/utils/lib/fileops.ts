@@ -140,7 +140,7 @@ export function splitZipPath(
   for (let i = 0; i < parts.length; i++) {
     if (parts[i].toLowerCase().endsWith('.zip')) {
       if (i === parts.length - 1) return null; // path points AT the zip, not inside it
-      const opfsDir = '/' + parts.slice(0, i).join('/') || '/';
+      const opfsDir = '/' + parts.slice(0, i).join('/');
       return {
         opfsDir: normalizePath(opfsDir),
         zipName: parts[i],
@@ -346,11 +346,6 @@ export async function extractFromZip(
     const dirPrefix = entryPath + '/';
     const dirHandle = await destHandle.getDirectoryHandle(name, { create: true });
 
-    zip.forEach((relPath, entry) => {
-      if (!relPath.startsWith(dirPrefix)) return;
-      // Queue the extraction (forEach is sync so we collect promises)
-    });
-
     // Collect and await all sub-entries
     const subEntries: Array<[string, import('jszip').JSZipObject]> = [];
     zip.forEach((relPath, entry) => {
@@ -433,12 +428,6 @@ export async function downloadZipItems(
     } else {
       // Directory — add all sub-entries
       const dirPrefix = entryPath + '/';
-      zip.forEach((relPath, entry) => {
-        if (relPath.startsWith(dirPrefix) && !entry.dir) {
-          const subPath = relPath.slice((prefix).length);
-          // We need to queue this
-        }
-      });
 
       // Collect sub-entries
       const subEntries: Array<[string, import('jszip').JSZipObject]> = [];

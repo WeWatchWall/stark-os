@@ -17,6 +17,7 @@ import { createServicesRouter } from './services.js';
 import { createNetworkRouter } from './network.js';
 import { createSecretsRouter } from './secrets.js';
 import { createVolumesRouter } from './volumes.js';
+import { createEventsRouter } from './events.js';
 import { createChaosRouter } from '../chaos/routes.js';
 import { apiRateLimiter, authThrottleMiddleware, authRateLimiter } from '../middleware/rate-limit-middleware.js';
 
@@ -261,6 +262,9 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
   // Config route (public read, admin-only write)
   apiRouter.use('/config', createConfigRouter());
 
+  // Events routes (event querying)
+  apiRouter.use('/events', createEventsRouter());
+
   // Chaos testing routes (only available in dev/test with STARK_CHAOS_ENABLED=true)
   apiRouter.use('/chaos', createChaosRouter());
 
@@ -276,7 +280,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
   logger.info('API router initialized', {
     version: apiVersion,
     rateLimiting: enableRateLimiting,
-    routes: ['/health', '/ready', '/live', '/auth/*', '/api/packs', '/api/pods', '/api/nodes', '/api/namespaces', '/api/services', '/api/secrets', '/api/volumes', '/api/network', '/api/config'],
+    routes: ['/health', '/ready', '/live', '/auth/*', '/api/packs', '/api/pods', '/api/nodes', '/api/namespaces', '/api/services', '/api/secrets', '/api/volumes', '/api/network', '/api/config', '/api/events'],
   });
 
   return router;

@@ -25,7 +25,7 @@ export type Action = 'create' | 'read' | 'update' | 'delete' | 'manage';
 /**
  * Resource types in the system
  */
-export type Subject = 'Pack' | 'Pod' | 'Node' | 'Namespace' | 'User' | 'ClusterConfig' | 'all';
+export type Subject = 'Pack' | 'Pod' | 'Node' | 'Namespace' | 'User' | 'ClusterConfig' | 'Volume' | 'Secret' | 'Service' | 'all';
 
 /**
  * CASL ability type for the application
@@ -123,6 +123,17 @@ export function defineAbilityFor(user: User): AppAbility {
         can('delete', 'Node');  // Delete own nodes
         can('create', 'Namespace'); // Create own namespace (email-derived only)
         can('read', 'Namespace'); // Read namespaces
+        can('create', 'Volume');  // Create own volumes
+        can('read', 'Volume');    // Read own volumes
+        can('delete', 'Volume');  // Delete own volumes
+        can('create', 'Secret');  // Create own secrets
+        can('read', 'Secret');    // Read own secrets
+        can('update', 'Secret');  // Update own secrets
+        can('delete', 'Secret');  // Delete own secrets
+        can('create', 'Service'); // Create own services
+        can('read', 'Service');   // Read own services
+        can('update', 'Service'); // Update own services
+        can('delete', 'Service'); // Delete own services
         break;
 
       case 'node':
@@ -138,6 +149,9 @@ export function defineAbilityFor(user: User): AppAbility {
         can('read', 'Pack');
         // Nodes can read namespaces for pod filtering
         can('read', 'Namespace');
+        // Nodes can read volumes/services for pod execution
+        can('read', 'Volume');
+        can('read', 'Service');
         break;
 
       case 'viewer':
@@ -146,6 +160,9 @@ export function defineAbilityFor(user: User): AppAbility {
         can('read', 'Pod');
         can('read', 'Node');
         can('read', 'Namespace');
+        can('read', 'Volume');
+        can('read', 'Secret');
+        can('read', 'Service');
         break;
     }
   }
@@ -553,3 +570,20 @@ export const canManageClusterConfig: RequestHandler = authorize('manage', 'Clust
 // User authorization
 export const canReadUser: RequestHandler = authorize('read', 'User');
 export const canManageUser: RequestHandler = authorize('manage', 'User');
+
+// Volume authorization
+export const canCreateVolume: RequestHandler = authorize('create', 'Volume');
+export const canReadVolume: RequestHandler = authorize('read', 'Volume');
+export const canDeleteVolume: RequestHandler = authorize('delete', 'Volume');
+
+// Secret authorization
+export const canCreateSecret: RequestHandler = authorize('create', 'Secret');
+export const canReadSecret: RequestHandler = authorize('read', 'Secret');
+export const canUpdateSecret: RequestHandler = authorize('update', 'Secret');
+export const canDeleteSecret: RequestHandler = authorize('delete', 'Secret');
+
+// Service authorization
+export const canCreateService: RequestHandler = authorize('create', 'Service');
+export const canReadService: RequestHandler = authorize('read', 'Service');
+export const canUpdateService: RequestHandler = authorize('update', 'Service');
+export const canDeleteService: RequestHandler = authorize('delete', 'Service');

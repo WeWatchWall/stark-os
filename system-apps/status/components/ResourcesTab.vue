@@ -26,7 +26,7 @@
               <Knob
                 :modelValue="resources.nodes.online"
                 :max="Math.max(resources.nodes.total, 1)"
-                :size="80"
+                :size="70"
                 :strokeWidth="6"
                 valueColor="#3b82f6"
                 rangeColor="#334155"
@@ -53,7 +53,7 @@
               <Knob
                 :modelValue="resources.pods.running"
                 :max="Math.max(resources.podCapacity.total, 1)"
-                :size="80"
+                :size="70"
                 :strokeWidth="6"
                 valueColor="#22c55e"
                 rangeColor="#334155"
@@ -73,34 +73,42 @@
         </Card>
       </div>
 
-      <!-- Per-node resource graphs -->
-      <div class="graphs-grid">
-        <div class="graph-panel">
-          <div class="graph-title"><span class="card-icon cpu-icon">⚡</span> CPU <span class="graph-subtitle">{{ formatCpu(resources.cpu.allocated) }} / {{ formatCpu(resources.cpu.total) }}</span></div>
-          <Chart type="line" :data="cpuChartData" :options="perNodeChartOptions" class="resource-chart" />
+      <!-- Per-node resource sections -->
+      <div v-for="name in nodeNames" :key="name" class="node-section">
+        <div class="node-section-header">
+          <span class="node-section-icon">⎈</span>
+          <span class="node-section-name">{{ name }}</span>
+          <Tag :value="nodeStatuses.get(name) ?? 'unknown'" :severity="nodeStatusSeverity(nodeStatuses.get(name) ?? 'unknown')" />
         </div>
+        <div class="graphs-grid">
+          <div class="graph-panel">
+            <div class="graph-title"><span class="card-icon cpu-icon">⚡</span> CPU <span class="graph-subtitle">{{ formatNodeResource(name, 'cpu') }}</span></div>
+            <Chart type="line" :data="makeNodeChartData(name, 'cpu', '#f59e0b', 'rgba(245,158,11,0.1)')" :options="chartOptions" class="resource-chart" />
+          </div>
+          <div class="graph-panel">
+            <div class="graph-title"><span class="card-icon mem-icon">🧠</span> Memory <span class="graph-subtitle">{{ formatNodeResource(name, 'memory') }}</span></div>
+            <Chart type="line" :data="makeNodeChartData(name, 'memory', '#a78bfa', 'rgba(167,139,250,0.1)')" :options="chartOptions" class="resource-chart" />
+          </div>
+          <div class="graph-panel">
+            <div class="graph-title"><span class="card-icon storage-icon">💾</span> Storage <span class="graph-subtitle">{{ formatNodeResource(name, 'storage') }}</span></div>
+            <Chart type="line" :data="makeNodeChartData(name, 'storage', '#6366f1', 'rgba(99,102,241,0.1)')" :options="chartOptions" class="resource-chart" />
+          </div>
+          <div class="graph-panel">
+            <div class="graph-title"><span class="card-icon cap-icon">📦</span> Pod Cap. <span class="graph-subtitle">{{ formatNodeResource(name, 'podCap') }}</span></div>
+            <Chart type="line" :data="makeNodeChartData(name, 'podCap', '#ec4899', 'rgba(236,72,153,0.1)')" :options="chartOptions" class="resource-chart" />
+          </div>
+        </div>
+      </div>
 
-        <div class="graph-panel">
-          <div class="graph-title"><span class="card-icon mem-icon">🧠</span> Memory <span class="graph-subtitle">{{ formatMemory(resources.memory.allocated) }} / {{ formatMemory(resources.memory.total) }}</span></div>
-          <Chart type="line" :data="memoryChartData" :options="perNodeChartOptions" class="resource-chart" />
-        </div>
-
-        <div class="graph-panel">
-          <div class="graph-title"><span class="card-icon storage-icon">💾</span> Storage <span class="graph-subtitle">{{ formatMemory(resources.storage.allocated) }} / {{ formatMemory(resources.storage.total) }}</span></div>
-          <Chart type="line" :data="storageChartData" :options="perNodeChartOptions" class="resource-chart" />
-        </div>
-
-        <div class="graph-panel">
-          <div class="graph-title"><span class="card-icon cap-icon">📦</span> Pod Capacity <span class="graph-subtitle">{{ resources.podCapacity.allocated }} / {{ resources.podCapacity.total }}</span></div>
-          <Chart type="line" :data="podCapChartData" :options="perNodeChartOptions" class="resource-chart" />
-        </div>
+      <div v-if="nodeNames.length === 0 && hasData" class="state-msg">
+        No nodes found.
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { useStarkApi } from '../composables/useStarkApi';
 
 /* ── Types ── */
@@ -123,10 +131,10 @@ interface PodData {
 interface ResourceState {
   nodes: { total: number; online: number; offline: number };
   pods: { total: number; running: number; pending: number; failed: number; stopped: number };
-  cpu: { total: number; allocated: number; percent: number };
-  memory: { total: number; allocated: number; percent: number };
-  storage: { total: number; allocated: number; percent: number };
-  podCapacity: { total: number; allocated: number; percent: number };
+  cpu: { total: number; allocated: number };
+  memory: { total: number; allocated: number };
+  storage: { total: number; allocated: number };
+  podCapacity: { total: number; allocated: number };
 }
 
 interface PerNodeHistory {
@@ -136,23 +144,16 @@ interface PerNodeHistory {
   podCap: number[];
 }
 
+interface PerNodeResources {
+  cpu: { total: number; allocated: number };
+  memory: { total: number; allocated: number };
+  storage: { total: number; allocated: number };
+  podCap: { total: number; allocated: number };
+}
+
 /* ── Constants ── */
 
-const MAX_HISTORY = 60; // keep last 60 samples (60 seconds at 1s interval)
-
-/** Distinct colors for per-node chart lines (border + fill pairs) */
-const NODE_COLORS: Array<{ border: string; bg: string }> = [
-  { border: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  { border: '#a78bfa', bg: 'rgba(167,139,250,0.1)' },
-  { border: '#6366f1', bg: 'rgba(99,102,241,0.1)' },
-  { border: '#ec4899', bg: 'rgba(236,72,153,0.1)' },
-  { border: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
-  { border: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-  { border: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
-  { border: '#14b8a6', bg: 'rgba(20,184,166,0.1)' },
-  { border: '#f97316', bg: 'rgba(249,115,22,0.1)' },
-  { border: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-];
+const MAX_HISTORY = 60;
 
 /* ── State ── */
 
@@ -164,15 +165,15 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
 const resources = reactive<ResourceState>({
   nodes: { total: 0, online: 0, offline: 0 },
   pods: { total: 0, running: 0, pending: 0, failed: 0, stopped: 0 },
-  cpu: { total: 0, allocated: 0, percent: 0 },
-  memory: { total: 0, allocated: 0, percent: 0 },
-  storage: { total: 0, allocated: 0, percent: 0 },
-  podCapacity: { total: 0, allocated: 0, percent: 0 },
+  cpu: { total: 0, allocated: 0 },
+  memory: { total: 0, allocated: 0 },
+  storage: { total: 0, allocated: 0 },
+  podCapacity: { total: 0, allocated: 0 },
 });
 
-// Per-node rolling history keyed by node name (stable across refreshes)
 const nodeHistories = ref<Map<string, PerNodeHistory>>(new Map());
-// Ordered list of node names for consistent chart rendering
+const nodeResources = ref<Map<string, PerNodeResources>>(new Map());
+const nodeStatuses = ref<Map<string, string>>(new Map());
 const nodeNames = ref<string[]>([]);
 const timeLabels = ref<string[]>([]);
 
@@ -200,24 +201,33 @@ function pushHistory(arr: number[], value: number) {
   if (arr.length > MAX_HISTORY) arr.shift();
 }
 
+function nodeStatusSeverity(status: string): string {
+  switch (status) {
+    case 'online': return 'success';
+    case 'offline': return 'danger';
+    case 'draining': return 'warn';
+    default: return 'secondary';
+  }
+}
+
+function formatNodeResource(name: string, metric: 'cpu' | 'memory' | 'storage' | 'podCap'): string {
+  const res = nodeResources.value.get(name);
+  if (!res) return '';
+  if (metric === 'cpu') return `${formatCpu(res.cpu.allocated)} / ${formatCpu(res.cpu.total)}`;
+  if (metric === 'memory') return `${formatMemory(res.memory.allocated)} / ${formatMemory(res.memory.total)}`;
+  if (metric === 'storage') return `${formatMemory(res.storage.allocated)} / ${formatMemory(res.storage.total)}`;
+  return `${res.podCap.allocated} / ${res.podCap.total}`;
+}
+
 /* ── Chart config ── */
 
-const perNodeChartOptions = {
+const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
   animation: { duration: 0 },
   interaction: { intersect: false, mode: 'index' as const },
   plugins: {
-    legend: {
-      display: true,
-      position: 'bottom' as const,
-      labels: {
-        color: '#94a3b8',
-        boxWidth: 12,
-        padding: 8,
-        font: { size: 10 },
-      },
-    },
+    legend: { display: false },
     tooltip: {
       backgroundColor: '#1e293b',
       titleColor: '#e2e8f0',
@@ -225,8 +235,8 @@ const perNodeChartOptions = {
       borderColor: 'rgba(255,255,255,0.1)',
       borderWidth: 1,
       callbacks: { label: (ctx: unknown) => {
-        const c = ctx as { dataset: { label?: string }; parsed: { y: number } };
-        return `${c.dataset.label ?? ''}: ${c.parsed.y}%`;
+        const c = ctx as { parsed: { y: number } };
+        return `${c.parsed.y}%`;
       }},
     },
   },
@@ -251,30 +261,19 @@ const perNodeChartOptions = {
   },
 };
 
-function makePerNodeChartData(metric: 'cpu' | 'memory' | 'storage' | 'podCap') {
-  const names = nodeNames.value;
-  const datasets = names.map((name, idx) => {
-    const history = nodeHistories.value.get(name);
-    const data = history ? [...history[metric]] : [];
-    const colorPair = NODE_COLORS[idx % NODE_COLORS.length];
-    return {
-      label: name,
-      data,
-      borderColor: colorPair.border,
-      backgroundColor: colorPair.bg,
-      fill: false,
-    };
-  });
+function makeNodeChartData(name: string, metric: 'cpu' | 'memory' | 'storage' | 'podCap', borderColor: string, bgColor: string) {
+  const history = nodeHistories.value.get(name);
+  const data = history ? [...history[metric]] : [];
   return {
     labels: [...timeLabels.value],
-    datasets,
+    datasets: [{
+      data,
+      borderColor,
+      backgroundColor: bgColor,
+      fill: true,
+    }],
   };
 }
-
-const cpuChartData = computed(() => makePerNodeChartData('cpu'));
-const memoryChartData = computed(() => makePerNodeChartData('memory'));
-const storageChartData = computed(() => makePerNodeChartData('storage'));
-const podCapChartData = computed(() => makePerNodeChartData('podCap'));
 
 /* ── Data loading ── */
 
@@ -304,11 +303,15 @@ async function fetchResources() {
     const stopped = pods.filter((p) => p.status === 'stopped').length;
     resources.pods = { total: pods.length, running, pending, failed, stopped };
 
-    // Aggregate resources from all nodes
-    let totalCpu = 0, allocCpu = 0;
-    let totalMem = 0, allocMem = 0;
-    let totalStorage = 0, allocStorage = 0;
-    let totalPodCap = 0, allocPodCap = 0;
+    // Aggregate resources
+    let totalCpu = 0;
+    let allocCpu = 0;
+    let totalMem = 0;
+    let allocMem = 0;
+    let totalStorage = 0;
+    let allocStorage = 0;
+    let totalPodCap = 0;
+    let allocPodCap = 0;
 
     for (const n of nodes) {
       const alloc = n.allocatable ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
@@ -323,23 +326,26 @@ async function fetchResources() {
       allocPodCap += used.pods;
     }
 
-    resources.cpu = { total: totalCpu, allocated: allocCpu, percent: pct(allocCpu, totalCpu) };
-    resources.memory = { total: totalMem, allocated: allocMem, percent: pct(allocMem, totalMem) };
-    resources.storage = { total: totalStorage, allocated: allocStorage, percent: pct(allocStorage, totalStorage) };
-    resources.podCapacity = { total: totalPodCap, allocated: allocPodCap, percent: pct(allocPodCap, totalPodCap) };
+    resources.cpu = { total: totalCpu, allocated: allocCpu };
+    resources.memory = { total: totalMem, allocated: allocMem };
+    resources.storage = { total: totalStorage, allocated: allocStorage };
+    resources.podCapacity = { total: totalPodCap, allocated: allocPodCap };
 
-    // Update per-node rolling history
+    // Time label
     const now = new Date();
     const label = `${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     timeLabels.value.push(label);
     if (timeLabels.value.length > MAX_HISTORY) timeLabels.value.shift();
 
-    // Maintain stable ordering — add new nodes at end, keep existing order
-    // Also prune nodes that no longer exist
+    // Maintain stable ordering
     const activeNodeNames = new Set(nodes.map((n) => n.name));
     nodeNames.value = nodeNames.value.filter((name) => activeNodeNames.has(name));
     for (const [name] of nodeHistories.value) {
-      if (!activeNodeNames.has(name)) nodeHistories.value.delete(name);
+      if (!activeNodeNames.has(name)) {
+        nodeHistories.value.delete(name);
+        nodeResources.value.delete(name);
+        nodeStatuses.value.delete(name);
+      }
     }
     const currentNames = new Set(nodeNames.value);
     for (const n of nodes) {
@@ -362,6 +368,14 @@ async function fetchResources() {
       pushHistory(history.memory, pct(used.memory, alloc.memory));
       pushHistory(history.storage, pct(used.storage, alloc.storage));
       pushHistory(history.podCap, pct(used.pods, alloc.pods));
+
+      nodeResources.value.set(n.name, {
+        cpu: { total: alloc.cpu, allocated: used.cpu },
+        memory: { total: alloc.memory, allocated: used.memory },
+        storage: { total: alloc.storage, allocated: used.storage },
+        podCap: { total: alloc.pods, allocated: used.pods },
+      });
+      nodeStatuses.value.set(n.name, n.status);
     }
 
     hasData.value = true;
@@ -402,7 +416,6 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 40px;
   color: #94a3b8;
-  font-size: 0.85rem;
   flex: 1;
 }
 .state-msg.error {
@@ -423,8 +436,8 @@ onBeforeUnmount(() => {
 /* ── Summary cards row ── */
 .cards-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
   flex-shrink: 0;
 }
 
@@ -442,10 +455,7 @@ onBeforeUnmount(() => {
   color: #e2e8f0;
 }
 
-.card-icon {
-  font-size: 1.1rem;
-}
-
+.card-icon { font-size: 1.1rem; }
 .nodes-icon { color: #60a5fa; }
 .pods-icon { color: #22c55e; }
 .cpu-icon { color: #f59e0b; }
@@ -453,17 +463,16 @@ onBeforeUnmount(() => {
 .storage-icon { color: #6366f1; }
 .cap-icon { color: #ec4899; }
 
-/* ── Stat row (knob + text) ── */
 .stat-row {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 .stat-details {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .stat-line {
@@ -487,38 +496,70 @@ onBeforeUnmount(() => {
 .stat-line.danger .stat-value { color: #f87171; }
 .stat-line.muted .stat-value { color: #94a3b8; }
 
+/* ── Per-node sections ── */
+.node-section {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #181818;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.node-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, transparent 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 3px solid #3b82f6;
+}
+
+.node-section-icon {
+  color: #60a5fa;
+  font-size: 1rem;
+}
+
+.node-section-name {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
 /* ── Graph panels ── */
 .graphs-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-  flex: 1;
-  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  min-width: min-content;
 }
 
 .graph-panel {
-  background: #181818;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  min-height: 200px;
+  width: 280px;
+  height: 200px;
+  flex-shrink: 0;
 }
 
 .graph-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
+  gap: 6px;
+  font-size: 0.82rem;
   font-weight: 600;
   color: #e2e8f0;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .graph-subtitle {
   font-weight: 400;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: #64748b;
   margin-left: auto;
 }
@@ -526,5 +567,47 @@ onBeforeUnmount(() => {
 .resource-chart {
   flex: 1;
   min-height: 0;
+}
+
+/* ── Mobile responsive ── */
+@media (max-width: 640px) {
+  .dashboard {
+    padding: 8px;
+    gap: 10px;
+  }
+
+  .cards-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .graphs-grid {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .graph-panel {
+    width: calc(50% - 4px);
+    height: 160px;
+    padding: 8px;
+  }
+
+  .stat-row {
+    gap: 10px;
+  }
+}
+
+@media (max-width: 400px) {
+  .cards-row {
+    grid-template-columns: 1fr;
+  }
+
+  .graphs-grid {
+    flex-direction: column;
+  }
+
+  .graph-panel {
+    width: 100%;
+  }
 }
 </style>

@@ -62,6 +62,20 @@ export {
   // User authorization
   canReadUser,
   canManageUser,
+  // Volume authorization
+  canCreateVolume,
+  canReadVolume,
+  canDeleteVolume,
+  // Secret authorization
+  canCreateSecret,
+  canReadSecret,
+  canUpdateSecret,
+  canDeleteSecret,
+  // Service authorization
+  canCreateService,
+  canReadService,
+  canUpdateService,
+  canDeleteService,
   // Types
   type Action,
   type Subject,

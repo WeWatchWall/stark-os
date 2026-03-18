@@ -5,6 +5,10 @@
       <TabList>
         <Tab value="pods">Pods</Tab>
         <Tab value="resources">Resources</Tab>
+        <Tab value="events">Events</Tab>
+        <Tab value="services">Services</Tab>
+        <Tab value="volumes">Volumes</Tab>
+        <Tab value="policies">Network</Tab>
       </TabList>
       <TabPanels>
         <TabPanel value="pods">
@@ -12,6 +16,18 @@
         </TabPanel>
         <TabPanel value="resources">
           <ResourcesTab />
+        </TabPanel>
+        <TabPanel value="events">
+          <EventsTab />
+        </TabPanel>
+        <TabPanel value="services">
+          <ServicesTab />
+        </TabPanel>
+        <TabPanel value="volumes">
+          <VolumesTab />
+        </TabPanel>
+        <TabPanel value="policies">
+          <NetworkPoliciesTab />
         </TabPanel>
       </TabPanels>
     </Tabs>
@@ -22,6 +38,10 @@
 import { ref } from 'vue';
 import PodsTab from '../components/PodsTab.vue';
 import ResourcesTab from '../components/ResourcesTab.vue';
+import EventsTab from '../components/EventsTab.vue';
+import ServicesTab from '../components/ServicesTab.vue';
+import VolumesTab from '../components/VolumesTab.vue';
+import NetworkPoliciesTab from '../components/NetworkPoliciesTab.vue';
 
 const activeTab = ref('pods');
 </script>
@@ -53,5 +73,19 @@ const activeTab = ref('pods');
 .status-tabs :deep(.p-tabpanel) {
   height: 100%;
   overflow: hidden;
+}
+
+/* Mobile: make tabs scrollable */
+@media (max-width: 640px) {
+  .status-tabs :deep(.p-tablist) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .status-tabs :deep(.p-tab) {
+    white-space: nowrap;
+    font-size: 0.85rem;
+    padding: 8px 12px;
+  }
 }
 </style>

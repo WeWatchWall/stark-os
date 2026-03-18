@@ -18,88 +18,89 @@
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="hasData && allPods.length === 0" class="state-msg">
-      No pods found.
+    <div v-else-if="hasData && allRows.length === 0" class="state-msg">
+      No nodes or pods found.
     </div>
 
-    <!-- Grouped pod table -->
-    <DataTable
-      v-else-if="hasData"
-      :value="allPods"
-      rowGroupMode="subheader"
-      groupRowsBy="groupKey"
-      sortField="groupKey"
-      :sortOrder="1"
-      expandableRowGroups
-      v-model:expandedRowGroups="expandedGroups"
-      scrollable
-      scrollHeight="flex"
-      :rowHover="true"
-      size="small"
-      stripedRows
-      tableStyle="min-width: 50rem"
-      class="pods-table"
-    >
-      <template #groupheader="{ data }">
-        <td :colspan="8" class="group-header-cell">
-          <div class="group-header">
-            <span class="machine-badge">{{ data.machineIndex }}</span>
-            <span class="node-icon">⎈</span>
-            <span class="node-name">{{ data.nodeName }}</span>
-            <Tag :value="data.nodeStatus" :severity="nodeStatusSeverity(data.nodeStatus)" class="node-tag" />
-            <Button
-              icon="pi pi-trash"
-              label="Delete Node"
-              severity="danger"
-              size="small"
-              text
-              :loading="deletingNodes.has(data.nodeId)"
-              @click.stop="deleteNode(data.nodeId, data.nodeName)"
-              class="node-delete-btn"
-            />
-          </div>
-        </td>
-      </template>
-
-      <Column field="shortId" header="ID" sortable>
-        <template #body="{ data }">
-          <span class="mono">{{ data.shortId }}</span>
-        </template>
-      </Column>
-      <Column field="packName" header="Pack" sortable />
-      <Column field="nodeName" header="Node" sortable />
-      <Column field="status" header="Status" sortable>
-        <template #body="{ data }">
-          <Tag :value="data.status" :severity="podStatusSeverity(data.status)" />
-        </template>
-      </Column>
-      <Column field="packVersion" header="Version" sortable>
-        <template #body="{ data }">
-          <span class="mono">{{ data.packVersion }}</span>
-        </template>
-      </Column>
-      <Column field="namespace" header="Namespace" sortable />
-      <Column field="age" header="Age" sortable />
-      <Column header="Actions">
-        <template #body="{ data }">
+    <!-- Manual collapsible node groups (no PrimeVue row grouping) -->
+    <div v-else-if="hasData" class="pods-scroll-area">
+      <div v-for="group in groupedData" :key="group.groupKey" class="node-group">
+        <!-- Node header row — chevron + info + delete all on one line -->
+        <div class="group-header" @click="toggleGroup(group.groupKey)">
+          <i :class="['pi', isExpanded(group.groupKey) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
+          <span class="machine-badge">{{ group.machineIndex }}</span>
+          <span class="node-icon">⎈</span>
+          <span class="node-name">{{ group.nodeName }}</span>
+          <Tag :value="group.nodeStatus" :severity="nodeStatusSeverity(group.nodeStatus)" class="node-tag" />
           <Button
-            v-if="canStop(data.status)"
-            icon="pi pi-stop"
-            label="Stop"
+            icon="pi pi-trash"
+            label="Delete Node"
             severity="danger"
             size="small"
             text
-            :loading="stoppingPods.has(data.id)"
-            @click="stopPod(data.id)"
+            :loading="deletingNodes.has(group.nodeId)"
+            @click.stop="deleteNode(group.nodeId, group.nodeName)"
+            class="node-delete-btn"
           />
-        </template>
-      </Column>
-    </DataTable>
+        </div>
+
+        <!-- Pod table for this node (shown when expanded) -->
+        <DataTable
+          v-if="isExpanded(group.groupKey)"
+          :value="group.rows"
+          :rowHover="true"
+          stripedRows
+          class="pods-table"
+        >
+          <Column field="shortId" header="ID" sortable>
+            <template #body="{ data }">
+              <span v-if="data.isPlaceholder" class="no-pods-msg">No pods on this node</span>
+              <span v-else class="mono">{{ data.shortId }}</span>
+            </template>
+          </Column>
+          <Column field="packName" header="Pack" sortable>
+            <template #body="{ data }">
+              <span v-if="!data.isPlaceholder">{{ data.packName }}</span>
+            </template>
+          </Column>
+          <Column field="status" header="Status" sortable class="hide-on-mobile">
+            <template #body="{ data }">
+              <Tag v-if="!data.isPlaceholder" :value="data.status" :severity="podStatusSeverity(data.status)" />
+            </template>
+          </Column>
+          <Column field="packVersion" header="Version" sortable class="hide-on-mobile">
+            <template #body="{ data }">
+              <span v-if="!data.isPlaceholder" class="mono">{{ data.packVersion }}</span>
+            </template>
+          </Column>
+          <Column field="namespace" header="Namespace" sortable class="hide-on-mobile" />
+          <Column field="age" header="Age" sortable>
+            <template #body="{ data }">
+              <span v-if="!data.isPlaceholder">{{ data.age }}</span>
+            </template>
+          </Column>
+          <Column header="Actions">
+            <template #body="{ data }">
+              <Button
+                v-if="!data.isPlaceholder && canStop(data.status)"
+                icon="pi pi-stop"
+                label="Stop"
+                severity="danger"
+                size="small"
+                text
+                :loading="stoppingPods.has(data.id)"
+                @click="stopPod(data.id)"
+              />
+            </template>
+          </Column>
+        </DataTable>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { useStarkApi } from '../composables/useStarkApi';
 
@@ -142,6 +143,16 @@ interface PodRow {
   nodeStatus: string;
   machineIndex: number;
   groupKey: string;
+  isPlaceholder?: boolean;
+}
+
+interface NodeGroup {
+  groupKey: string;
+  nodeName: string;
+  nodeId: string;
+  nodeStatus: string;
+  machineIndex: number;
+  rows: PodRow[];
 }
 
 /* ── State ── */
@@ -149,14 +160,47 @@ interface PodRow {
 const refreshing = ref(false);
 const hasData = ref(false);
 const errorMsg = ref('');
-const allPods = ref<PodRow[]>([]);
-const expandedGroups = ref<string[]>([]);
+const allRows = ref<PodRow[]>([]);
+const expandedGroupKeys = ref<Set<string>>(new Set());
 const stoppingPods = ref<Set<string>>(new Set());
 const deletingNodes = ref<Set<string>>(new Set());
 let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const api = useStarkApi();
 const toast = useToast();
+
+/* ── Grouped data computed ── */
+
+const groupedData = computed<NodeGroup[]>(() => {
+  const map = new Map<string, NodeGroup>();
+  for (const row of allRows.value) {
+    let group = map.get(row.groupKey);
+    if (!group) {
+      group = {
+        groupKey: row.groupKey,
+        nodeName: row.nodeName,
+        nodeId: row.nodeId,
+        nodeStatus: row.nodeStatus,
+        machineIndex: row.machineIndex,
+        rows: [],
+      };
+      map.set(row.groupKey, group);
+    }
+    group.rows.push(row);
+  }
+  return [...map.values()].sort((a, b) => a.groupKey.localeCompare(b.groupKey));
+});
+
+function isExpanded(groupKey: string): boolean {
+  return expandedGroupKeys.value.has(groupKey);
+}
+
+function toggleGroup(groupKey: string) {
+  const s = new Set(expandedGroupKeys.value);
+  if (s.has(groupKey)) s.delete(groupKey);
+  else s.add(groupKey);
+  expandedGroupKeys.value = s;
+}
 
 /* ── Helpers ── */
 
@@ -238,7 +282,9 @@ async function refresh() {
       if (!machineIds.includes(mid)) machineIds.push(mid);
     }
 
-    const rows: PodRow[] = pods.map((p) => {
+    // Build pod rows grouped by node
+    const podsByNode = new Map<string, PodRow[]>();
+    for (const p of pods) {
       const node = p.nodeId ? nodeMap.get(p.nodeId) : undefined;
       const machineId = node?.machineId ?? '__unknown__';
       let machineIndex = machineIds.indexOf(machineId) + 1;
@@ -249,7 +295,11 @@ async function refresh() {
       const nodeName = node?.name ?? (p.nodeId ? shortUuid(p.nodeId) : 'Unassigned');
       const nodeStatus = node?.status ?? 'unknown';
       const packName = packMap.get(p.packId) ?? shortUuid(p.packId);
-      return {
+      const nodeId = p.nodeId ?? '';
+      const groupKey = `${machineIndex}-${nodeName}`;
+
+      if (!podsByNode.has(nodeId)) podsByNode.set(nodeId, []);
+      podsByNode.get(nodeId)!.push({
         id: p.id,
         shortId: shortUuid(p.id),
         packName,
@@ -258,26 +308,57 @@ async function refresh() {
         namespace: p.namespace,
         age: formatAge(p.startedAt ?? p.createdAt),
         nodeName,
-        nodeId: p.nodeId ?? '',
+        nodeId,
         nodeStatus,
         machineIndex,
-        groupKey: `${machineIndex}-${nodeName}`,
-      };
-    });
+        groupKey,
+      });
+    }
 
-    allPods.value = rows;
+    // Build final rows - include all nodes, even those without pods
+    const rows: PodRow[] = [];
+    for (const n of nodes) {
+      const machineId = n.machineId ?? '__unknown__';
+      let machineIndex = machineIds.indexOf(machineId) + 1;
+      if (machineIndex === 0) {
+        machineIds.push(machineId);
+        machineIndex = machineIds.length;
+      }
+      const groupKey = `${machineIndex}-${n.name}`;
+      const nodePods = podsByNode.get(n.id);
 
-    // Auto-expand new groups (keep user's collapsed state for existing ones)
-    const allGroupKeys = [...new Set(rows.map((r) => r.groupKey))];
-    const currentExpanded = new Set(expandedGroups.value);
-    for (const key of allGroupKeys) {
-      if (!currentExpanded.has(key) && !hasData.value) {
-        currentExpanded.add(key);
+      if (nodePods && nodePods.length > 0) {
+        rows.push(...nodePods);
+      } else {
+        // Placeholder row so the node still shows
+        rows.push({
+          id: `placeholder-${n.id}`,
+          shortId: '',
+          packName: '',
+          packVersion: '',
+          status: '',
+          namespace: '',
+          age: '',
+          nodeName: n.name,
+          nodeId: n.id,
+          nodeStatus: n.status,
+          machineIndex,
+          groupKey,
+          isPlaceholder: true,
+        });
       }
     }
+
+    // Add unassigned pods (nodeId empty / not matched to a node)
+    const unassigned = podsByNode.get('');
+    if (unassigned) rows.push(...unassigned);
+
+    allRows.value = rows;
+
     // On first load expand all groups
     if (!hasData.value) {
-      expandedGroups.value = allGroupKeys;
+      const allGroupKeys = [...new Set(rows.map((r) => r.groupKey))];
+      expandedGroupKeys.value = new Set(allGroupKeys);
     }
 
     hasData.value = true;
@@ -319,8 +400,8 @@ async function deleteNode(nodeId: string, nodeName: string) {
 
 onMounted(() => {
   refresh();
-  // Auto-refresh every 5 seconds so status transitions are visible
-  refreshIntervalId = setInterval(refresh, 5000);
+  // Auto-refresh every 10 seconds
+  refreshIntervalId = setInterval(refresh, 10000);
 });
 
 onBeforeUnmount(() => {
@@ -356,7 +437,6 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 40px;
   color: #94a3b8;
-  font-size: 0.85rem;
   flex: 1;
 }
 .state-msg.error {
@@ -364,24 +444,39 @@ onBeforeUnmount(() => {
   color: #f87171;
 }
 
-.pods-table {
+/* ── Scroll area for node groups ── */
+.pods-scroll-area {
   flex: 1;
+  overflow-y: auto;
   min-height: 0;
 }
 
-/* ── Group header styling ── */
-.group-header-cell {
-  padding: 0 !important;
-  border: none !important;
+.node-group {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+/* ── Group header styling — all on one line ── */
 .group-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   background: linear-gradient(90deg, rgba(59, 130, 246, 0.10) 0%, transparent 100%);
   border-left: 3px solid #3b82f6;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%);
+}
+
+.chevron-icon {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex-shrink: 0;
+  transition: transform 0.15s;
 }
 
 .machine-badge {
@@ -393,33 +488,62 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   background: rgba(59, 130, 246, 0.18);
   color: #60a5fa;
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 700;
   flex-shrink: 0;
 }
 
 .node-icon {
   color: #60a5fa;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 
 .node-name {
   font-weight: 600;
-  font-size: 0.82rem;
   color: #e2e8f0;
 }
 
 .node-tag {
-  font-size: 0.6rem;
+  font-size: 0.65rem;
 }
 
 .node-delete-btn {
   margin-left: auto;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
+}
+
+.pods-table {
+  border-left: 3px solid rgba(59, 130, 246, 0.05);
 }
 
 .mono {
   font-family: 'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
-  font-size: 0.8em;
+  font-size: 0.9em;
+}
+
+.no-pods-msg {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* ── Mobile responsive ── */
+@media (max-width: 640px) {
+  .group-header {
+    gap: 4px;
+    padding: 6px 8px;
+    flex-wrap: wrap;
+  }
+
+  .node-delete-btn :deep(.p-button-label) {
+    display: none;
+  }
+
+  .node-delete-btn {
+    margin-left: auto;
+  }
+
+  :deep(.hide-on-mobile) {
+    display: none !important;
+  }
 }
 </style>

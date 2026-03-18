@@ -92,3 +92,8 @@ export {
 export {
   createSecretsRouter,
 } from './secrets.js';
+
+// Events API
+export {
+  createEventsRouter,
+} from './events.js';

@@ -49,6 +49,9 @@ export default defineNuxtConfig({
   // Generate static files for production
   ssr: false,
 
+  // Extend the shared examples layer for FilesPicker + OPFS utilities
+  extends: ['../../examples/shared'],
+
   // PrimeVue Nuxt module
   modules: ['@primevue/nuxt-module'],
 
@@ -62,7 +65,7 @@ export default defineNuxtConfig({
       },
     },
     components: {
-      include: ['DataTable', 'Column', 'Button', 'Tag', 'ProgressSpinner', 'ProgressBar', 'Card', 'Knob', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel', 'Toast', 'Chart'],
+      include: ['DataTable', 'Column', 'Button', 'Tag', 'ProgressSpinner', 'ProgressBar', 'Card', 'Knob', 'Tabs', 'TabList', 'Tab', 'TabPanels', 'TabPanel', 'Toast', 'Chart', 'InputText', 'Select', 'MultiSelect'],
     },
   },
 
@@ -76,11 +79,11 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Stark OS Status',
+      title: 'Stark OS Orchestrator',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: 'Task manager for Stark OS — pods and resources' }
+        { name: 'description', content: 'Cluster orchestration for Stark OS — pods, resources, events, services, and network policies' }
       ]
     },
     // Use base of '/' for iframe compatibility
@@ -119,5 +122,5 @@ export default defineNuxtConfig({
   },
 
   // Inline all CSS
-  css: [],
+  css: ['primeicons/primeicons.css'],
 })

@@ -12,12 +12,13 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "vue": "^3.5.0",
-    "primevue": "^4.5.4",
     "@primevue/themes": "^4.5.4",
-    "chart.js": "^4.5.1",
     "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
-    "@stark-o/shared": "link:../../packages/shared"
+    "@stark-o/shared": "link:../../packages/shared",
+    "chart.js": "^4.5.1",
+    "primeicons": "^7.0.0",
+    "primevue": "^4.5.4",
+    "vue": "^3.5.0"
   },
   "devDependencies": {
     "@primevue/nuxt-module": "^4.5.4",

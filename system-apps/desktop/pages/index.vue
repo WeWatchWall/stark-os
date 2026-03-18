@@ -85,6 +85,10 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           Zip
         </div>
+        <div v-if="ctxMenu.itemName && ctxMenu.itemName.toLowerCase().endsWith('.zip')" class="ctx-item" @click="ctxExtractZip">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Extract
+        </div>
         <div v-if="ctxMenu.itemName !== 'trash'" class="ctx-item" @click="ctxCopy">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
           Copy
@@ -163,7 +167,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } 
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage, TRASH_PATH } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage, TRASH_PATH, extractZip } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Tunable constants ── */
 const LONG_PRESS_MS = 300;
@@ -649,6 +653,9 @@ function onDblClick(index: number): void {
     launchPack('files', [TRASH_PATH]);
   } else if (item.isDirectory) {
     launchPack('files', ['/home/desktop/' + item.name]);
+  } else if (item.name.toLowerCase().endsWith('.zip')) {
+    // Open zip archive in files app for browsing
+    launchPack('files', ['/home/desktop/' + item.name + '/root']);
   } else {
     // Open file via intent system
     const filePath = normalizePath('/home/desktop/' + item.name);
@@ -794,6 +801,20 @@ async function ctxZip(): Promise<void> {
     await readDesktopDir();
   } catch (err) {
     console.warn('Desktop zip failed:', err);
+  }
+}
+
+// ── Context menu: Extract zip archive ──
+
+async function ctxExtractZip(): Promise<void> {
+  ctxMenu.show = false;
+  const names = [...selectedNames].filter(n => n.toLowerCase().endsWith('.zip'));
+  if (names.length !== 1 || !opfsRoot) return;
+  try {
+    await extractZip(opfsRoot, '/home/desktop', names[0]);
+    await readDesktopDir();
+  } catch (err) {
+    console.warn('Desktop extract zip failed:', err);
   }
 }
 

@@ -223,28 +223,36 @@
       @click.stop
     >
       <template v-if="selectedNames.size > 0">
-        <div v-if="selectedNames.size === 1 && [...selectedNames][0].endsWith('.pack.js')" class="ctx-item ctx-item-install" @click="ctxInstallPack">
+        <div v-if="!insideZip && selectedNames.size === 1 && [...selectedNames][0].endsWith('.pack.js')" class="ctx-item ctx-item-install" @click="ctxInstallPack">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Install
         </div>
-        <div class="ctx-item" @click="ctxOpenWith">Open With…</div>
+        <div v-if="!insideZip" class="ctx-item" @click="ctxOpenWith">Open With…</div>
         <div class="ctx-item" @click="ctxDownload">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Download
         </div>
-        <div class="ctx-item" @click="ctxZip">
+        <div v-if="!insideZip && selectedNames.size === 1 && [...selectedNames][0].toLowerCase().endsWith('.zip')" class="ctx-item" @click="ctxExtractZip">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Extract
+        </div>
+        <div v-if="insideZip" class="ctx-item" @click="ctxExtractHere">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Extract to Folder
+        </div>
+        <div v-if="!insideZip" class="ctx-item" @click="ctxZip">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           Zip
         </div>
-        <div class="ctx-item" @click="ctxCopy">
+        <div v-if="!insideZip" class="ctx-item" @click="ctxCopy">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
           Copy
         </div>
-        <div class="ctx-item" @click="ctxCut">
+        <div v-if="!insideZip" class="ctx-item" @click="ctxCut">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
           Cut
         </div>
-        <div v-if="selectedNames.size === 1" class="ctx-item" @click="ctxRename">
+        <div v-if="!insideZip && selectedNames.size === 1" class="ctx-item" @click="ctxRename">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           Rename
         </div>
@@ -254,14 +262,14 @@
         </div>
         <div class="ctx-separator"></div>
       </template>
-      <div class="ctx-item" @click="ctxPaste">
+      <div v-if="!insideZip" class="ctx-item" @click="ctxPaste">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
         Paste
       </div>
     </div>
 
-    <!-- Floating Action Button -->
-    <div class="fab-container" @click.stop>
+    <!-- Floating Action Button (hidden when inside a zip archive) -->
+    <div v-if="!insideZip" class="fab-container" @click.stop>
       <transition name="fab-menu">
         <div v-if="fabOpen" class="fab-menu">
           <button class="fab-menu-item" @click="fabNewFile">
@@ -320,7 +328,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'v
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
 import type { FileItem, IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
-import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage } from '../../../examples/shared/utils/lib/fileops';
+import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage, isZipPath, splitZipPath, readZipDir, extractZip, extractFromZip, downloadZipItems, deleteFromZip } from '../../../examples/shared/utils/lib/fileops';
 
 /* ── Constants ── */
 const DEFAULT_PATH = '/home';
@@ -418,6 +426,9 @@ const canGoBack = computed(() => historyIndex.value > 0);
 const canGoForward = computed(() => historyIndex.value < history.value.length - 1);
 const canGoUp = computed(() => normalizePath(currentPath.value) !== '/');
 
+/** True when the current path is inside a zip archive (read-only view). */
+const insideZip = computed(() => isZipPath(currentPath.value));
+
 const sortedItems = computed(() => {
   return [...items.value].sort((a, b) => {
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
@@ -484,7 +495,14 @@ async function readDir(path: string): Promise<void> {
 
   try {
     const normalized = normalizePath(path);
-    const entries = await readDirItems(opfsRoot, normalized, true);
+
+    let entries: FileItem[];
+    if (isZipPath(normalized)) {
+      // Reading inside a zip archive
+      entries = await readZipDir(opfsRoot, normalized);
+    } else {
+      entries = await readDirItems(opfsRoot, normalized, true);
+    }
 
     items.value = entries;
     currentPath.value = normalized;
@@ -566,6 +584,9 @@ async function openFiles(fileItems: FileItem[]): Promise<void> {
 function onItemActivate(item: FileItem): void {
   if (item.isDirectory) {
     navigateTo(currentPath.value + '/' + item.name);
+  } else if (item.name.toLowerCase().endsWith('.zip')) {
+    // Navigate into zip archive as a virtual folder
+    navigateTo(currentPath.value + '/' + item.name + '/root');
   } else {
     // Open file(s) via intent system
     const selected = selectedFileItems();
@@ -589,6 +610,9 @@ function onKeyDown(event: KeyboardEvent): void {
     const selected = items.value.filter((i) => selectedNames.value.has(i.name));
     if (selected.length === 1 && selected[0].isDirectory) {
       navigateTo(currentPath.value + '/' + selected[0].name);
+    } else if (selected.length === 1 && selected[0].name.toLowerCase().endsWith('.zip')) {
+      // Navigate into zip archive
+      navigateTo(currentPath.value + '/' + selected[0].name + '/root');
     } else {
       const files = selected.filter((i) => !i.isDirectory);
       if (files.length > 0) openFiles(files);
@@ -599,8 +623,8 @@ function onKeyDown(event: KeyboardEvent): void {
       doDelete(names);
     }
   } else if (event.key === 'F2') {
-    // Rename the single selected item
-    if (selectedNames.value.size === 1) {
+    // Rename the single selected item (not inside zip)
+    if (!insideZip.value && selectedNames.value.size === 1) {
       const name = [...selectedNames.value][0];
       ctxRename(name);
     }
@@ -887,6 +911,7 @@ function onPackInstalled(): void {
 
 async function ctxZip(): Promise<void> {
   ctxMenu.show = false;
+  if (insideZip.value) return; // Cannot zip inside a zip
   const names = selectedItemNames();
   if (names.length === 0 || !opfsRoot) return;
   try {
@@ -897,12 +922,50 @@ async function ctxZip(): Promise<void> {
   }
 }
 
+/* ── Context menu: Extract zip archive ── */
+
+async function ctxExtractZip(): Promise<void> {
+  ctxMenu.show = false;
+  const names = selectedItemNames();
+  if (names.length !== 1 || !opfsRoot) return;
+  const zipName = names[0];
+  if (!zipName.toLowerCase().endsWith('.zip')) return;
+  try {
+    await extractZip(opfsRoot, currentPath.value, zipName);
+    await readDir(currentPath.value);
+  } catch (err) {
+    console.warn('Extract zip failed:', err);
+  }
+}
+
+/* ── Context menu: Extract items from inside a zip to a folder ── */
+
+async function ctxExtractHere(): Promise<void> {
+  ctxMenu.show = false;
+  const names = selectedItemNames();
+  if (names.length === 0 || !opfsRoot) return;
+  const info = splitZipPath(currentPath.value);
+  if (!info) return;
+  // Extract to the same directory that contains the zip
+  const destPath = info.opfsDir;
+  try {
+    await extractFromZip(opfsRoot, currentPath.value, names, destPath);
+  } catch (err) {
+    console.warn('Extract from zip failed:', err);
+  }
+}
+
 /* ── Context menu / keyboard: Delete (move to trash) ── */
 
 async function doDelete(names: string[]): Promise<void> {
   if (names.length === 0 || !opfsRoot) return;
   try {
-    await moveToTrash(opfsRoot, currentPath.value, names);
+    if (insideZip.value) {
+      // Delete entries from inside the zip archive
+      await deleteFromZip(opfsRoot, currentPath.value, names);
+    } else {
+      await moveToTrash(opfsRoot, currentPath.value, names);
+    }
     clearSelection();
     await readDir(currentPath.value);
   } catch (err) {
@@ -923,7 +986,11 @@ async function ctxDownload(): Promise<void> {
   const names = selectedItemNames();
   if (names.length === 0 || !opfsRoot) return;
   try {
-    await downloadItems(opfsRoot, currentPath.value, names);
+    if (insideZip.value) {
+      await downloadZipItems(opfsRoot, currentPath.value, names);
+    } else {
+      await downloadItems(opfsRoot, currentPath.value, names);
+    }
   } catch (err) {
     console.warn('Download failed:', err);
   }

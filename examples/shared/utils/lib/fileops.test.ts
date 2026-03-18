@@ -3,6 +3,8 @@ import {
   buildClipboardText,
   parseClipboard,
   extractSourceDir,
+  isZipPath,
+  splitZipPath,
   CLIPBOARD_COPY_PREFIX,
   CLIPBOARD_CUT_PREFIX,
 } from './fileops';
@@ -77,5 +79,59 @@ describe('extractSourceDir', () => {
     const { srcDir, names } = extractSourceDir(paths);
     expect(srcDir).toBe('/home/desktop/projects/src');
     expect(names).toEqual(['main.ts']);
+  });
+});
+
+describe('isZipPath', () => {
+  it('returns true when path traverses into a zip', () => {
+    expect(isZipPath('/home/archive.zip/folder')).toBe(true);
+    expect(isZipPath('/home/docs/data.zip/sub/file.txt')).toBe(true);
+    expect(isZipPath('/archive.ZIP/readme.md')).toBe(true);
+  });
+
+  it('returns false when path points AT a zip (not inside)', () => {
+    expect(isZipPath('/home/archive.zip')).toBe(false);
+    expect(isZipPath('/home/docs/data.zip')).toBe(false);
+  });
+
+  it('returns false for non-zip paths', () => {
+    expect(isZipPath('/home/desktop')).toBe(false);
+    expect(isZipPath('/home/file.txt')).toBe(false);
+    expect(isZipPath('/')).toBe(false);
+  });
+});
+
+describe('splitZipPath', () => {
+  it('splits a zip-traversing path correctly', () => {
+    const result = splitZipPath('/home/docs/archive.zip/sub/file.txt');
+    expect(result).not.toBeNull();
+    expect(result!.opfsDir).toBe('/home/docs');
+    expect(result!.zipName).toBe('archive.zip');
+    expect(result!.innerPath).toBe('sub/file.txt');
+  });
+
+  it('splits a path at zip root level', () => {
+    const result = splitZipPath('/home/archive.zip/readme.md');
+    expect(result).not.toBeNull();
+    expect(result!.opfsDir).toBe('/home');
+    expect(result!.zipName).toBe('archive.zip');
+    expect(result!.innerPath).toBe('readme.md');
+  });
+
+  it('handles zip at root of OPFS', () => {
+    const result = splitZipPath('/archive.zip/file.txt');
+    expect(result).not.toBeNull();
+    expect(result!.opfsDir).toBe('/');
+    expect(result!.zipName).toBe('archive.zip');
+    expect(result!.innerPath).toBe('file.txt');
+  });
+
+  it('returns null for path pointing at zip file (not inside)', () => {
+    expect(splitZipPath('/home/archive.zip')).toBeNull();
+  });
+
+  it('returns null for non-zip paths', () => {
+    expect(splitZipPath('/home/desktop/folder')).toBeNull();
+    expect(splitZipPath('/home/file.txt')).toBeNull();
   });
 });

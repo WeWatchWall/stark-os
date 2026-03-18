@@ -65,6 +65,8 @@ export interface StarkAPI {
     list(options?: { namespace?: string }): Promise<unknown>;
     status(name: string): Promise<unknown>;
     create(input: Record<string, unknown>): Promise<unknown>;
+    update(id: string, updates: Record<string, unknown>): Promise<unknown>;
+    delete(id: string): Promise<void>;
   };
   namespace: {
     list(): Promise<unknown>;
@@ -81,6 +83,7 @@ export interface StarkAPI {
   volume: {
     list(options?: { nodeNameOrId?: string }): Promise<unknown>;
     create(name: string, nodeNameOrId: string): Promise<unknown>;
+    delete(id: string): Promise<void>;
     download(name: string, nodeNameOrId: string): Promise<{ files: Array<{ path: string; data: string }> }>;
     downloadAsZip(name: string, nodeNameOrId: string): Promise<Uint8Array>;
     archivePathAsZip(nodeNameOrId: string, name: string, archivePath: string): Promise<Uint8Array>;
@@ -97,7 +100,12 @@ export interface StarkAPI {
   };
   network: {
     policies(): Promise<unknown>;
+    createPolicy(input: { sourceService: string; targetService: string; action: string; namespace?: string }): Promise<unknown>;
+    deletePolicy(id: string): Promise<void>;
     registry(): Promise<unknown>;
+  };
+  events: {
+    list(options?: { category?: string; severity?: string; limit?: number; offset?: number; since?: string }): Promise<unknown>;
   };
   serverConfig: {
     get(): Promise<unknown>;
@@ -272,6 +280,8 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
   const apiGet = (path: string) => apiFetch(path, { method: 'GET' });
   const apiPost = (path: string, body?: unknown) =>
     apiFetch(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
+  const apiPatch = (path: string, body?: unknown) =>
+    apiFetch(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined });
   const apiDelete = (path: string) => apiFetch(path, { method: 'DELETE' });
 
   return {
@@ -383,6 +393,10 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       async create(input: Record<string, unknown>) {
         return handleResponse<unknown>(await apiPost('/api/services', input));
       },
+      async update(id: string, updates: Record<string, unknown>) {
+        return handleResponse<unknown>(await apiPatch(`/api/services/${id}`, updates));
+      },
+      async delete(id: string) { await handleDeleteResponse(await apiDelete(`/api/services/${id}`)); },
     },
     namespace: {
       async list() { return handleResponse<unknown>(await apiGet('/api/namespaces')); },
@@ -418,6 +432,7 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         const nodeId = await resolveNodeId(nodeNameOrId, apiGet);
         return handleResponse<unknown>(await apiPost('/api/volumes', { name, nodeId }));
       },
+      async delete(id: string) { await handleDeleteResponse(await apiDelete(`/api/volumes/${id}`)); },
       async download(name: string, nodeNameOrId: string) {
         const nodeId = await resolveNodeId(nodeNameOrId, apiGet);
         const params = new URLSearchParams({ nodeId });
@@ -525,7 +540,23 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
     },
     network: {
       async policies() { return handleResponse<unknown>(await apiGet('/api/network/policies')); },
+      async createPolicy(input: { sourceService: string; targetService: string; action: string; namespace?: string }) {
+        return handleResponse<unknown>(await apiPost('/api/network/policies', input));
+      },
+      async deletePolicy(id: string) { await handleDeleteResponse(await apiDelete(`/api/network/policies/${id}`)); },
       async registry() { return handleResponse<unknown>(await apiGet('/api/network/registry')); },
+    },
+    events: {
+      async list(options?: { category?: string; severity?: string; limit?: number; offset?: number; since?: string }) {
+        const params = new URLSearchParams();
+        if (options?.category) params.set('category', options.category);
+        if (options?.severity) params.set('severity', options.severity);
+        if (options?.limit) params.set('limit', String(options.limit));
+        if (options?.offset) params.set('offset', String(options.offset));
+        if (options?.since) params.set('since', options.since);
+        const qs = params.toString();
+        return handleResponse<unknown>(await apiGet(`/api/events${qs ? '?' + qs : ''}`));
+      },
     },
     serverConfig: {
       async get() { return handleResponse<unknown>(await apiGet('/api/config')); },

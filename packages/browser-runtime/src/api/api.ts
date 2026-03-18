@@ -115,6 +115,7 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
     volume: base.volume,
     chaos: base.chaos,
     network: base.network,
+    events: base.events,
     serverConfig: base.serverConfig,
 
     // ── Browser-specific overrides ─────────────────────────────────

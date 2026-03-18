@@ -14,7 +14,6 @@ import { queryEvents } from '../supabase/index.js';
 import {
   authMiddleware,
   abilityMiddleware,
-  canReadPod,
   type AuthenticatedRequest,
 } from '../middleware/index.js';
 
@@ -177,7 +176,7 @@ export function createEventsRouter(): Router {
   router.use(abilityMiddleware);
 
   // Query routes
-  router.get('/', canReadPod, listEvents);
+  router.get('/', listEvents);
 
   return router;
 }

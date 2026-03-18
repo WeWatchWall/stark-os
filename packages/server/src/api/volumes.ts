@@ -21,6 +21,7 @@ import {
   abilityMiddleware,
   canCreatePod,
   canReadPod,
+  canDeletePod,
   resolveWriteNamespace,
   type AuthenticatedRequest,
 } from '../middleware/index.js';
@@ -306,6 +307,52 @@ async function downloadVolume(req: Request, res: Response): Promise<void> {
   }
 }
 
+/**
+ * DELETE /api/volumes/:id — Delete a volume by ID
+ */
+async function deleteVolumeById(req: Request, res: Response): Promise<void> {
+  const correlationId = generateCorrelationId();
+  const authReq = req as AuthenticatedRequest;
+  const userId = authReq.user?.id;
+
+  if (!userId) {
+    sendError(res, 'UNAUTHORIZED', 'Authentication required', 401);
+    return;
+  }
+
+  const { id } = req.params;
+  if (!id) {
+    sendError(res, 'VALIDATION_ERROR', 'Volume ID is required', 400);
+    return;
+  }
+
+  try {
+    const queries = getVolumeQueries();
+    const result = await queries.deleteVolume(id);
+
+    if (result.error) {
+      logger.error('Failed to delete volume', undefined, {
+        volumeId: id,
+        error: result.error,
+        correlationId,
+      });
+      sendError(res, 'INTERNAL_ERROR', 'Failed to delete volume', 500);
+      return;
+    }
+
+    if (!result.data?.deleted) {
+      sendError(res, 'NOT_FOUND', `Volume '${id}' not found`, 404);
+      return;
+    }
+
+    logger.info('Volume deleted', { volumeId: id, correlationId });
+    sendSuccess(res, { deleted: true });
+  } catch (err) {
+    logger.error('Error deleting volume', err instanceof Error ? err : undefined, { correlationId });
+    sendError(res, 'INTERNAL_ERROR', 'Internal server error', 500);
+  }
+}
+
 // ── Router ──────────────────────────────────────────────────────────────────
 
 /**
@@ -323,6 +370,7 @@ export function createVolumesRouter(): Router {
   router.get('/', canReadPod, listVolumes);
   router.get('/name/:name', canReadPod, getVolumeByName);
   router.get('/name/:name/download', canReadPod, downloadVolume);
+  router.delete('/:id', canDeletePod, deleteVolumeById);
 
   return router;
 }

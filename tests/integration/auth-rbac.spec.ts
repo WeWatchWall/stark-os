@@ -17,28 +17,39 @@ import { defineAbilityFor, type Action, type Subject } from '@stark-o/server/mid
 /**
  * RBAC Permission Matrix
  *
- * | Resource    | Action    | admin | node  | viewer |
- * |-------------|-----------|-------|-------|--------|
- * | packs       | create    | ✓     | ✗     | ✗      |
- * | packs       | read      | ✓     | ✓     | ✓      |
- * | packs       | update    | ✓     | ✗     | ✗      |
- * | packs       | delete    | ✓     | ✗     | ✗      |
- * | pods        | create    | ✓     | ✗     | ✗      |
- * | pods        | read      | ✓     | ✓     | ✓      |
- * | pods        | update    | ✓     | ✓     | ✗      |
- * | pods        | delete    | ✓     | ✗     | ✗      |
- * | nodes       | create    | ✓     | ✓     | ✗      |
- * | nodes       | read      | ✓     | ✓     | ✓      |
- * | nodes       | update    | ✓     | ✓     | ✗      |
- * | nodes       | delete    | ✓     | ✗     | ✗      |
- * | namespaces  | create    | ✓     | ✗     | ✗      |
- * | namespaces  | read      | ✓     | ✓     | ✓      |
- * | namespaces  | update    | ✓     | ✗     | ✗      |
- * | namespaces  | delete    | ✓     | ✗     | ✗      |
- * | users       | create    | ✓     | ✗     | ✗      |
- * | users       | read      | ✓     | ✗     | ✗      |
- * | users       | update    | ✓     | ✗     | ✗      |
- * | users       | delete    | ✓     | ✗     | ✗      |
+ * | Resource    | Action    | admin | user  | node  | viewer |
+ * |-------------|-----------|-------|-------|-------|--------|
+ * | packs       | create    | ✓     | ✓     | ✗     | ✗      |
+ * | packs       | read      | ✓     | ✓     | ✓     | ✓      |
+ * | packs       | update    | ✓     | ✓     | ✗     | ✗      |
+ * | packs       | delete    | ✓     | ✓     | ✗     | ✗      |
+ * | pods        | create    | ✓     | ✓     | ✗     | ✗      |
+ * | pods        | read      | ✓     | ✓     | ✓     | ✓      |
+ * | pods        | update    | ✓     | ✓     | ✓     | ✗      |
+ * | pods        | delete    | ✓     | ✓     | ✗     | ✗      |
+ * | nodes       | create    | ✓     | ✓     | ✓     | ✗      |
+ * | nodes       | read      | ✓     | ✓     | ✓     | ✓      |
+ * | nodes       | update    | ✓     | ✓     | ✓     | ✗      |
+ * | nodes       | delete    | ✓     | ✓     | ✗     | ✗      |
+ * | namespaces  | create    | ✓     | ✓     | ✗     | ✗      |
+ * | namespaces  | read      | ✓     | ✓     | ✓     | ✓      |
+ * | namespaces  | update    | ✓     | ✗     | ✗     | ✗      |
+ * | namespaces  | delete    | ✓     | ✗     | ✗     | ✗      |
+ * | volumes     | create    | ✓     | ✓     | ✗     | ✗      |
+ * | volumes     | read      | ✓     | ✓     | ✓     | ✓      |
+ * | volumes     | delete    | ✓     | ✓     | ✗     | ✗      |
+ * | secrets     | create    | ✓     | ✓     | ✗     | ✗      |
+ * | secrets     | read      | ✓     | ✓     | ✗     | ✓      |
+ * | secrets     | update    | ✓     | ✓     | ✗     | ✗      |
+ * | secrets     | delete    | ✓     | ✓     | ✗     | ✗      |
+ * | services    | create    | ✓     | ✓     | ✗     | ✗      |
+ * | services    | read      | ✓     | ✓     | ✓     | ✓      |
+ * | services    | update    | ✓     | ✓     | ✗     | ✗      |
+ * | services    | delete    | ✓     | ✓     | ✗     | ✗      |
+ * | users       | create    | ✓     | ✗     | ✗     | ✗      |
+ * | users       | read      | ✓     | ✗     | ✗     | ✗      |
+ * | users       | update    | ✓     | ✗     | ✗     | ✗      |
+ * | users       | delete    | ✓     | ✗     | ✗     | ✗      |
  */
 
 /**
@@ -114,6 +125,7 @@ function checkAbility(role: UserRole, action: Action, subject: Subject): boolean
 describe('RBAC Enforcement Integration Tests', () => {
   // Test users for each role
   let adminUser: User;
+  let regularUser: User;
   let nodeUser: User;
   let viewerUser: User;
 
@@ -122,6 +134,7 @@ describe('RBAC Enforcement Integration Tests', () => {
 
     // Create test users for each role
     adminUser = createTestUser('admin', 'admin-user-1');
+    regularUser = createTestUser('user', 'regular-user-1');
     nodeUser = createTestUser('node', 'node-user-1');
     viewerUser = createTestUser('viewer', 'viewer-user-1');
   });
@@ -599,6 +612,254 @@ describe('RBAC Enforcement Integration Tests', () => {
       it('should deny viewer from managing cluster config', () => {
         const ability = defineAbilityFor(viewerUser);
         expect(ability.can('manage', 'ClusterConfig')).toBe(false);
+      });
+    });
+
+    describe('Volume Resource RBAC', () => {
+      describe('Create Volume', () => {
+        it('should allow admin to create volume', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('create', 'Volume')).toBe(true);
+        });
+
+        it('should allow user to create volume', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('create', 'Volume')).toBe(true);
+        });
+
+        it('should deny node from creating volume', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('create', 'Volume')).toBe(false);
+        });
+
+        it('should deny viewer from creating volume', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('create', 'Volume')).toBe(false);
+        });
+      });
+
+      describe('Read Volume', () => {
+        it('should allow admin to read volumes', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('read', 'Volume')).toBe(true);
+        });
+
+        it('should allow user to read volumes', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('read', 'Volume')).toBe(true);
+        });
+
+        it('should allow node to read volumes', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('read', 'Volume')).toBe(true);
+        });
+
+        it('should allow viewer to read volumes', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('read', 'Volume')).toBe(true);
+        });
+      });
+
+      describe('Delete Volume', () => {
+        it('should allow admin to delete volume', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('delete', 'Volume')).toBe(true);
+        });
+
+        it('should allow user to delete volume', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('delete', 'Volume')).toBe(true);
+        });
+
+        it('should deny node from deleting volume', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('delete', 'Volume')).toBe(false);
+        });
+
+        it('should deny viewer from deleting volume', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('delete', 'Volume')).toBe(false);
+        });
+      });
+    });
+
+    describe('Secret Resource RBAC', () => {
+      describe('Create Secret', () => {
+        it('should allow admin to create secret', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('create', 'Secret')).toBe(true);
+        });
+
+        it('should allow user to create secret', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('create', 'Secret')).toBe(true);
+        });
+
+        it('should deny node from creating secret', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('create', 'Secret')).toBe(false);
+        });
+
+        it('should deny viewer from creating secret', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('create', 'Secret')).toBe(false);
+        });
+      });
+
+      describe('Read Secret', () => {
+        it('should allow admin to read secrets', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('read', 'Secret')).toBe(true);
+        });
+
+        it('should allow user to read secrets', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('read', 'Secret')).toBe(true);
+        });
+
+        it('should deny node from reading secrets', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('read', 'Secret')).toBe(false);
+        });
+
+        it('should allow viewer to read secrets', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('read', 'Secret')).toBe(true);
+        });
+      });
+
+      describe('Update Secret', () => {
+        it('should allow admin to update secret', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('update', 'Secret')).toBe(true);
+        });
+
+        it('should allow user to update secret', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('update', 'Secret')).toBe(true);
+        });
+
+        it('should deny node from updating secret', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('update', 'Secret')).toBe(false);
+        });
+
+        it('should deny viewer from updating secret', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('update', 'Secret')).toBe(false);
+        });
+      });
+
+      describe('Delete Secret', () => {
+        it('should allow admin to delete secret', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('delete', 'Secret')).toBe(true);
+        });
+
+        it('should allow user to delete secret', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('delete', 'Secret')).toBe(true);
+        });
+
+        it('should deny node from deleting secret', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('delete', 'Secret')).toBe(false);
+        });
+
+        it('should deny viewer from deleting secret', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('delete', 'Secret')).toBe(false);
+        });
+      });
+    });
+
+    describe('Service Resource RBAC', () => {
+      describe('Create Service', () => {
+        it('should allow admin to create service', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('create', 'Service')).toBe(true);
+        });
+
+        it('should allow user to create service', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('create', 'Service')).toBe(true);
+        });
+
+        it('should deny node from creating service', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('create', 'Service')).toBe(false);
+        });
+
+        it('should deny viewer from creating service', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('create', 'Service')).toBe(false);
+        });
+      });
+
+      describe('Read Service', () => {
+        it('should allow admin to read services', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('read', 'Service')).toBe(true);
+        });
+
+        it('should allow user to read services', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('read', 'Service')).toBe(true);
+        });
+
+        it('should allow node to read services', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('read', 'Service')).toBe(true);
+        });
+
+        it('should allow viewer to read services', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('read', 'Service')).toBe(true);
+        });
+      });
+
+      describe('Update Service', () => {
+        it('should allow admin to update service', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('update', 'Service')).toBe(true);
+        });
+
+        it('should allow user to update service', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('update', 'Service')).toBe(true);
+        });
+
+        it('should deny node from updating service', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('update', 'Service')).toBe(false);
+        });
+
+        it('should deny viewer from updating service', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('update', 'Service')).toBe(false);
+        });
+      });
+
+      describe('Delete Service', () => {
+        it('should allow admin to delete service', () => {
+          const ability = defineAbilityFor(adminUser);
+          expect(ability.can('delete', 'Service')).toBe(true);
+        });
+
+        it('should allow user to delete service', () => {
+          const ability = defineAbilityFor(regularUser);
+          expect(ability.can('delete', 'Service')).toBe(true);
+        });
+
+        it('should deny node from deleting service', () => {
+          const ability = defineAbilityFor(nodeUser);
+          expect(ability.can('delete', 'Service')).toBe(false);
+        });
+
+        it('should deny viewer from deleting service', () => {
+          const ability = defineAbilityFor(viewerUser);
+          expect(ability.can('delete', 'Service')).toBe(false);
+        });
       });
     });
   });

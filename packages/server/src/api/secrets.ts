@@ -20,9 +20,10 @@ import { encryptSecretData, initMasterKey } from '@stark-o/core';
 import {
   authMiddleware,
   abilityMiddleware,
-  canCreatePod,
-  canReadPod,
-  canDeletePod,
+  canCreateSecret,
+  canReadSecret,
+  canUpdateSecret,
+  canDeleteSecret,
   type AuthenticatedRequest,
 } from '../middleware/index.js';
 
@@ -396,11 +397,11 @@ export function createSecretsRouter(): Router {
   router.use(abilityMiddleware);
 
   // CRUD routes
-  router.post('/', canCreatePod, createSecret);
-  router.get('/', canReadPod, listSecrets);
-  router.get('/name/:name', canReadPod, getSecretByName);
-  router.patch('/name/:name', canCreatePod, updateSecretByName);
-  router.delete('/name/:name', canDeletePod, deleteSecretByName);
+  router.post('/', canCreateSecret, createSecret);
+  router.get('/', canReadSecret, listSecrets);
+  router.get('/name/:name', canReadSecret, getSecretByName);
+  router.patch('/name/:name', canUpdateSecret, updateSecretByName);
+  router.delete('/name/:name', canDeleteSecret, deleteSecretByName);
 
   return router;
 }

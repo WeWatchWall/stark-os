@@ -19,9 +19,9 @@ import { registerPendingDownload } from '../services/volume-download-service.js'
 import {
   authMiddleware,
   abilityMiddleware,
-  canCreatePod,
-  canReadPod,
-  canDeletePod,
+  canCreateVolume,
+  canReadVolume,
+  canDeleteVolume,
   resolveWriteNamespace,
   type AuthenticatedRequest,
 } from '../middleware/index.js';
@@ -366,11 +366,11 @@ export function createVolumesRouter(): Router {
   router.use(abilityMiddleware);
 
   // CRUD routes
-  router.post('/', canCreatePod, createVolume);
-  router.get('/', canReadPod, listVolumes);
-  router.get('/name/:name', canReadPod, getVolumeByName);
-  router.get('/name/:name/download', canReadPod, downloadVolume);
-  router.delete('/:id', canDeletePod, deleteVolumeById);
+  router.post('/', canCreateVolume, createVolume);
+  router.get('/', canReadVolume, listVolumes);
+  router.get('/name/:name', canReadVolume, getVolumeByName);
+  router.get('/name/:name/download', canReadVolume, downloadVolume);
+  router.delete('/:id', canDeleteVolume, deleteVolumeById);
 
   return router;
 }

@@ -18,9 +18,10 @@ import { getServiceNetworkMetaStore } from '@stark-o/shared';
 import {
   authMiddleware,
   abilityMiddleware,
-  canCreatePod, // Reuse pod permissions for services
-  canReadPod,
-  canDeletePod,
+  canCreateService,
+  canReadService,
+  canUpdateService,
+  canDeleteService,
   type AuthenticatedRequest,
 } from '../middleware/index.js';
 
@@ -867,32 +868,32 @@ export function createServicesRouter(): Router {
   router.use(abilityMiddleware);
 
   // Create service (POST /api/services)
-  router.post('/', canCreatePod, createService);
+  router.post('/', canCreateService, createService);
 
   // List services (GET /api/services)
-  router.get('/', canReadPod, listServices);
+  router.get('/', canReadService, listServices);
 
   // Get service by ID (GET /api/services/:id)
-  router.get('/:id', canReadPod, getServiceById);
+  router.get('/:id', canReadService, getServiceById);
 
   // Get service by name (GET /api/services/name/:name)
-  router.get('/name/:name', canReadPod, getServiceByName);
+  router.get('/name/:name', canReadService, getServiceByName);
 
   // Update service (PATCH /api/services/:id)
-  router.patch('/:id', canCreatePod, updateService);
+  router.patch('/:id', canUpdateService, updateService);
 
   // Scale service (POST /api/services/:id/scale)
-  router.post('/:id/scale', canCreatePod, scaleService);
+  router.post('/:id/scale', canUpdateService, scaleService);
 
   // Network policy: visibility, expose/unexpose, allowed sources
-  router.post('/:id/visibility', canCreatePod, setVisibilityHandler);
-  router.post('/:id/expose', canCreatePod, exposeHandler);
-  router.post('/:id/unexpose', canCreatePod, unexposeHandler);
-  router.post('/:id/allow-source', canCreatePod, allowSourceHandler);
-  router.post('/:id/deny-source', canCreatePod, denySourceHandler);
+  router.post('/:id/visibility', canUpdateService, setVisibilityHandler);
+  router.post('/:id/expose', canUpdateService, exposeHandler);
+  router.post('/:id/unexpose', canUpdateService, unexposeHandler);
+  router.post('/:id/allow-source', canUpdateService, allowSourceHandler);
+  router.post('/:id/deny-source', canUpdateService, denySourceHandler);
 
   // Delete service (DELETE /api/services/:id)
-  router.delete('/:id', canDeletePod, deleteService);
+  router.delete('/:id', canDeleteService, deleteService);
 
   return router;
 }

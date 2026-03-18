@@ -181,6 +181,30 @@ html, body, #app, #__nuxt {
   fill: #e2e8f0 !important;
 }
 
+/* InputText dark overrides */
+.p-inputtext {
+  background: #1e1e1e !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.p-inputtext:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Select dark overrides */
+.p-select {
+  background: #1e1e1e !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Tag overrides for readability */
+.p-tag {
+  font-size: 0.75rem;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

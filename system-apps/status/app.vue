@@ -101,6 +101,9 @@ html, body, #app, #__nuxt {
 
 .p-datatable .p-rowgroup-header td {
   border-color: rgba(255, 255, 255, 0.08) !important;
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Card dark overrides */

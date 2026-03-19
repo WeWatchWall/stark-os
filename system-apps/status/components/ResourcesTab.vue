@@ -73,29 +73,30 @@
         </Card>
       </div>
 
-      <!-- Per-node resource sections -->
+      <!-- Per-node resource sections (collapsible) -->
       <div v-for="name in nodeNames" :key="name" class="node-section">
-        <div class="node-section-header">
+        <div class="node-section-header" @click="toggleNodeSection(name)">
+          <i :class="['pi', isNodeExpanded(name) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
           <span class="node-section-icon">⎈</span>
           <span class="node-section-name">{{ name }}</span>
           <Tag :value="nodeStatuses.get(name) ?? 'unknown'" :severity="nodeStatusSeverity(nodeStatuses.get(name) ?? 'unknown')" />
         </div>
-        <div class="graphs-grid">
+        <div v-if="isNodeExpanded(name)" class="graphs-grid">
           <div class="graph-panel">
             <div class="graph-title"><span class="card-icon cpu-icon">⚡</span> CPU <span class="graph-subtitle">{{ formatNodeResource(name, 'cpu') }}</span></div>
-            <Chart type="line" :data="makeNodeChartData(name, 'cpu', '#f59e0b', 'rgba(245,158,11,0.1)')" :options="chartOptions" class="resource-chart" />
+            <Chart type="line" :key="`cpu-${name}-${chartGeneration}`" :data="makeNodeChartData(name, 'cpu', '#f59e0b', 'rgba(245,158,11,0.1)')" :options="chartOptions" class="resource-chart" />
           </div>
           <div class="graph-panel">
             <div class="graph-title"><span class="card-icon mem-icon">🧠</span> Memory <span class="graph-subtitle">{{ formatNodeResource(name, 'memory') }}</span></div>
-            <Chart type="line" :data="makeNodeChartData(name, 'memory', '#a78bfa', 'rgba(167,139,250,0.1)')" :options="chartOptions" class="resource-chart" />
+            <Chart type="line" :key="`mem-${name}-${chartGeneration}`" :data="makeNodeChartData(name, 'memory', '#a78bfa', 'rgba(167,139,250,0.1)')" :options="chartOptions" class="resource-chart" />
           </div>
           <div class="graph-panel">
             <div class="graph-title"><span class="card-icon storage-icon">💾</span> Storage <span class="graph-subtitle">{{ formatNodeResource(name, 'storage') }}</span></div>
-            <Chart type="line" :data="makeNodeChartData(name, 'storage', '#6366f1', 'rgba(99,102,241,0.1)')" :options="chartOptions" class="resource-chart" />
+            <Chart type="line" :key="`stor-${name}-${chartGeneration}`" :data="makeNodeChartData(name, 'storage', '#6366f1', 'rgba(99,102,241,0.1)')" :options="chartOptions" class="resource-chart" />
           </div>
           <div class="graph-panel">
             <div class="graph-title"><span class="card-icon cap-icon">📦</span> Pod Cap. <span class="graph-subtitle">{{ formatNodeResource(name, 'podCap') }}</span></div>
-            <Chart type="line" :data="makeNodeChartData(name, 'podCap', '#ec4899', 'rgba(236,72,153,0.1)')" :options="chartOptions" class="resource-chart" />
+            <Chart type="line" :key="`pod-${name}-${chartGeneration}`" :data="makeNodeChartData(name, 'podCap', '#ec4899', 'rgba(236,72,153,0.1)')" :options="chartOptions" class="resource-chart" />
           </div>
         </div>
       </div>
@@ -108,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount, triggerRef } from 'vue';
 import { useStarkApi } from '../composables/useStarkApi';
 
 /* ── Types ── */
@@ -176,8 +177,23 @@ const nodeResources = ref<Map<string, PerNodeResources>>(new Map());
 const nodeStatuses = ref<Map<string, string>>(new Map());
 const nodeNames = ref<string[]>([]);
 const timeLabels = ref<string[]>([]);
+const chartGeneration = ref(0);
+const expandedNodes = ref<Set<string>>(new Set());
 
 const api = useStarkApi();
+
+/* ── Collapsible node sections ── */
+
+function isNodeExpanded(name: string): boolean {
+  return expandedNodes.value.has(name);
+}
+
+function toggleNodeSection(name: string) {
+  const s = new Set(expandedNodes.value);
+  if (s.has(name)) s.delete(name);
+  else s.add(name);
+  expandedNodes.value = s;
+}
 
 /* ── Formatters ── */
 
@@ -263,9 +279,13 @@ const chartOptions = {
 
 function makeNodeChartData(name: string, metric: 'cpu' | 'memory' | 'storage' | 'podCap', borderColor: string, bgColor: string) {
   const history = nodeHistories.value.get(name);
-  const data = history ? [...history[metric]] : [];
+  const raw = history ? [...history[metric]] : [];
+  const labels = [...timeLabels.value];
+  // Pad data to match labels length so Chart.js doesn't misalign or drop points
+  const padCount = labels.length - raw.length;
+  const data = padCount > 0 ? [...new Array(padCount).fill(null), ...raw] : raw;
   return {
-    labels: [...timeLabels.value],
+    labels,
     datasets: [{
       data,
       borderColor,
@@ -378,6 +398,18 @@ async function fetchResources() {
       nodeStatuses.value.set(n.name, n.status);
     }
 
+    // Expand new nodes by default
+    const expanded = expandedNodes.value;
+    for (const n of nodes) {
+      if (!expanded.has(n.name)) expanded.add(n.name);
+    }
+    expandedNodes.value = new Set(expanded);
+
+    // Force reactivity on Map-based refs so charts re-render
+    triggerRef(nodeHistories);
+    triggerRef(nodeResources);
+    triggerRef(nodeStatuses);
+
     hasData.value = true;
     errorMsg.value = '';
   } catch (err: unknown) {
@@ -388,7 +420,21 @@ async function fetchResources() {
   }
 }
 
+function resetState() {
+  nodeHistories.value = new Map();
+  nodeResources.value = new Map();
+  nodeStatuses.value = new Map();
+  nodeNames.value = [];
+  timeLabels.value = [];
+  expandedNodes.value = new Set();
+  chartGeneration.value++;
+  hasData.value = false;
+  loading.value = true;
+  errorMsg.value = '';
+}
+
 onMounted(() => {
+  resetState();
   fetchResources();
   intervalId = setInterval(fetchResources, 1000);
 });
@@ -513,6 +559,19 @@ onBeforeUnmount(() => {
   background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, transparent 100%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   border-left: 3px solid #3b82f6;
+  cursor: pointer;
+  user-select: none;
+}
+
+.node-section-header:hover {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.12) 0%, transparent 100%);
+}
+
+.chevron-icon {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex-shrink: 0;
+  transition: transform 0.15s;
 }
 
 .node-section-icon {

@@ -66,7 +66,7 @@
         class="secrets-table"
       >
         <template #groupheader="{ data }">
-          <div class="group-header">
+          <div class="group-header" @click="toggleGroup(data.namespace)">
             <i :class="['pi', expandedGroups.includes(data.namespace) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
             <span class="ns-icon">🔐</span>
             <span class="ns-name">{{ data.namespace }}</span>
@@ -267,6 +267,15 @@ const namespaceCounts = computed(() => {
 });
 
 /* ── Helpers ── */
+
+function toggleGroup(groupKey: string) {
+  const idx = expandedGroups.value.indexOf(groupKey);
+  if (idx >= 0) {
+    expandedGroups.value = expandedGroups.value.filter((k) => k !== groupKey);
+  } else {
+    expandedGroups.value = [...expandedGroups.value, groupKey];
+  }
+}
 
 function typeSeverity(type: string): string {
   switch (type) {
@@ -559,6 +568,12 @@ onBeforeUnmount(() => {
   padding: 6px 12px;
   background: linear-gradient(90deg, rgba(245, 158, 11, 0.08) 0%, transparent 100%);
   border-left: 3px solid #f59e0b;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, transparent 100%);
 }
 
 .chevron-icon {

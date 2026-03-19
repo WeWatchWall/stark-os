@@ -39,7 +39,7 @@
       class="pods-table"
     >
       <template #groupheader="{ data }">
-        <div class="group-header">
+        <div class="group-header" @click="toggleGroup(data.groupKey)">
           <i :class="['pi', expandedGroups.includes(data.groupKey) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
           <span class="machine-badge">{{ data.machineIndex }}</span>
           <span class="node-icon">⎈</span>
@@ -165,6 +165,15 @@ const api = useStarkApi();
 const toast = useToast();
 
 /* ── Helpers ── */
+
+function toggleGroup(groupKey: string) {
+  const idx = expandedGroups.value.indexOf(groupKey);
+  if (idx >= 0) {
+    expandedGroups.value = expandedGroups.value.filter((k) => k !== groupKey);
+  } else {
+    expandedGroups.value = [...expandedGroups.value, groupKey];
+  }
+}
 
 function shortUuid(uuid: string): string {
   return uuid.split('-')[0] ?? uuid.substring(0, 8);
@@ -419,6 +428,12 @@ onBeforeUnmount(() => {
   border-left: 3px solid #3b82f6;
   white-space: nowrap;
   flex: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%);
 }
 
 .chevron-icon {

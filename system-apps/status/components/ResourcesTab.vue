@@ -324,6 +324,14 @@ async function fetchResources() {
     const stopped = pods.filter((p) => p.status === 'stopped').length;
     resources.pods = { total: pods.length, running, pending, failed, stopped };
 
+    // Count actual running/active pods per node (instead of server's allocated.pods which drifts)
+    const actualPodsByNode = new Map<string, number>();
+    for (const p of pods) {
+      if (p.nodeId && ['running', 'pending', 'scheduled', 'starting'].includes(p.status)) {
+        actualPodsByNode.set(p.nodeId, (actualPodsByNode.get(p.nodeId) ?? 0) + 1);
+      }
+    }
+
     // Aggregate resources
     let totalCpu = 0;
     let allocCpu = 0;
@@ -337,6 +345,7 @@ async function fetchResources() {
     for (const n of nodes) {
       const alloc = n.allocatable ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
       const used = n.allocated ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
+      const actualPods = actualPodsByNode.get(n.id) ?? 0;
       totalCpu += alloc.cpu;
       allocCpu += used.cpu;
       totalMem += alloc.memory;
@@ -344,7 +353,7 @@ async function fetchResources() {
       totalStorage += alloc.storage;
       allocStorage += used.storage;
       totalPodCap += alloc.pods;
-      allocPodCap += used.pods;
+      allocPodCap += actualPods;
     }
 
     resources.cpu = { total: totalCpu, allocated: allocCpu };
@@ -385,16 +394,17 @@ async function fetchResources() {
       }
       const alloc = n.allocatable ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
       const used = n.allocated ?? { cpu: 0, memory: 0, pods: 0, storage: 0 };
+      const actualPods = actualPodsByNode.get(n.id) ?? 0;
       pushHistory(history.cpu, pct(used.cpu, alloc.cpu));
       pushHistory(history.memory, pct(used.memory, alloc.memory));
       pushHistory(history.storage, pct(used.storage, alloc.storage));
-      pushHistory(history.podCap, pct(used.pods, alloc.pods));
+      pushHistory(history.podCap, pct(actualPods, alloc.pods));
 
       nodeResources.value.set(n.name, {
         cpu: { total: alloc.cpu, allocated: used.cpu },
         memory: { total: alloc.memory, allocated: used.memory },
         storage: { total: alloc.storage, allocated: used.storage },
-        podCap: { total: alloc.pods, allocated: used.pods },
+        podCap: { total: alloc.pods, allocated: actualPods },
       });
       nodeStatuses.value.set(n.name, n.status);
     }

@@ -95,6 +95,21 @@ html, body, #app, #__nuxt {
   background: rgba(59, 130, 246, 0.06) !important;
 }
 
+/* PrimeVue 4 row group header overrides */
+.p-datatable .p-datatable-row-group-header {
+  background: #181818 !important;
+}
+
+.p-datatable .p-datatable-row-group-header td {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Hide PrimeVue's default row group toggle button — we render our own chevron */
+.p-datatable .p-datatable-row-group-header .p-datatable-row-toggle-button {
+  display: none !important;
+}
+
+/* Legacy class names (PrimeVue 3 compat) */
 .p-datatable .p-rowgroup-header {
   background: #181818 !important;
 }
@@ -103,11 +118,7 @@ html, body, #app, #__nuxt {
   border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
-/* Hide PrimeVue's default row group toggle button — we render our own chevron */
-.p-datatable .p-rowgroup-header button,
-.p-datatable .p-row-toggler,
-.p-datatable .p-datatable-row-toggle-button,
-.p-datatable-row-toggle-button {
+.p-datatable .p-rowgroup-header .p-row-toggler {
   display: none !important;
 }
 

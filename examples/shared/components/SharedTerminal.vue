@@ -88,6 +88,17 @@ onMounted(async () => {
     fitAddon.fit();
   }
 
+  // Ctrl+C: let the browser handle native copy when text is selected,
+  // otherwise let xterm send \x03 to the onData handler for ^C interrupt.
+  term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+    if (event.ctrlKey && event.key === 'c' && event.type === 'keydown') {
+      if (term.hasSelection()) {
+        return false; // browser handles copy
+      }
+    }
+    return true;
+  });
+
   // Resize terminal when window resizes (debounced to avoid loops)
   window.addEventListener('resize', handleResize);
   document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -114,8 +125,25 @@ onMounted(async () => {
     fs = buildMemoryTerminalFS();
   }
 
-  // Determine initial path from prop
-  const startPath = normalizePath(props.initialPath || '/home', '/');
+  // Determine initial path from prop — may be a file or directory path
+  const rawPath = normalizePath(props.initialPath || '/home', '/');
+
+  // Check if the path points to an existing file (not a directory).
+  // If so, use the parent directory as the starting CWD.
+  let startPath = rawPath;
+  let initialCommand = '';
+  try {
+    const isFile = await fs.exists(rawPath) && !(await fs.isDirectory(rawPath));
+    if (isFile) {
+      // Extract the parent directory
+      const lastSlash = rawPath.lastIndexOf('/');
+      startPath = lastSlash > 0 ? rawPath.slice(0, lastSlash) : '/';
+      // If the file is a .sh.js script, queue it for execution
+      if (rawPath.endsWith('.sh.js')) {
+        initialCommand = `sh.js ${rawPath}`;
+      }
+    }
+  } catch { /* fs not ready or path doesn't exist — treat as directory */ }
 
   const state: ShellState = {
     cwd: startPath,
@@ -609,14 +637,11 @@ onMounted(async () => {
           break;
 
         case '\x03':
-          if (term.hasSelection()) {
-            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
-            term.clearSelection();
-          } else {
-            term.write('^C\r\n');
-            currentLine = ''; cursorPos = 0;
-            writePrompt();
-          }
+          // Selection copy is handled by attachCustomKeyEventHandler above;
+          // \x03 only arrives here when no text is selected → interrupt.
+          term.write('^C\r\n');
+          currentLine = ''; cursorPos = 0;
+          writePrompt();
           break;
 
         case '\x16': {
@@ -702,6 +727,16 @@ onMounted(async () => {
   });
 
   writePrompt();
+
+  // Auto-run .sh.js script when opened via intent system
+  if (initialCommand) {
+    term.write(initialCommand);
+    term.writeln('');
+    isRunning = true;
+    try { await handleCommand(initialCommand); }
+    finally { currentLine = ''; cursorPos = 0; isRunning = false; writePrompt(); }
+  }
+
   term.focus();
 });
 

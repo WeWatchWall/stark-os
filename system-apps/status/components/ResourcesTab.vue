@@ -124,6 +124,7 @@ interface NodeData {
 
 interface PodData {
   id: string;
+  nodeId?: string;
   status: string;
   createdAt: string;
   stoppedAt?: string;

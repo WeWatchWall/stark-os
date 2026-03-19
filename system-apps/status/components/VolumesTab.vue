@@ -63,6 +63,7 @@
       >
         <template #groupheader="{ data }">
           <div class="group-header">
+            <i :class="['pi', expandedGroups.includes(data.groupKey) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
             <span class="group-icon">⎈</span>
             <span class="group-name">{{ data.nodeName }}</span>
             <Tag :value="`${groupCounts[data.groupKey] ?? 0} volume${(groupCounts[data.groupKey] ?? 0) !== 1 ? 's' : ''}`" severity="secondary" />
@@ -408,6 +409,12 @@ onBeforeUnmount(() => {
   padding: 6px 12px;
   background: linear-gradient(90deg, rgba(99, 102, 241, 0.08) 0%, transparent 100%);
   border-left: 3px solid #6366f1;
+}
+
+.chevron-icon {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex-shrink: 0;
 }
 
 .group-icon {

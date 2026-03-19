@@ -40,6 +40,7 @@
     >
       <template #groupheader="{ data }">
         <div class="group-header">
+          <i :class="['pi', expandedGroups.includes(data.groupKey) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
           <span class="machine-badge">{{ data.machineIndex }}</span>
           <span class="node-icon">⎈</span>
           <span class="node-name">{{ data.nodeName }}</span>
@@ -418,6 +419,12 @@ onBeforeUnmount(() => {
   border-left: 3px solid #3b82f6;
   white-space: nowrap;
   flex: 1;
+}
+
+.chevron-icon {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex-shrink: 0;
 }
 
 .machine-badge {

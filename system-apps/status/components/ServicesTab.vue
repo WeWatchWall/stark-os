@@ -40,6 +40,7 @@
     >
       <template #groupheader="{ data }">
         <div class="group-header">
+          <i :class="['pi', expandedGroups.includes(data.namespace) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
           <span class="ns-icon">📁</span>
           <span class="ns-name">{{ data.namespace }}</span>
           <Tag :value="`${namespaceCounts[data.namespace] ?? 0} service${(namespaceCounts[data.namespace] ?? 0) !== 1 ? 's' : ''}`" severity="info" />
@@ -357,6 +358,12 @@ onBeforeUnmount(() => {
   padding: 6px 12px;
   background: linear-gradient(90deg, rgba(34, 197, 94, 0.08) 0%, transparent 100%);
   border-left: 3px solid #22c55e;
+}
+
+.chevron-icon {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex-shrink: 0;
 }
 
 .ns-icon {

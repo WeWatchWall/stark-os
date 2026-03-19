@@ -101,9 +101,14 @@ html, body, #app, #__nuxt {
 
 .p-datatable .p-rowgroup-header td {
   border-color: rgba(255, 255, 255, 0.08) !important;
-  display: flex !important;
-  align-items: center;
-  gap: 8px;
+}
+
+/* Hide PrimeVue's default row group toggle button — we render our own chevron */
+.p-datatable .p-rowgroup-header button,
+.p-datatable .p-row-toggler,
+.p-datatable .p-datatable-row-toggle-button,
+.p-datatable-row-toggle-button {
+  display: none !important;
 }
 
 /* Card dark overrides */

@@ -72,6 +72,7 @@ export interface StarkAPI {
     list(): Promise<unknown>;
     get(name: string): Promise<unknown>;
     create(name: string): Promise<unknown>;
+    update(id: string, updates: Record<string, unknown>): Promise<unknown>;
     delete(name: string): Promise<void>;
     current(): string;
     use(name: string): void;
@@ -79,6 +80,9 @@ export interface StarkAPI {
   secret: {
     list(options?: { namespace?: string }): Promise<unknown>;
     get(name: string, namespace?: string): Promise<unknown>;
+    create(input: Record<string, unknown>): Promise<unknown>;
+    update(name: string, updates: Record<string, unknown>, namespace?: string): Promise<unknown>;
+    delete(name: string, namespace?: string): Promise<void>;
   };
   volume: {
     list(options?: { nodeNameOrId?: string }): Promise<unknown>;
@@ -283,6 +287,8 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
   const apiPatch = (path: string, body?: unknown) =>
     apiFetch(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined });
   const apiDelete = (path: string) => apiFetch(path, { method: 'DELETE' });
+  const apiPut = (path: string, body?: unknown) =>
+    apiFetch(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined });
 
   return {
     auth: {
@@ -402,6 +408,7 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       async list() { return handleResponse<unknown>(await apiGet('/api/namespaces')); },
       async get(name: string) { return handleResponse<unknown>(await apiGet(`/api/namespaces/name/${encodeURIComponent(name)}`)); },
       async create(name: string) { return handleResponse<unknown>(await apiPost('/api/namespaces', { name })); },
+      async update(id: string, updates: Record<string, unknown>) { return handleResponse<unknown>(await apiPut(`/api/namespaces/${id}`, updates)); },
       async delete(name: string) { await handleDeleteResponse(await apiDelete(`/api/namespaces/name/${encodeURIComponent(name)}`)); },
       current() { return currentNamespace; },
       use(name: string) { currentNamespace = name; },
@@ -416,6 +423,17 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
       async get(name: string, namespace?: string) {
         const ns = namespace ?? 'default';
         return handleResponse<unknown>(await apiGet(`/api/secrets/name/${encodeURIComponent(name)}?namespace=${ns}`));
+      },
+      async create(input: Record<string, unknown>) {
+        return handleResponse<unknown>(await apiPost('/api/secrets', input));
+      },
+      async update(name: string, updates: Record<string, unknown>, namespace?: string) {
+        const ns = namespace ?? 'default';
+        return handleResponse<unknown>(await apiPatch(`/api/secrets/name/${encodeURIComponent(name)}?namespace=${ns}`, updates));
+      },
+      async delete(name: string, namespace?: string) {
+        const ns = namespace ?? 'default';
+        await handleDeleteResponse(await apiDelete(`/api/secrets/name/${encodeURIComponent(name)}?namespace=${ns}`));
       },
     },
     volume: {

@@ -8,6 +8,8 @@
         <Tab value="events">Events</Tab>
         <Tab value="services">Services</Tab>
         <Tab value="volumes">Volumes</Tab>
+        <Tab value="secrets">Secrets</Tab>
+        <Tab value="namespaces">Namespaces</Tab>
         <Tab value="policies">Network</Tab>
       </TabList>
       <TabPanels>
@@ -26,6 +28,12 @@
         <TabPanel value="volumes">
           <VolumesTab />
         </TabPanel>
+        <TabPanel value="secrets">
+          <SecretsTab />
+        </TabPanel>
+        <TabPanel value="namespaces">
+          <NamespacesTab />
+        </TabPanel>
         <TabPanel value="policies">
           <NetworkPoliciesTab />
         </TabPanel>
@@ -41,6 +49,8 @@ import ResourcesTab from '../components/ResourcesTab.vue';
 import EventsTab from '../components/EventsTab.vue';
 import ServicesTab from '../components/ServicesTab.vue';
 import VolumesTab from '../components/VolumesTab.vue';
+import SecretsTab from '../components/SecretsTab.vue';
+import NamespacesTab from '../components/NamespacesTab.vue';
 import NetworkPoliciesTab from '../components/NetworkPoliciesTab.vue';
 
 const activeTab = ref('pods');

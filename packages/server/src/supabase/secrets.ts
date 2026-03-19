@@ -217,6 +217,39 @@ export class SecretQueries {
   }
 
   /**
+   * List all secrets with full encrypted data (for server-side key counting).
+   * The encrypted fields allow the API handler to compute keyCount
+   * without this module performing decryption.
+   */
+  async listSecretsFull(filters?: {
+    namespace?: string;
+    type?: SecretType;
+  }): Promise<SecretResult<Secret[]>> {
+    let query = this.client
+      .from('secrets')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (filters?.namespace) {
+      query = query.eq('namespace', filters.namespace);
+    }
+    if (filters?.type) {
+      query = query.eq('type', filters.type);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return { data: null, error };
+    }
+
+    return {
+      data: (data as SecretRow[]).map(rowToSecret),
+      error: null,
+    };
+  }
+
+  /**
    * Update a secret (data must already be encrypted if changing)
    */
   async updateSecret(

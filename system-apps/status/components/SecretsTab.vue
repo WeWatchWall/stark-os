@@ -27,8 +27,6 @@
           <input v-model="newSecret.namespace" placeholder="Namespace" class="form-input" />
           <select v-model="newSecret.type" class="form-select">
             <option value="opaque">Opaque</option>
-            <option value="tls">TLS</option>
-            <option value="docker-registry">Docker Registry</option>
           </select>
           <select v-model="newSecret.injectionMode" class="form-select">
             <option value="env">Env</option>
@@ -154,25 +152,31 @@
           <button class="dialog-close" @click="editDialog.show = false">&times;</button>
         </div>
         <div class="dialog-body">
-          <div class="dialog-field">
-            <label class="dialog-label">Data (key=value pairs, one per line)</label>
-            <textarea v-model="editDialog.dataText" rows="6" class="dialog-textarea" placeholder="KEY=value&#10;ANOTHER_KEY=another_value"></textarea>
+          <div v-if="editDialog.loading" class="state-msg" style="padding: 20px;">
+            <ProgressSpinner style="width: 18px; height: 18px" strokeWidth="5" />
+            <span>Loading key names…</span>
           </div>
-          <div class="dialog-field">
-            <label class="dialog-label">Injection Mode</label>
-            <select v-model="editDialog.injectionMode" class="dialog-select">
-              <option value="env">Env</option>
-              <option value="volume">Volume</option>
-            </select>
-          </div>
-          <div v-if="editDialog.injectionMode === 'env'" class="dialog-field">
-            <label class="dialog-label">Env Prefix (optional)</label>
-            <input v-model="editDialog.envPrefix" class="dialog-input" placeholder="MY_APP_" />
-          </div>
-          <div v-if="editDialog.injectionMode === 'volume'" class="dialog-field">
-            <label class="dialog-label">Mount Path</label>
-            <input v-model="editDialog.mountPath" class="dialog-input" placeholder="/etc/secrets" />
-          </div>
+          <template v-else>
+            <div class="dialog-field">
+              <label class="dialog-label">Data (key=value pairs, one per line — replace &lt;redacted&gt; to update)</label>
+              <textarea v-model="editDialog.dataText" rows="6" class="dialog-textarea" placeholder="KEY=value&#10;ANOTHER_KEY=another_value"></textarea>
+            </div>
+            <div class="dialog-field">
+              <label class="dialog-label">Injection Mode</label>
+              <select v-model="editDialog.injectionMode" class="dialog-select">
+                <option value="env">Env</option>
+                <option value="volume">Volume</option>
+              </select>
+            </div>
+            <div v-if="editDialog.injectionMode === 'env'" class="dialog-field">
+              <label class="dialog-label">Env Prefix (optional)</label>
+              <input v-model="editDialog.envPrefix" class="dialog-input" placeholder="MY_APP_" />
+            </div>
+            <div v-if="editDialog.injectionMode === 'volume'" class="dialog-field">
+              <label class="dialog-label">Mount Path</label>
+              <input v-model="editDialog.mountPath" class="dialog-input" placeholder="/etc/secrets" />
+            </div>
+          </template>
         </div>
         <div class="dialog-footer">
           <Button label="Cancel" severity="secondary" size="small" text @click="editDialog.show = false" />
@@ -241,6 +245,7 @@ const createDialog = reactive({
 const editDialog = reactive({
   show: false,
   saving: false,
+  loading: false,
   name: '',
   namespace: '',
   injectionMode: 'env',
@@ -334,14 +339,35 @@ async function createSecret() {
 
 /* ── Edit dialog ── */
 
-function openEditDialog(row: SecretRow) {
+async function openEditDialog(row: SecretRow) {
   editDialog.name = row.name;
   editDialog.namespace = row.namespace;
   editDialog.injectionMode = row.injectionMode;
   editDialog.dataText = '';
   editDialog.envPrefix = '';
   editDialog.mountPath = '';
+  editDialog.loading = true;
   editDialog.show = true;
+
+  // Fetch key names from server to pre-populate with redacted values
+  try {
+    const result = await api.secret.get(row.name, row.namespace) as { secret: { keyNames?: string[]; injection?: { mode: string; prefix?: string; mountPath?: string } } };
+    const keyNames: string[] = result.secret?.keyNames ?? [];
+    if (keyNames.length > 0) {
+      editDialog.dataText = keyNames.map((k) => `${k}=<redacted>`).join('\n');
+    }
+    // Pre-fill injection settings from the fetched data
+    const inj = result.secret?.injection;
+    if (inj) {
+      editDialog.injectionMode = inj.mode ?? 'env';
+      editDialog.envPrefix = inj.prefix ?? '';
+      editDialog.mountPath = inj.mountPath ?? '';
+    }
+  } catch {
+    // If fetch fails, leave empty — user can still edit
+  } finally {
+    editDialog.loading = false;
+  }
 }
 
 async function saveEdit() {
@@ -350,7 +376,15 @@ async function saveEdit() {
     const updates: Record<string, unknown> = {};
     const dataText = editDialog.dataText.trim();
     if (dataText) {
-      updates.data = parseKeyValueText(dataText);
+      // Parse key=value pairs, filtering out unchanged redacted entries
+      const parsed = parseKeyValueText(dataText);
+      const changed: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (v !== '<redacted>') changed[k] = v;
+      }
+      if (Object.keys(changed).length > 0) {
+        updates.data = changed;
+      }
     }
     updates.injection = buildInjection(editDialog.injectionMode, editDialog.envPrefix, editDialog.mountPath);
     await api.secret.update(editDialog.name, updates, editDialog.namespace);

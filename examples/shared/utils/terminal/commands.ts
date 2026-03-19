@@ -248,7 +248,27 @@ describe('history',  'Show command history hint',              'history');
 describe('help',     'Display available commands or command help', 'help [command]');
 describe('sh.js',    'Execute a .sh.js script',               'sh.js <file> [args]...');
 // Orchestrator
-describe('stark',    'Stark OS orchestrator CLI',              'stark <subcommand> [options]');
+describe('stark',    'Stark OS orchestrator CLI — manage pods, services, nodes, packs, and more',
+  'stark <command> <action> [options]\n\n' +
+  '  Commands:\n' +
+  '    auth        Authentication (login, logout, whoami, status, setup, add-user)\n' +
+  '    pack        Pack management (list, versions, info, delete)\n' +
+  '    node        Node management (list, status, agent start, logs, delete)\n' +
+  '    pod         Pod management (create, list, status, stop, rollback, history, logs)\n' +
+  '    service     Service management (create, list, status)\n' +
+  '    namespace   Namespace management (create, list, get, delete, use, current)\n' +
+  '    secret      Secret management (list, get)\n' +
+  '    volume      Volume management (create, list, download, sync)\n' +
+  '    chaos       Chaos testing (status, enable, disable, scenarios)\n' +
+  '    network     Network management (policies, registry)\n' +
+  '    config      CLI configuration (get, set)\n' +
+  '    status      Show cluster status\n\n' +
+  '  Examples:\n' +
+  '    stark auth login --email admin@example.com\n' +
+  '    stark pod ls\n' +
+  '    stark pod create my-pack --namespace production\n' +
+  '    stark service create my-pack --replicas 3\n' +
+  '    stark node ls');
 // Git
 describe('git',      'Git version control',                    'git <subcommand> [options]');
 
@@ -1812,21 +1832,41 @@ commands['stark'] = async (ctx) => {
   const dt = (data: unknown, text: string): CommandResult => ({ data, text });
 
   if (!subcmd || subcmd === 'help') {
-    return dt({ commands: ['auth', 'pack', 'node', 'pod', 'service', 'namespace', 'secret', 'volume', 'chaos', 'network', 'config', 'status', 'help'] }, 'Stark Orchestrator CLI\n\n' +
+    return dt(
+      { commands: ['auth', 'pack', 'node', 'pod', 'service', 'namespace', 'secret', 'volume', 'chaos', 'network', 'config', 'status'] },
+      'Stark Orchestrator CLI\n\n' +
       'Commands:\n' +
-      '  stark auth        Authentication (login, logout, whoami, status, setup, add-user)\n' +
-      '  stark pack        Pack management (list, versions, info, delete)\n' +
-      '  stark node        Node management (list, status, agent start, logs)\n' +
-      '  stark pod         Pod management (create, list, status, stop, rollback, history, logs)\n' +
-      '  stark service     Service management (create, list, status)\n' +
-      '  stark namespace   Namespace management (create, list, get, delete, use, current)\n' +
-      '  stark secret      Secret management (list, get)\n' +
-      '  stark volume      Volume management (create, list, download, sync)\n' +
-      '  stark chaos       Chaos testing (status, enable, disable, scenarios)\n' +
-      '  stark network     Network management (policies, registry)\n' +
-      '  stark config      Show/set CLI configuration\n' +
-      '  stark status      Show cluster status\n' +
-      '  stark help        Show this help\n');
+      '  stark auth        Authentication & user management\n' +
+      '                      login, logout, whoami, status, setup, add-user, list-users\n' +
+      '  stark pack        Application package management\n' +
+      '                      list, versions, info, delete\n' +
+      '  stark node        Cluster node management\n' +
+      '                      list, status, agent start, logs, delete\n' +
+      '  stark pod         Pod (container instance) management\n' +
+      '                      create, list, status, stop, rollback, history, logs\n' +
+      '  stark service     Managed service definitions\n' +
+      '                      create, list, status\n' +
+      '  stark namespace   Namespace isolation & quotas\n' +
+      '                      create, list, get, delete, use, current\n' +
+      '  stark secret      Encrypted secret management\n' +
+      '                      list, get\n' +
+      '  stark volume      Persistent volume management\n' +
+      '                      create, list, download, sync\n' +
+      '  stark chaos       Chaos testing & fault injection\n' +
+      '                      status, enable, disable, scenarios, connections, nodes, events, reset\n' +
+      '  stark network     Network policies & service registry\n' +
+      '                      policies, registry\n' +
+      '  stark config      CLI configuration\n' +
+      '                      get, set <key> <value>\n' +
+      '  stark status      Show cluster authentication & API status\n' +
+      '\nRun \'stark <command> help\' for detailed usage on any command.\n' +
+      '\nExamples:\n' +
+      '  stark auth login                      # Interactive login\n' +
+      '  stark pod ls                           # List running pods\n' +
+      '  stark pod create my-pack               # Deploy a pod from a pack\n' +
+      '  stark service create my-pack -n prod   # Create a managed service\n' +
+      '  stark node ls                          # List cluster nodes\n' +
+      '  stark volume sync                      # Sync remote volumes locally\n');
   }
 
   try {
@@ -1939,7 +1979,26 @@ commands['stark'] = async (ctx) => {
               ],
             ));
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown auth subcommand: ${action}\nAvailable: login, logout, whoami, status, setup, add-user, list-users\n`);
+          default: {
+            const helpText =
+              'stark auth — Authentication & user management\n\n' +
+              'Actions:\n' +
+              '  login         Log in to the orchestrator\n' +
+              '                  --email/-e <email>  --password/-p <pass>\n' +
+              '  logout        Log out and clear credentials\n' +
+              '  whoami        Show current user info (email, ID, roles)\n' +
+              '  status        Show authentication status\n' +
+              '  setup         First-time admin account setup (interactive)\n' +
+              '  add-user      Create a new user (admin only)\n' +
+              '                  --email/-e <email>  --role/-r <roles>\n' +
+              '  list-users    List all users (admin only)\n' +
+              '\nExamples:\n' +
+              '  stark auth login --email admin@example.com\n' +
+              '  stark auth login                          # interactive prompts\n' +
+              '  stark auth add-user --email dev@co.com --role developer\n';
+            if (!action || action === 'help') return dt({ actions: ['login', 'logout', 'whoami', 'status', 'setup', 'add-user', 'list-users'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown auth action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'pack': {
@@ -2001,7 +2060,24 @@ commands['stark'] = async (ctx) => {
             }));
           }
           case 'delete': case 'rm': { const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark pack delete <name>\n'); await api.pack.delete(n); return dt({ success: true, name: n }, `✓ Pack deleted: ${n}\n`); }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown pack subcommand: ${action}\nAvailable: list, versions, info, delete\n`);
+          default: {
+            const helpText =
+              'stark pack — Application package management\n\n' +
+              'Actions:\n' +
+              '  list / ls     List all registered packs\n' +
+              '  versions      Show all versions of a pack\n' +
+              '                  stark pack versions <name>\n' +
+              '  info          Show detailed pack information\n' +
+              '                  stark pack info <name>\n' +
+              '  delete / rm   Delete a pack by name\n' +
+              '                  stark pack delete <name>\n' +
+              '\nExamples:\n' +
+              '  stark pack ls\n' +
+              '  stark pack info my-app\n' +
+              '  stark pack versions my-app\n';
+            if (!action || action === 'help') return dt({ actions: ['list', 'versions', 'info', 'delete'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown pack action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'node': {
@@ -2129,7 +2205,27 @@ commands['stark'] = async (ctx) => {
             await api.node.delete(n);
             return dt({ success: true, name: n }, `✓ Node deleted: ${n}\n`);
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown node subcommand: ${action}\nAvailable: list, status, agent, logs, delete\n`);
+          default: {
+            const helpText =
+              'stark node — Cluster node management\n\n' +
+              'Actions:\n' +
+              '  list / ls     List all cluster nodes with resource usage\n' +
+              '  status        Show detailed node info, resources, labels, taints\n' +
+              '                  stark node status <name>\n' +
+              '  agent start   Start a browser-based node agent\n' +
+              '                  --name/-n <name>  --url/-u <ws-url>  --token <jwt>\n' +
+              '  logs          View node logs\n' +
+              '                  stark node logs <name> [--tail <n>]\n' +
+              '  delete / rm   Remove a node from the cluster\n' +
+              '                  stark node delete <name>\n' +
+              '\nExamples:\n' +
+              '  stark node ls\n' +
+              '  stark node status my-node\n' +
+              '  stark node agent start --name browser-1\n' +
+              '  stark node logs my-node --tail 50\n';
+            if (!action || action === 'help') return dt({ actions: ['list', 'status', 'agent', 'logs', 'delete'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown node action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'pod': {
@@ -2286,7 +2382,33 @@ commands['stark'] = async (ctx) => {
             }
             return dt({ entries, id }, out);
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown pod subcommand: ${action}\nAvailable: create, list, status, stop, rollback, history, logs\n`);
+          default: {
+            const helpText =
+              'stark pod — Pod (container instance) management\n\n' +
+              'Actions:\n' +
+              '  create / run  Deploy a new pod from a pack\n' +
+              '                  stark pod create <pack> [--namespace/-n <ns>] [--arg/-a <value>]...\n' +
+              '  list / ls     List running and recent pods\n' +
+              '                  [--namespace/-n <ns>] [--status/-s <status>]\n' +
+              '  status        Show detailed pod status\n' +
+              '                  stark pod status <podId>\n' +
+              '  stop          Stop a running pod\n' +
+              '                  stark pod stop <podId>\n' +
+              '  rollback      Roll back pod to its previous version\n' +
+              '                  stark pod rollback <podId>\n' +
+              '  history       Show pod lifecycle history\n' +
+              '                  stark pod history <podId>\n' +
+              '  logs          View pod logs\n' +
+              '                  stark pod logs <podId> [--tail/-t <n>]\n' +
+              '\nExamples:\n' +
+              '  stark pod ls\n' +
+              '  stark pod create my-app --namespace production\n' +
+              '  stark pod create my-app --arg "--port=8080" --arg "--debug"\n' +
+              '  stark pod logs <id> --tail 100\n' +
+              '  stark pod stop <id>\n';
+            if (!action || action === 'help') return dt({ actions: ['create', 'list', 'status', 'stop', 'rollback', 'history', 'logs'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown pod action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'service': {
@@ -2370,7 +2492,26 @@ commands['stark'] = async (ctx) => {
             out += `ℹ Use 'stark service status ${service.name ?? pack}' to check progress.\n`;
             return dt({ service, success: true }, out);
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown service subcommand: ${action}\nAvailable: create, list, status\n`);
+          default: {
+            const helpText =
+              'stark service — Managed service definitions\n\n' +
+              'Actions:\n' +
+              '  create        Create a managed service from a pack\n' +
+              '                  stark service create <pack> [--name <n>] [--replicas <r>]\n' +
+              '                  [--namespace <ns>] [--arg/-a <value>]...\n' +
+              '  list / ls     List all services\n' +
+              '                  [--namespace/-n <ns>]\n' +
+              '  status        Show detailed service status\n' +
+              '                  stark service status <name>\n' +
+              '\nServices automatically create and manage pods. They support\n' +
+              'replica, daemon, and dynamic scaling modes.\n' +
+              '\nExamples:\n' +
+              '  stark service ls\n' +
+              '  stark service create my-app --replicas 3 --namespace prod\n' +
+              '  stark service status my-app-svc\n';
+            if (!action || action === 'help') return dt({ actions: ['create', 'list', 'status'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown service action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'namespace': case 'ns': {
@@ -2446,7 +2587,27 @@ commands['stark'] = async (ctx) => {
             api.namespace.use(n);
             return dt({ success: true, namespace: n }, `✓ Default namespace set to: ${n}\n`);
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown namespace subcommand: ${action}\nAvailable: create, list, get, delete, current, use\n`);
+          default: {
+            const helpText =
+              'stark namespace — Namespace isolation & resource quotas\n\n' +
+              'Actions:\n' +
+              '  create        Create a new namespace\n' +
+              '                  stark namespace create <name>\n' +
+              '  list / ls     List all namespaces with quotas\n' +
+              '  get           Show detailed namespace info & quotas\n' +
+              '                  stark namespace get <name>\n' +
+              '  delete / rm   Delete a namespace\n' +
+              '                  stark namespace delete <name>\n' +
+              '  current       Show the current default namespace\n' +
+              '  use           Set the default namespace for subsequent commands\n' +
+              '                  stark namespace use <name>\n' +
+              '\nExamples:\n' +
+              '  stark namespace create staging\n' +
+              '  stark namespace use production\n' +
+              '  stark ns ls\n';
+            if (!action || action === 'help') return dt({ actions: ['create', 'list', 'get', 'delete', 'current', 'use'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown namespace action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'secret': {
@@ -2493,7 +2654,21 @@ commands['stark'] = async (ctx) => {
             out += '\n⚠ Secret values are encrypted and never displayed.\n';
             return dt(secret, out);
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown secret subcommand: ${action}\nAvailable: list, get\n`);
+          default: {
+            const helpText =
+              'stark secret — Encrypted secret management\n\n' +
+              'Actions:\n' +
+              '  list / ls     List secrets in a namespace\n' +
+              '                  [--namespace/-n <ns>]\n' +
+              '  get           Show secret metadata (values are never displayed)\n' +
+              '                  stark secret get <name> [--namespace/-n <ns>]\n' +
+              '\n⚠ Secret values are encrypted at rest and never shown in the CLI.\n' +
+              '\nExamples:\n' +
+              '  stark secret ls\n' +
+              '  stark secret get db-credentials --namespace prod\n';
+            if (!action || action === 'help') return dt({ actions: ['list', 'get'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown secret action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'volume': {
@@ -2558,7 +2733,25 @@ commands['stark'] = async (ctx) => {
             }
             return dt({ success: true, synced }, `✓ Synced ${synced} volume directories into /volumes/.\n`);
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown volume subcommand: ${action}\nAvailable: list, create, download, sync\n`);
+          default: {
+            const helpText =
+              'stark volume — Persistent volume management\n\n' +
+              'Actions:\n' +
+              '  list / ls     List all volumes\n' +
+              '                  [--node/-n <name>]\n' +
+              '  create        Create a new volume on a node\n' +
+              '                  stark volume create <name> --node <nodeName>\n' +
+              '  download      Download a volume as a zip archive\n' +
+              '                  stark volume download <name> --node <nodeName> [--out-file/-O <path>]\n' +
+              '  sync          Sync remote volume directories into local /volumes/\n' +
+              '\nExamples:\n' +
+              '  stark volume ls\n' +
+              '  stark volume create app-data --node my-node\n' +
+              '  stark volume download app-data --node my-node -O /tmp/backup.zip\n' +
+              '  stark volume sync\n';
+            if (!action || action === 'help') return dt({ actions: ['list', 'create', 'download', 'sync'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown volume action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'chaos': {
@@ -2634,7 +2827,26 @@ commands['stark'] = async (ctx) => {
           }
           case 'events': { const evts = await api.chaos.events(); return dt(evts, JSON.stringify(evts, null, 2) + '\n'); }
           case 'reset': { await api.chaos.reset(); return dt({ success: true }, '✓ Chaos state reset\n'); }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown chaos subcommand: ${action}\nAvailable: status, enable, disable, scenarios, connections, nodes, events, reset\n`);
+          default: {
+            const helpText =
+              'stark chaos — Chaos testing & fault injection\n\n' +
+              'Actions:\n' +
+              '  status        Show chaos mode status and statistics\n' +
+              '  enable        Enable chaos mode (⚠ can disrupt services)\n' +
+              '  disable       Disable chaos mode\n' +
+              '  scenarios     List available chaos scenarios with options\n' +
+              '  connections   Show active WebSocket connections\n' +
+              '  nodes         Show connected nodes\n' +
+              '  events        Show raw chaos events as JSON\n' +
+              '  reset         Reset all chaos state\n' +
+              '\nExamples:\n' +
+              '  stark chaos status\n' +
+              '  stark chaos enable\n' +
+              '  stark chaos scenarios\n' +
+              '  stark chaos connections\n';
+            if (!action || action === 'help') return dt({ actions: ['status', 'enable', 'disable', 'scenarios', 'connections', 'nodes', 'events', 'reset'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown chaos action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'network': {
@@ -2647,7 +2859,18 @@ commands['stark'] = async (ctx) => {
             const data = await api.network.registry() as Record<string, unknown>;
             return dt(data, JSON.stringify(data, null, 2) + '\n');
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown network subcommand: ${action}\nAvailable: policies, registry\n`);
+          default: {
+            const helpText =
+              'stark network — Network policies & service registry\n\n' +
+              'Actions:\n' +
+              '  policies      Show all network policies (JSON)\n' +
+              '  registry      Show the service registry — all pods registered per service (JSON)\n' +
+              '\nExamples:\n' +
+              '  stark network policies\n' +
+              '  stark network registry\n';
+            if (!action || action === 'help') return dt({ actions: ['policies', 'registry'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown network action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'server-config': {
@@ -2656,7 +2879,16 @@ commands['stark'] = async (ctx) => {
             const data = await api.serverConfig.get() as Record<string, unknown>;
             return dt(data, JSON.stringify(data, null, 2) + '\n');
           }
-          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown server-config subcommand: ${action}\nAvailable: get\n`);
+          default: {
+            const helpText =
+              'stark server-config — Server-side configuration\n\n' +
+              'Actions:\n' +
+              '  get           Show current server configuration (JSON)\n' +
+              '\nExamples:\n' +
+              '  stark server-config get\n';
+            if (!action || action === 'help') return dt({ actions: ['get'] }, helpText);
+            return dt({ error: `unknown subcommand: ${action}` }, `Unknown server-config action: ${action}\n\n${helpText}`);
+          }
         }
       }
       case 'config': {

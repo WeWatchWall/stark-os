@@ -6,8 +6,13 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { commands, commandDescriptions, normalizePath, type CommandContext, type TerminalFS } from '../utils/commands';
+import { commands, commandDescriptions, normalizePath, unwrapResult, type CommandContext, type TerminalFS } from '../utils/commands';
 import { tokenize, parseCommandLine, executePlan, type ShellState } from '../utils/shell';
+
+/** Extract the CLI text from a command handler result (string or CommandResult). */
+function text(result: string | { data: unknown; text: string }): string {
+  return unwrapResult(result).text;
+}
 
 // ============================================================================
 // In-memory TerminalFS for testing
@@ -165,6 +170,23 @@ describe('normalizePath', () => {
 });
 
 // ============================================================================
+// unwrapResult Tests
+// ============================================================================
+
+describe('unwrapResult', () => {
+  it('should pass through a string as both data and text', () => {
+    const result = unwrapResult('hello\n');
+    expect(result).toEqual({ data: 'hello\n', text: 'hello\n' });
+  });
+
+  it('should pass through a CommandResult as-is', () => {
+    const input = { data: { path: '/home' }, text: '/home\n' };
+    const result = unwrapResult(input);
+    expect(result).toBe(input);
+  });
+});
+
+// ============================================================================
 // Command Tests
 // ============================================================================
 
@@ -173,7 +195,9 @@ describe('Terminal Commands', () => {
     it('should return current directory', async () => {
       const ctx = await createContextWithFS({ cwd: '/home' });
       const result = await commands['pwd']!(ctx);
-      expect(result).toBe('/home\n');
+      expect(text(result)).toBe('/home\n');
+      // Structured data
+      expect(unwrapResult(result).data).toEqual({ path: '/home' });
     });
   });
 
@@ -181,13 +205,15 @@ describe('Terminal Commands', () => {
     it('should echo text with newline', async () => {
       const ctx = await createContextWithFS({ args: ['hello', 'world'] });
       const result = await commands['echo']!(ctx);
-      expect(result).toBe('hello world\n');
+      expect(text(result)).toBe('hello world\n');
+      expect(unwrapResult(result).data).toEqual({ output: 'hello world' });
     });
 
     it('should support -n flag', async () => {
       const ctx = await createContextWithFS({ args: ['-n', 'hello'] });
       const result = await commands['echo']!(ctx);
-      expect(result).toBe('hello');
+      expect(text(result)).toBe('hello');
+      expect(unwrapResult(result).data).toEqual({ output: 'hello' });
     });
   });
 
@@ -242,13 +268,13 @@ describe('Terminal Commands', () => {
       await fs.writeFile('/home/test.txt', 'hello');
       const ctx = await createContextWithFS({ args: ['test.txt'], fs });
       const result = await commands['cat']!(ctx);
-      expect(result).toBe('hello');
+      expect(text(result)).toBe('hello');
     });
 
     it('should pass through stdin if no args', async () => {
       const ctx = await createContextWithFS({ stdin: 'piped input' });
       const result = await commands['cat']!(ctx);
-      expect(result).toBe('piped input');
+      expect(text(result)).toBe('piped input');
     });
   });
 
@@ -281,8 +307,8 @@ describe('Terminal Commands', () => {
       await fs.writeFile('/home/file2.txt', 'b');
       const ctx = await createContextWithFS({ fs });
       const result = await commands['ls']!(ctx);
-      expect(result).toContain('file1.txt');
-      expect(result).toContain('file2.txt');
+      expect(text(result)).toContain('file1.txt');
+      expect(text(result)).toContain('file2.txt');
     });
   });
 
@@ -316,14 +342,14 @@ describe('Terminal Commands', () => {
       await fs.writeFile('/home/test.txt', 'hello\nworld\nhello world');
       const ctx = await createContextWithFS({ args: ['hello', 'test.txt'], fs });
       const result = await commands['grep']!(ctx);
-      expect(result).toContain('hello');
-      expect(result).toContain('hello world');
+      expect(text(result)).toContain('hello');
+      expect(text(result)).toContain('hello world');
     });
 
     it('should work with piped input', async () => {
       const ctx = await createContextWithFS({ args: ['world'], stdin: 'hello\nworld\nfoo' });
       const result = await commands['grep']!(ctx);
-      expect(result).toBe('world\n');
+      expect(text(result)).toBe('world\n');
     });
   });
 
@@ -345,8 +371,8 @@ describe('Terminal Commands', () => {
     it('should count lines, words, and chars', async () => {
       const ctx = await createContextWithFS({ stdin: 'hello world\nfoo bar' });
       const result = await commands['wc']!(ctx);
-      expect(result).toContain('2');
-      expect(result).toContain('4');
+      expect(text(result)).toContain('2');
+      expect(text(result)).toContain('4');
     });
   });
 
@@ -354,7 +380,7 @@ describe('Terminal Commands', () => {
     it('should return username', async () => {
       const ctx = await createContextWithFS();
       const result = await commands['whoami']!(ctx);
-      expect(result).toBe('testuser\n');
+      expect(text(result)).toBe('testuser\n');
     });
   });
 
@@ -362,7 +388,7 @@ describe('Terminal Commands', () => {
     it('should return hostname', async () => {
       const ctx = await createContextWithFS();
       const result = await commands['hostname']!(ctx);
-      expect(result).toBe('test-host\n');
+      expect(text(result)).toBe('test-host\n');
     });
   });
 
@@ -378,7 +404,7 @@ describe('Terminal Commands', () => {
     it('should list environment variables', async () => {
       const ctx = await createContextWithFS();
       const result = await commands['env']!(ctx);
-      expect(result).toContain('USER=testuser');
+      expect(text(result)).toContain('USER=testuser');
     });
   });
 
@@ -698,15 +724,15 @@ describe('New Terminal Commands', () => {
     it('should show help when called with no args', async () => {
       const ctx = await createContextWithFS();
       const result = await commands['stark']!(ctx);
-      expect(result).toContain('Stark Orchestrator CLI');
-      expect(result).toContain('stark auth');
-      expect(result).toContain('stark pod');
+      expect(text(result)).toContain('Stark Orchestrator CLI');
+      expect(text(result)).toContain('stark auth');
+      expect(text(result)).toContain('stark pod');
     });
 
     it('should show help for unknown subcommand', async () => {
       const ctx = await createContextWithFS({ args: ['nonexistent'] });
       const result = await commands['stark']!(ctx);
-      expect(result).toContain('Unknown command');
+      expect(text(result)).toContain('Unknown command');
     });
   });
 
@@ -826,12 +852,60 @@ describe('CommandContext prompt interface', () => {
 });
 
 describe('stark command improvements', () => {
-  it('stark help should list setup and add-user', async () => {
+  it('stark help should list all subcommands with descriptions', async () => {
     const ctx = await createContextWithFS({ args: ['help'] });
     const result = await commands['stark']!(ctx);
-    expect(result).toContain('setup');
-    expect(result).toContain('add-user');
-    expect(result).toContain('sync');
+    const helpText = text(result);
+    // Should contain all major subcommand groups
+    expect(helpText).toContain('stark auth');
+    expect(helpText).toContain('stark pack');
+    expect(helpText).toContain('stark node');
+    expect(helpText).toContain('stark pod');
+    expect(helpText).toContain('stark service');
+    expect(helpText).toContain('stark namespace');
+    expect(helpText).toContain('stark secret');
+    expect(helpText).toContain('stark volume');
+    expect(helpText).toContain('stark chaos');
+    expect(helpText).toContain('stark network');
+    // Should contain examples
+    expect(helpText).toContain('Examples:');
+    // Should contain descriptions (not just names)
+    expect(helpText).toContain('Authentication');
+    expect(helpText).toContain('Pod');
+    // Should mention per-command help
+    expect(helpText).toContain('stark <command> help');
+    // Structured data should list commands
+    const data = unwrapResult(result).data as { commands: string[] };
+    expect(data.commands).toContain('auth');
+    expect(data.commands).toContain('pod');
+    expect(data.commands).toContain('volume');
+  });
+
+  it('stark <subcmd> help should show detailed usage', async () => {
+    const ctx = await createContextWithFS({ args: ['pod', 'help'] });
+    const result = await commands['stark']!(ctx);
+    const helpText = text(result);
+    expect(helpText).toContain('stark pod');
+    expect(helpText).toContain('create');
+    expect(helpText).toContain('list');
+    expect(helpText).toContain('status');
+    expect(helpText).toContain('logs');
+    expect(helpText).toContain('Examples:');
+    expect(helpText).toContain('--namespace');
+    // Structured data should list actions
+    const data = unwrapResult(result).data as { actions: string[] };
+    expect(data.actions).toContain('create');
+    expect(data.actions).toContain('logs');
+  });
+
+  it('stark <subcmd> with no action should show help', async () => {
+    const ctx = await createContextWithFS({ args: ['auth'] });
+    const result = await commands['stark']!(ctx);
+    const helpText = text(result);
+    expect(helpText).toContain('stark auth');
+    expect(helpText).toContain('login');
+    expect(helpText).toContain('logout');
+    expect(helpText).toContain('setup');
   });
 
   it('stark auth login should prompt interactively when no flags', async () => {
@@ -845,7 +919,7 @@ describe('stark command improvements', () => {
     // This will fail the API call but should attempt interactive prompts first
     const result = await commands['stark']!(ctx);
     // Should have tried to authenticate (error expected since no API server)
-    expect(result).toMatch(/stark:|Authenticating|Login failed|fetch/i);
+    expect(text(result)).toMatch(/stark:|Authenticating|Login failed|fetch/i);
   });
 
   it('stark config set should update configuration', async () => {
@@ -866,8 +940,8 @@ describe('stark command improvements', () => {
       }
       const ctx = await createContextWithFS({ args: ['config', 'set', 'apiUrl', 'https://my-server:8080'] });
       const result = await commands['stark']!(ctx);
-      expect(result).toContain('apiUrl');
-      expect(result).toContain('https://my-server:8080');
+      expect(text(result)).toContain('apiUrl');
+      expect(text(result)).toContain('https://my-server:8080');
     } finally {
       // Cleanup
       if (origGetItem) globalThis.localStorage.getItem = origGetItem;
@@ -878,8 +952,8 @@ describe('stark command improvements', () => {
   it('stark config should show current config including resolved apiUrl', async () => {
     const ctx = await createContextWithFS({ args: ['config'] });
     const result = await commands['stark']!(ctx);
-    // Should be valid JSON
-    expect(() => JSON.parse(result)).not.toThrow();
+    // Should be valid JSON text
+    expect(() => JSON.parse(text(result))).not.toThrow();
   });
 
   it('stark auth setup should require prompts', async () => {
@@ -887,7 +961,7 @@ describe('stark command improvements', () => {
     // Without prompt functions, should fail gracefully
     const result = await commands['stark']!(ctx);
     // Will either fail on API or show error about setup
-    expect(result).toBeTruthy();
+    expect(text(result)).toBeTruthy();
   });
 });
 
@@ -1047,7 +1121,7 @@ describe('.sh.js script execution', () => {
     await fs.writeFile('/home/a.txt', 'hello');
     await fs.writeFile('/home/callcmd.sh.js',
       'const out = await Terminal.commands.cat("a.txt");\n' +
-      'Terminal.writeln("cat returned: " + out.trim());'
+      'Terminal.writeln("cat returned: " + out.content);'
     );
     await executePlan(parseCommandLine('./callcmd.sh.js'), state, write);
     expect(output.join('')).toContain('cat returned: hello');
@@ -1081,6 +1155,125 @@ describe('.sh.js script execution', () => {
     // Should have many commands (all registered ones)
     const countMatch = combined.match(/count:(\d+)/);
     expect(Number(countMatch![1])).toBeGreaterThan(50);
+  });
+
+  it('Terminal.commands should return JS objects for commands with structured data', async () => {
+    await fs.writeFile('/home/struct.sh.js',
+      'const pwd = await Terminal.commands.pwd();\n' +
+      'Terminal.writeln("pwd-type:" + typeof pwd);\n' +
+      'Terminal.writeln("pwd-path:" + pwd.path);\n' +
+      'const echo = await Terminal.commands.echo("hello", "world");\n' +
+      'Terminal.writeln("echo-type:" + typeof echo);\n' +
+      'Terminal.writeln("echo-output:" + echo.output);\n'
+    );
+    await executePlan(parseCommandLine('./struct.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('pwd-type:object');
+    expect(combined).toContain('pwd-path:/home');
+    expect(combined).toContain('echo-type:object');
+    expect(combined).toContain('echo-output:hello world');
+  });
+
+  it('Terminal.commands.ls should return entries array', async () => {
+    await fs.writeFile('/home/a.txt', 'content');
+    await fs.mkdir('/home/subdir');
+    await fs.writeFile('/home/lsdata.sh.js',
+      'const result = await Terminal.commands.ls();\n' +
+      'Terminal.writeln("type:" + typeof result);\n' +
+      'Terminal.writeln("has-entries:" + Array.isArray(result.entries));\n' +
+      'const names = result.entries.map(e => e.name).sort();\n' +
+      'Terminal.writeln("names:" + names.join(","));\n' +
+      'const types = result.entries.map(e => e.type).sort();\n' +
+      'Terminal.writeln("has-types:" + types.every(t => t === "file" || t === "directory"));\n'
+    );
+    await executePlan(parseCommandLine('./lsdata.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('type:object');
+    expect(combined).toContain('has-entries:true');
+    expect(combined).toContain('a.txt');
+    expect(combined).toContain('subdir');
+    expect(combined).toContain('has-types:true');
+  });
+
+  it('Terminal.commands.grep should return structured matches', async () => {
+    await fs.writeFile('/home/data.txt', 'apple\nbanana\napricot\ncherry');
+    await fs.writeFile('/home/grepdata.sh.js',
+      'const result = await Terminal.commands.grep("ap", "data.txt");\n' +
+      'Terminal.writeln("count:" + result.count);\n' +
+      'Terminal.writeln("match0:" + result.matches[0].line);\n' +
+      'Terminal.writeln("linenum:" + result.matches[0].lineNumber);\n'
+    );
+    await executePlan(parseCommandLine('./grepdata.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('count:2');
+    expect(combined).toContain('match0:apple');
+    expect(combined).toContain('linenum:1');
+  });
+
+  it('Terminal.commands.wc should return lines/words/chars', async () => {
+    await fs.writeFile('/home/wc.txt', 'hello world\nfoo bar baz');
+    await fs.writeFile('/home/wcdata.sh.js',
+      'const result = await Terminal.commands.wc("wc.txt");\n' +
+      'Terminal.writeln("lines:" + result.lines);\n' +
+      'Terminal.writeln("words:" + result.words);\n'
+    );
+    await executePlan(parseCommandLine('./wcdata.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('lines:2');
+    expect(combined).toContain('words:5');
+  });
+
+  it('Terminal.commands.whoami should return user object', async () => {
+    await fs.writeFile('/home/whoami.sh.js',
+      'const result = await Terminal.commands.whoami();\n' +
+      'Terminal.writeln("user:" + result.user);\n'
+    );
+    await executePlan(parseCommandLine('./whoami.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('user:testuser');
+  });
+
+  it('Terminal.commands.date should return structured date', async () => {
+    await fs.writeFile('/home/datedata.sh.js',
+      'const result = await Terminal.commands.date();\n' +
+      'Terminal.writeln("has-iso:" + (typeof result.iso === "string"));\n' +
+      'Terminal.writeln("has-ts:" + (typeof result.timestamp === "number"));\n'
+    );
+    await executePlan(parseCommandLine('./datedata.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('has-iso:true');
+    expect(combined).toContain('has-ts:true');
+  });
+
+  it('Terminal.commands.env should return env object', async () => {
+    await fs.writeFile('/home/envdata.sh.js',
+      'const result = await Terminal.commands.env();\n' +
+      'Terminal.writeln("user:" + result.USER);\n' +
+      'Terminal.writeln("home:" + result.HOME);\n'
+    );
+    await executePlan(parseCommandLine('./envdata.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('user:testuser');
+    expect(combined).toContain('home:/home');
+  });
+
+  it('Terminal.run should return CLI text, not objects', async () => {
+    await fs.writeFile('/home/runvscommands.sh.js',
+      'const runResult = await Terminal.run("pwd");\n' +
+      'Terminal.writeln("run-type:" + typeof runResult);\n' +
+      'Terminal.writeln("run-value:" + runResult.trim());\n' +
+      'const cmdResult = await Terminal.commands.pwd();\n' +
+      'Terminal.writeln("cmd-type:" + typeof cmdResult);\n' +
+      'Terminal.writeln("cmd-path:" + cmdResult.path);\n'
+    );
+    await executePlan(parseCommandLine('./runvscommands.sh.js'), state, write);
+    const combined = output.join('');
+    // Terminal.run returns a string
+    expect(combined).toContain('run-type:string');
+    expect(combined).toContain('run-value:/home');
+    // Terminal.commands.X() returns a JS object
+    expect(combined).toContain('cmd-type:object');
+    expect(combined).toContain('cmd-path:/home');
   });
 });
 

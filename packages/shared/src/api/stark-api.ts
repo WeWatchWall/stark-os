@@ -29,7 +29,7 @@ export interface StarkAPI {
   auth: {
     login(email: string, password: string): Promise<{ user: { id: string; email: string }; accessToken: string }>;
     logout(): void;
-    whoami(): { email: string; userId: string; username?: string; roles?: string[] } | null;
+    whoami(): Promise<{ email: string; userId: string; username?: string; roles?: string[] } | null>;
     isAuthenticated(): boolean;
     status(): { authenticated: boolean; email?: string; expiresAt?: string };
     /** Update the in-memory access token (called by runtime on auth:token-refreshed) */
@@ -297,7 +297,20 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         return handleResponse<{ accessToken: string; user: { id: string; email: string } }>(response);
       },
       logout() { /* no-op — no localStorage to clear */ },
-      whoami() { return null; /* no persistent credential store */ },
+      async whoami() {
+        try {
+          const response = await apiGet('/auth/whoami');
+          const result = await handleResponse<{ user: { id: string; email: string; username?: string; displayName?: string; roles?: string[] } }>(response);
+          return {
+            email: result.user.email,
+            userId: result.user.id,
+            username: result.user.username,
+            roles: result.user.roles,
+          };
+        } catch {
+          return null;
+        }
+      },
       isAuthenticated() { return !!resolveAccessToken(); },
       status() {
         return { authenticated: !!resolveAccessToken(), email: undefined, expiresAt: undefined };

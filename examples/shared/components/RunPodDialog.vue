@@ -315,7 +315,7 @@ watch(() => props.visible, async (val) => {
   if (!val || !props.app) return;
 
   // Fetch user info for namespace defaulting
-  userInfo.value = fetchUserInfo();
+  userInfo.value = await fetchUserInfo();
 
   // Reset form
   form.nodeId = '';

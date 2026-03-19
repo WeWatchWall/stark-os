@@ -389,9 +389,9 @@ export interface UserInfo {
  * Admin users default to 'default' namespace.
  * Regular users default to their personal namespace (derived from username).
  */
-export function fetchUserInfo(): UserInfo {
+export async function fetchUserInfo(): Promise<UserInfo> {
   const api = createStarkAPI();
-  const info = api.auth.whoami();
+  const info = await api.auth.whoami();
   if (!info) {
     return {
       email: '',

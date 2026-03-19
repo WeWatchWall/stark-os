@@ -144,7 +144,14 @@ export function createStarkAPI(overrides?: Partial<BrowserApiConfig> & { accessT
         return data;
       },
       logout() { clearCredentials(); },
-      whoami() {
+      async whoami() {
+        // Try the server endpoint first for authoritative data
+        try {
+          const result = await base.auth.whoami();
+          if (result) return result;
+        } catch {
+          // Fall back to localStorage credentials
+        }
         const creds = loadCredentials();
         if (!creds || !isAuthenticated()) return null;
         return {

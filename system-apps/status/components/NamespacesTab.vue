@@ -243,7 +243,7 @@ const toast = useToast();
 
 /* ── User context ── */
 
-const userInfo = computed(() => api.auth.whoami());
+const userInfo = ref<{ email: string; userId: string; username?: string; roles?: string[] } | null>(null);
 const isAdmin = computed(() => userInfo.value?.roles?.includes('admin') ?? false);
 const username = computed(() => userInfo.value?.username ?? '');
 const rootNamespace = computed(() => {
@@ -409,7 +409,13 @@ async function deleteNamespace(id: string, name: string) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // Fetch user info for admin detection
+  try {
+    userInfo.value = await api.auth.whoami();
+  } catch {
+    // Leave as null — will default to non-admin behavior
+  }
   refresh();
   refreshIntervalId = setInterval(refresh, 10000);
 });

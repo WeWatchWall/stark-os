@@ -1900,7 +1900,7 @@ commands['stark'] = async (ctx) => {
             ctx.env['USER'] = 'user';
             return dt({ success: true }, '✓ Logged out.\n');
           case 'whoami': {
-            const info = api.auth.whoami();
+            const info = await api.auth.whoami();
             if (!info) return dt({ error: 'not authenticated' }, 'Not authenticated.\n');
             let out = `Email: ${info.email}\nUser ID: ${info.userId}\n`;
             if (info.username) out += `Username: ${info.username}\n`;

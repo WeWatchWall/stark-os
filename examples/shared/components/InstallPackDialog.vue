@@ -272,7 +272,7 @@ watch(() => props.visible, async (val) => {
   if (!val) return;
 
   // Fetch user info for namespace defaulting
-  userInfo.value = fetchUserInfo();
+  userInfo.value = await fetchUserInfo();
 
   // Reset form
   form.name = defaultName.value;

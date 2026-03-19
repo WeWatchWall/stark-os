@@ -203,6 +203,7 @@ async function executePipeline(
 
     // Intercept --help: run the command normally, then append programmatic help
     const wantsHelp = handler && args.includes('--help');
+    const helpInfo = wantsHelp ? commandDescriptions[commandName!] : undefined;
 
     const ctx: CommandContext = {
       args, cwd: state.cwd,
@@ -219,22 +220,15 @@ async function executePipeline(
       const msg = err instanceof Error ? err.message : String(err);
       if (msg) write(`${commandName}: ${msg}\n`);
       // If --help was requested, still append the info even on error
-      if (wantsHelp) {
-        const info = commandDescriptions[commandName!];
-        if (info) {
-          const helpText = `\n${info.name} — ${info.description}\n\nUsage: ${info.usage}\n`;
-          write(helpText);
-        }
+      if (helpInfo) {
+        write(`\n${helpInfo.name} — ${helpInfo.description}\n\nUsage: ${helpInfo.usage}\n`);
       }
       throw err;
     }
 
     // Append programmatic help info after the command's own output
-    if (wantsHelp) {
-      const info = commandDescriptions[commandName!];
-      if (info) {
-        output += `\n${info.name} — ${info.description}\n\nUsage: ${info.usage}\n`;
-      }
+    if (helpInfo) {
+      output += `\n${helpInfo.name} — ${helpInfo.description}\n\nUsage: ${helpInfo.usage}\n`;
     }
 
     // Handle output redirection (async — OPFS)

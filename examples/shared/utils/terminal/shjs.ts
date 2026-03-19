@@ -115,9 +115,9 @@ export async function executeShJs(
       return buffer + result;
     };
     Object.defineProperties(fn, {
-      name:        { value: cmdName,                   configurable: true },
-      description: { value: info?.description ?? '',   enumerable: true },
-      usage:       { value: info?.usage ?? cmdName,    enumerable: true },
+      name:        { value: cmdName,                 configurable: true, enumerable: true },
+      description: { value: info?.description ?? '', enumerable: true },
+      usage:       { value: info?.usage ?? cmdName,  enumerable: true },
     });
     terminalCommands[cmdName] = fn as TerminalCommand;
   }

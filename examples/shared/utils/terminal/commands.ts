@@ -197,12 +197,12 @@ describe('sha384sum', 'Compute SHA-384 checksum',              'sha384sum <file>
 describe('sha512sum', 'Compute SHA-512 checksum',              'sha512sum <file>');
 describe('md5sum',    'Compute MD5 checksum',                  'md5sum <file>');
 describe('sha3sum',      'SHA-3 checksum (not supported in browser)', 'sha3sum <file>');
-describe('sha3-224sum',  'SHA-3-224 checksum (not supported)',        'sha3-224sum <file>');
-describe('sha3-256sum',  'SHA-3-256 checksum (not supported)',        'sha3-256sum <file>');
-describe('sha3-384sum',  'SHA-3-384 checksum (not supported)',        'sha3-384sum <file>');
-describe('sha3-512sum',  'SHA-3-512 checksum (not supported)',        'sha3-512sum <file>');
-describe('shake128sum',  'SHAKE-128 checksum (not supported)',        'shake128sum <file>');
-describe('shake256sum',  'SHAKE-256 checksum (not supported)',        'shake256sum <file>');
+describe('sha3-224sum',  'SHA-3-224 checksum (not supported in browser)',  'sha3-224sum <file>');
+describe('sha3-256sum',  'SHA-3-256 checksum (not supported in browser)',  'sha3-256sum <file>');
+describe('sha3-384sum',  'SHA-3-384 checksum (not supported in browser)',  'sha3-384sum <file>');
+describe('sha3-512sum',  'SHA-3-512 checksum (not supported in browser)',  'sha3-512sum <file>');
+describe('shake128sum',  'SHAKE-128 checksum (not supported in browser)',  'shake128sum <file>');
+describe('shake256sum',  'SHAKE-256 checksum (not supported in browser)',  'shake256sum <file>');
 describe('hashsum',   'Compute hash with specified algorithm', 'hashsum --algo <algo> <file>');
 describe('cksum',     'Compute CRC checksum and byte count',   'cksum <file>...');
 describe('sum',       'Compute checksum and block count',      'sum [-r|-s] <file>...');

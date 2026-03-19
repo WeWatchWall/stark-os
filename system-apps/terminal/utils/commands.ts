@@ -9,8 +9,10 @@
  */
 export {
   commands,
+  commandDescriptions,
   normalizePath,
   type TerminalFS,
   type CommandContext,
   type CommandHandler,
+  type CommandInfo,
 } from '../../../examples/shared/utils/terminal/commands';

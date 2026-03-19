@@ -42,9 +42,11 @@ export {
 
 export {
   commands as terminalCommands,
+  commandDescriptions as terminalCommandDescriptions,
   normalizePath as terminalNormalizePath,
   type TerminalFS,
   type CommandContext,
+  type CommandInfo,
 } from './terminal/commands';
 
 export {
@@ -53,6 +55,11 @@ export {
   type ShellState,
   type ExecutionPlan,
 } from './terminal/shell';
+
+export {
+  type ShJsTerminalAPI,
+  type TerminalCommand,
+} from './terminal/shjs';
 
 // NOTE: fileops.ts is intentionally NOT re-exported from this barrel.
 // It dynamically imports jszip which is heavy.  Apps that need file

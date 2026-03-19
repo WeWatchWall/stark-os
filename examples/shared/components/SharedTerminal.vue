@@ -403,7 +403,10 @@ onMounted(async () => {
     const parts = currentLine.slice(0, cursorPos).split(' ');
     const lastPart = parts[parts.length - 1] || '';
 
-    if (parts.length <= 1) {
+    // Use file path completion when the token contains '/' (e.g. ./script.sh.js, /path/file)
+    const isPathToken = lastPart.includes('/');
+
+    if (parts.length <= 1 && !isPathToken) {
       const matches = Object.keys(commands).filter(c => c.startsWith(lastPart));
       if (matches.length === 1) {
         const completion = matches[0]!.slice(lastPart.length) + ' ';

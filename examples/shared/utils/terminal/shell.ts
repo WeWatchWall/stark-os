@@ -31,7 +31,7 @@
  * @module @stark-o/terminal/utils/shell
  */
 
-import { commands, normalizePath, type CommandContext, type TerminalFS } from './commands';
+import { commands, commandDescriptions, normalizePath, type CommandContext, type TerminalFS } from './commands';
 
 /**
  * Parse a command string into tokens, respecting quotes.
@@ -201,6 +201,9 @@ async function executePipeline(
       throw new Error(`Command not found: ${commandName}`);
     }
 
+    // Intercept --help: run the command normally, then append programmatic help
+    const wantsHelp = handler && args.includes('--help');
+
     const ctx: CommandContext = {
       args, cwd: state.cwd,
       write: isLast ? write : () => {},
@@ -215,7 +218,23 @@ async function executePipeline(
     try { output = await handler(ctx); } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg) write(`${commandName}: ${msg}\n`);
+      // If --help was requested, still append the info even on error
+      if (wantsHelp) {
+        const info = commandDescriptions[commandName!];
+        if (info) {
+          const helpText = `\n${info.name} — ${info.description}\n\nUsage: ${info.usage}\n`;
+          write(helpText);
+        }
+      }
       throw err;
+    }
+
+    // Append programmatic help info after the command's own output
+    if (wantsHelp) {
+      const info = commandDescriptions[commandName!];
+      if (info) {
+        output += `\n${info.name} — ${info.description}\n\nUsage: ${info.usage}\n`;
+      }
     }
 
     // Handle output redirection (async — OPFS)

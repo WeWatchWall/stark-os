@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { commands, normalizePath, type CommandContext, type TerminalFS } from '../utils/commands';
+import { commands, commandDescriptions, normalizePath, type CommandContext, type TerminalFS } from '../utils/commands';
 import { tokenize, parseCommandLine, executePlan, type ShellState } from '../utils/shell';
 
 // ============================================================================
@@ -1041,5 +1041,111 @@ describe('.sh.js script execution', () => {
     await fs.writeFile('/home/pipe.sh.js', 'Terminal.write("pipe output");');
     await executePlan(parseCommandLine('./pipe.sh.js | cat'), state, write);
     expect(output.join('')).toContain('pipe output');
+  });
+
+  it('Terminal.commands should be callable functions that execute commands', async () => {
+    await fs.writeFile('/home/a.txt', 'hello');
+    await fs.writeFile('/home/callcmd.sh.js',
+      'const out = await Terminal.commands.cat("a.txt");\n' +
+      'Terminal.writeln("cat returned: " + out.trim());'
+    );
+    await executePlan(parseCommandLine('./callcmd.sh.js'), state, write);
+    expect(output.join('')).toContain('cat returned: hello');
+  });
+
+  it('Terminal.commands functions should have help metadata', async () => {
+    await fs.writeFile('/home/meta.sh.js',
+      'const ls = Terminal.commands.ls;\n' +
+      'Terminal.writeln("name:" + ls.name);\n' +
+      'Terminal.writeln("desc:" + ls.description);\n' +
+      'Terminal.writeln("usage:" + ls.usage);'
+    );
+    await executePlan(parseCommandLine('./meta.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('name:ls');
+    expect(combined).toContain('desc:List directory contents');
+    expect(combined).toContain('usage:ls [-a] [-l] [path]');
+  });
+
+  it('Terminal.commands should enumerate all registered commands', async () => {
+    await fs.writeFile('/home/enum.sh.js',
+      'const names = Object.keys(Terminal.commands).sort();\n' +
+      'Terminal.writeln("count:" + names.length);\n' +
+      'Terminal.writeln("has-grep:" + ("grep" in Terminal.commands));\n' +
+      'Terminal.writeln("has-ls:" + ("ls" in Terminal.commands));'
+    );
+    await executePlan(parseCommandLine('./enum.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('has-grep:true');
+    expect(combined).toContain('has-ls:true');
+    // Should have many commands (all registered ones)
+    const countMatch = combined.match(/count:(\d+)/);
+    expect(Number(countMatch![1])).toBeGreaterThan(50);
+  });
+});
+
+// ============================================================================
+// Per-command help and --help enhancement tests
+// ============================================================================
+
+describe('help command and --help enhancement', () => {
+  let fs: TerminalFS;
+  let state: ShellState;
+  let output: string[];
+  const write = (t: string) => output.push(t);
+
+  beforeEach(async () => {
+    fs = createMemoryFS();
+    await fs.mkdir('/home');
+    await fs.mkdir('/tmp');
+    output = [];
+    state = { cwd: '/home', fs, env: { USER: 'testuser', HOME: '/home' } };
+  });
+
+  it('help <command> should show description and usage', async () => {
+    const ctx = await createContextWithFS({ args: ['ls'] });
+    const result = await commands['help']!(ctx);
+    expect(result).toContain('ls');
+    expect(result).toContain('List directory contents');
+    expect(result).toContain('Usage: ls [-a] [-l] [path]');
+  });
+
+  it('help for unknown command should report no entry', async () => {
+    const ctx = await createContextWithFS({ args: ['nonexistent'] });
+    const result = await commands['help']!(ctx);
+    expect(result).toContain("no help entry for 'nonexistent'");
+  });
+
+  it('help with no args should list all commands and mention help <command>', async () => {
+    const ctx = await createContextWithFS();
+    const result = await commands['help']!(ctx);
+    expect(result).toContain('help <command>');
+    expect(result).toContain('ls');
+    expect(result).toContain('grep');
+  });
+
+  it('--help flag should append programmatic info to command output', async () => {
+    await executePlan(parseCommandLine('echo --help'), state, write);
+    const combined = output.join('');
+    // echo should still produce its own output (printing "--help")
+    expect(combined).toContain('--help');
+    // and the programmatic help should be appended
+    expect(combined).toContain('echo — Print arguments to stdout');
+    expect(combined).toContain('Usage: echo [text]...');
+  });
+
+  it('--help on ls should enhance with description and usage', async () => {
+    await executePlan(parseCommandLine('ls --help'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('ls — List directory contents');
+    expect(combined).toContain('Usage: ls [-a] [-l] [path]');
+  });
+
+  it('commandDescriptions should have entries for all described commands', () => {
+    expect(commandDescriptions['ls']).toBeDefined();
+    expect(commandDescriptions['ls']!.name).toBe('ls');
+    expect(commandDescriptions['grep']).toBeDefined();
+    expect(commandDescriptions['git']).toBeDefined();
+    expect(commandDescriptions['stark']).toBeDefined();
   });
 });

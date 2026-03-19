@@ -8,8 +8,27 @@
  * @module @stark-o/terminal/utils/shjs
  */
 
-import { normalizePath, type TerminalFS } from './commands';
+import { commands, commandDescriptions, normalizePath, type TerminalFS, type CommandInfo } from './commands';
 import { parseCommandLine, executePlan, type ShellState } from './shell';
+
+/**
+ * A callable command function exposed via Terminal.commands.
+ * Call it directly with arguments; inspect `.name`, `.description`, `.usage`
+ * for programmatic help.
+ *
+ * @example
+ *   const output = await Terminal.commands.ls("-l", "/home");
+ *   Terminal.writeln(Terminal.commands.ls.description);
+ */
+export interface TerminalCommand {
+  (...args: string[]): Promise<string>;
+  /** Command name */
+  readonly name: string;
+  /** Human-readable description */
+  readonly description: string;
+  /** Usage / synopsis string */
+  readonly usage: string;
+}
 
 /**
  * Terminal API exposed to .sh.js scripts as the `Terminal` global.
@@ -28,6 +47,27 @@ export interface ShJsTerminalAPI {
   writeFile(path: string, content: string): Promise<void>;
   readdir(path: string): Promise<string[]>;
   args: string[];
+  /**
+   * All available terminal commands as callable async functions.
+   *
+   * Each function accepts positional string arguments (same as the CLI) and
+   * returns the command's stdout as a string.  Help metadata is available on
+   * the function itself:
+   *
+   * @example
+   *   // Call a command programmatically (no shell parsing)
+   *   const listing = await Terminal.commands.ls("-l", "/home");
+   *
+   *   // Inspect help
+   *   Terminal.writeln(Terminal.commands.ls.description); // "List directory contents"
+   *   Terminal.writeln(Terminal.commands.ls.usage);       // "ls [-a] [-l] [path]"
+   *
+   *   // Enumerate all commands
+   *   for (const [name, cmd] of Object.entries(Terminal.commands)) {
+   *     Terminal.writeln(`${name} — ${cmd.description}`);
+   *   }
+   */
+  commands: Record<string, TerminalCommand>;
 }
 
 /**
@@ -53,8 +93,39 @@ export async function executeShJs(
     return '';
   }
 
+  // Build callable Terminal.commands — each is an async function with help props
+  const terminalCommands: Record<string, TerminalCommand> = {};
+  for (const [cmdName, handler] of Object.entries(commands)) {
+    const info = commandDescriptions[cmdName];
+    const fn = async (...callArgs: string[]): Promise<string> => {
+      let buffer = '';
+      const captureWrite = (text: string) => { buffer += text; };
+      const ctx = {
+        args: callArgs,
+        cwd: state.cwd,
+        write: captureWrite,
+        writeError: captureWrite,
+        fs: state.fs,
+        env: state.env,
+        setCwd: (path: string) => { state.cwd = path; if (state.setCwd) state.setCwd(path); },
+        prompt: state.prompt,
+        promptPassword: state.promptPassword,
+      };
+      const result = await handler(ctx);
+      return buffer + result;
+    };
+    Object.defineProperties(fn, {
+      name:        { value: cmdName,                   configurable: true },
+      description: { value: info?.description ?? '',   enumerable: true },
+      usage:       { value: info?.usage ?? cmdName,    enumerable: true },
+    });
+    terminalCommands[cmdName] = fn as TerminalCommand;
+  }
+
   const terminalAPI: ShJsTerminalAPI = {
     args,
+
+    commands: terminalCommands,
 
     write(text: string) {
       write(text.replaceAll('\n', '\r\n'));

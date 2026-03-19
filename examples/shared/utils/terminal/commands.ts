@@ -101,9 +101,132 @@ export interface CommandContext {
 export type CommandHandler = (ctx: CommandContext) => Promise<string>;
 
 /**
+ * Metadata for a single command (exposed via the Terminal.commands API).
+ */
+export interface CommandInfo {
+  name: string;
+  description: string;
+  usage: string;
+}
+
+/**
  * Registry of all available commands
  */
 export const commands: Record<string, CommandHandler> = {};
+
+/**
+ * Descriptions and usage strings for every registered command.
+ * Used by `help <cmd>` and exposed to .sh.js scripts via `Terminal.commands`.
+ */
+export const commandDescriptions: Record<string, CommandInfo> = {};
+
+/** Helper to register description + usage alongside a command handler. */
+function describe(name: string, description: string, usage: string): void {
+  commandDescriptions[name] = { name, description, usage };
+}
+
+// -- Command descriptions (used by `help <cmd>` and Terminal.commands in .sh.js) --
+// File System
+describe('ls',       'List directory contents',                'ls [-a] [-l] [path]');
+describe('cd',       'Change working directory',               'cd [path]');
+describe('pwd',      'Print working directory',                'pwd');
+describe('mkdir',    'Create directories',                     'mkdir [-p] <path>...');
+describe('touch',    'Create empty file or update timestamp',  'touch <file>...');
+describe('cat',      'Concatenate and print files',            'cat <file>...');
+describe('echo',     'Print arguments to stdout',              'echo [text]...');
+describe('rm',       'Remove files or directories',            'rm [-r] [-f] <path>...');
+describe('cp',       'Copy files',                             'cp <source> <dest>');
+describe('mv',       'Move or rename files',                   'mv <source> <dest>');
+describe('head',     'Output the first part of files',         'head [-n N] [file]');
+describe('tail',     'Output the last part of files',          'tail [-n N] [file]');
+describe('wc',       'Count lines, words, and bytes',          'wc [file]');
+describe('grep',     'Search for patterns in text',            'grep [-i] [-v] [-n] [-c] <pattern> [file]');
+describe('sort',     'Sort lines of text',                     'sort [-r] [-n] [-u] [file]');
+describe('uniq',     'Report or omit repeated lines',          'uniq [-c] [-d] [-u] [file]');
+describe('tee',      'Duplicate stdin to file and stdout',     'tee [-a] <file>');
+describe('find',     'Search for files in directory tree',     'find [path] [-name pattern] [-type f|d]');
+describe('du',       'Estimate file space usage',              'du [-s] [-h] [path]');
+describe('df',       'Report filesystem disk space usage',     'df');
+describe('rmdir',    'Remove empty directories',               'rmdir [-p] <path>...');
+describe('basename', 'Strip directory from filename',          'basename <path> [suffix]');
+describe('dirname',  'Strip last component from path',         'dirname <path>');
+describe('readlink', 'Print resolved symbolic links',          'readlink [-f] <path>');
+describe('realpath', 'Print the resolved path',                'realpath <path>');
+describe('relpath',  'Print relative path from base to target','relpath <target> [base]');
+describe('link',     'Create a hard link (copy)',              'link <source> <dest>');
+describe('ln',       'Create a link (copy)',                   'ln [-s] <source> <dest>');
+describe('mktemp',   'Create a temporary file or directory',   'mktemp [-d] [-p dir] [template]');
+describe('shred',    'Overwrite file contents and remove',     'shred [-u] <file>...');
+describe('truncate', 'Shrink or extend file size',             'truncate -s <size> <file>');
+describe('split',    'Split a file into pieces',               'split [-l lines] [-b bytes] [file] [prefix]');
+// Text Processing
+describe('tr',       'Translate or delete characters',         'tr <set1> <set2>');
+describe('cut',      'Remove sections from lines',             'cut -d <delim> -f <fields> [file]');
+describe('seq',      'Print a sequence of numbers',            'seq [first] [increment] <last>');
+describe('yes',      'Output a string repeatedly',             'yes [string]');
+describe('xargs',    'Build and execute command lines',        'xargs <command> [args]');
+describe('tac',      'Concatenate and print files in reverse', 'tac [file]');
+describe('nl',       'Number lines of files',                  'nl [file]');
+describe('expand',   'Convert tabs to spaces',                 'expand [-t N] [file]');
+describe('unexpand', 'Convert spaces to tabs',                 'unexpand [-t N] [file]');
+describe('fold',     'Wrap lines to specified width',          'fold [-w N] [-s] [file]');
+describe('fmt',      'Simple text formatter',                  'fmt [-w N] [file]');
+describe('comm',     'Compare two sorted files line by line',  'comm [-1] [-2] [-3] <file1> <file2>');
+describe('join',     'Join lines on a common field',           'join [-t delim] [-1 F] [-2 F] <file1> <file2>');
+describe('paste',    'Merge lines of files',                   'paste [-d delim] <file>...');
+describe('od',       'Dump files in octal and other formats',  'od [-A radix] [-t type] [file]');
+describe('more',     'Page through text (alias for cat)',      'more [file]');
+describe('shuf',     'Generate random permutations',           'shuf [-n count] [file]');
+describe('tsort',    'Topological sort',                       'tsort [file]');
+describe('csplit',   'Split file based on context',            'csplit <file> <pattern> [repeat]');
+describe('printf',   'Format and print data',                  'printf <format> [args]...');
+describe('printenv', 'Print environment variables',            'printenv [name]');
+describe('ptx',      'Produce permuted index of file',        'ptx [file]');
+describe('dircolors','Output commands to set LS_COLORS',       'dircolors [-b|-c]');
+describe('factor',   'Print prime factors of a number',        'factor <number>...');
+describe('expr',     'Evaluate expressions',                   'expr <expression>');
+describe('test',     'Evaluate conditional expression',        'test <expression>');
+// Encoding
+describe('base64',   'Base64 encode/decode',                   'base64 [-d] [file]');
+describe('base32',   'Base32 encode/decode',                   'base32 [-d] [file]');
+// Hashing
+describe('sha1sum',   'Compute SHA-1 checksum',               'sha1sum <file>');
+describe('sha224sum', 'Compute SHA-224 checksum',              'sha224sum <file>');
+describe('sha256sum', 'Compute SHA-256 checksum',              'sha256sum <file>');
+describe('sha384sum', 'Compute SHA-384 checksum',              'sha384sum <file>');
+describe('sha512sum', 'Compute SHA-512 checksum',              'sha512sum <file>');
+describe('md5sum',    'Compute MD5 checksum',                  'md5sum <file>');
+describe('sha3sum',      'SHA-3 checksum (not supported in browser)', 'sha3sum <file>');
+describe('sha3-224sum',  'SHA-3-224 checksum (not supported)',        'sha3-224sum <file>');
+describe('sha3-256sum',  'SHA-3-256 checksum (not supported)',        'sha3-256sum <file>');
+describe('sha3-384sum',  'SHA-3-384 checksum (not supported)',        'sha3-384sum <file>');
+describe('sha3-512sum',  'SHA-3-512 checksum (not supported)',        'sha3-512sum <file>');
+describe('shake128sum',  'SHAKE-128 checksum (not supported)',        'shake128sum <file>');
+describe('shake256sum',  'SHAKE-256 checksum (not supported)',        'shake256sum <file>');
+describe('hashsum',   'Compute hash with specified algorithm', 'hashsum --algo <algo> <file>');
+describe('cksum',     'Compute CRC checksum and byte count',   'cksum <file>...');
+describe('sum',       'Compute checksum and block count',      'sum [-r|-s] <file>...');
+// System / Shell
+describe('date',     'Display the current date and time',      'date');
+describe('whoami',   'Print effective user name',              'whoami');
+describe('hostname', 'Print system hostname',                  'hostname');
+describe('uname',    'Print system information',               'uname [-a]');
+describe('uptime',   'Show how long the system has been running','uptime');
+describe('env',      'Print environment variables',            'env');
+describe('export',   'Set an environment variable',            'export <KEY>=<VALUE>');
+describe('which',    'Locate a command',                       'which <command>');
+describe('type',     'Describe a command',                     'type <command>');
+describe('true',     'Do nothing, successfully',               'true');
+describe('false',    'Do nothing, unsuccessfully',             'false');
+describe('sleep',    'Delay for a specified time',             'sleep <seconds>');
+describe('clear',    'Clear the terminal screen',              'clear');
+describe('history',  'Show command history hint',              'history');
+describe('help',     'Display available commands or command help', 'help [command]');
+describe('sh.js',    'Execute a .sh.js script',               'sh.js <file> [args]...');
+// Orchestrator
+describe('stark',    'Stark OS orchestrator CLI',              'stark <subcommand> [options]');
+// Git
+describe('git',      'Git version control',                    'git <subcommand> [options]');
 
 // ============================================================================
 // File System Commands (all async, backed by OPFS)
@@ -477,7 +600,17 @@ commands['clear'] = async (ctx) => { ctx.write('\x1B[2J\x1B[H'); return ''; };
 
 commands['history'] = async () => 'History is available via up/down arrow keys.\n';
 
-commands['help'] = async () => {
+commands['help'] = async (ctx) => {
+  const target = ctx.args[0];
+
+  // Per-command help: `help <command>`
+  if (target) {
+    const info = commandDescriptions[target];
+    if (!info) return `help: no help entry for '${target}'\n`;
+    return `${info.name} — ${info.description}\n\nUsage: ${info.usage}\n`;
+  }
+
+  // General listing
   const cmds = Object.keys(commands).sort();
   let result = 'Available commands:\n\n';
   const columns = 4;
@@ -489,6 +622,7 @@ commands['help'] = async () => {
   result += '\nFilesystem is backed by OPFS. Volumes are visible at /volumes/<name>.\n';
   result += 'Pipe with |, run in background with &, chain with &&\n';
   result += '.sh.js files: run with `sh.js <file>` or `./file.sh.js` — gets Terminal API\n';
+  result += '\nType `help <command>` for detailed info on a specific command.\n';
   return result;
 };
 

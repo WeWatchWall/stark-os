@@ -31,7 +31,7 @@
  * @module @stark-o/terminal/utils/shell
  */
 
-import { commands, commandDescriptions, normalizePath, type CommandContext, type TerminalFS } from './commands';
+import { commands, commandDescriptions, normalizePath, unwrapResult, type CommandContext, type TerminalFS } from './commands';
 
 /**
  * Parse a command string into tokens, respecting quotes.
@@ -216,7 +216,10 @@ async function executePipeline(
     };
 
     let output: string;
-    try { output = await handler(ctx); } catch (err) {
+    try {
+      const raw = await handler(ctx);
+      output = unwrapResult(raw).text;
+    } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg) write(`${commandName}: ${msg}\n`);
       // If --help was requested, still append the info even on error

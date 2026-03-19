@@ -8,20 +8,26 @@
  * @module @stark-o/terminal/utils/shjs
  */
 
-import { commands, commandDescriptions, normalizePath, type TerminalFS, type CommandInfo } from './commands';
+import { commands, commandDescriptions, normalizePath, unwrapResult, type TerminalFS, type CommandInfo } from './commands';
 import { parseCommandLine, executePlan, type ShellState } from './shell';
 
 /**
  * A callable command function exposed via Terminal.commands.
- * Call it directly with arguments; inspect `.name`, `.description`, `.usage`
- * for programmatic help.
+ *
+ * Returns the command's **structured data** (a plain JS object).
+ * Use `Terminal.run()` instead if you want the formatted CLI text.
+ *
+ * Inspect `.name`, `.description`, `.usage` for programmatic help.
  *
  * @example
- *   const output = await Terminal.commands.ls("-l", "/home");
- *   Terminal.writeln(Terminal.commands.ls.description);
+ *   const entries = await Terminal.commands.ls("-l", "/home");
+ *   Terminal.writeln(JSON.stringify(entries));
+ *
+ *   const result = await Terminal.commands.stark("pod", "ls");
+ *   Terminal.writeln('Pods: ' + JSON.stringify(result));
  */
 export interface TerminalCommand {
-  (...args: string[]): Promise<string>;
+  (...args: string[]): Promise<unknown>;
   /** Command name */
   readonly name: string;
   /** Human-readable description */
@@ -36,6 +42,7 @@ export interface TerminalCommand {
 export interface ShJsTerminalAPI {
   write(text: string): void;
   writeln(text: string): void;
+  /** Execute a shell command string. Returns the **formatted CLI text** output. */
   run(command: string): Promise<string>;
   prompt(message: string): Promise<string>;
   promptPassword(message: string): Promise<string>;
@@ -51,12 +58,19 @@ export interface ShJsTerminalAPI {
    * All available terminal commands as callable async functions.
    *
    * Each function accepts positional string arguments (same as the CLI) and
-   * returns the command's stdout as a string.  Help metadata is available on
-   * the function itself:
+   * returns the command's **structured data** as a JS object.
+   * Use `Terminal.run()` if you want formatted CLI text instead.
+   *
+   * Help metadata is available on the function itself:
    *
    * @example
-   *   // Call a command programmatically (no shell parsing)
-   *   const listing = await Terminal.commands.ls("-l", "/home");
+   *   // Call a command programmatically — returns structured data
+   *   const entries = await Terminal.commands.ls("/home");
+   *   Terminal.writeln(JSON.stringify(entries));
+   *
+   *   // Contrast with Terminal.run — returns CLI text
+   *   const text = await Terminal.run("ls /home");
+   *   Terminal.writeln(text); // formatted columns
    *
    *   // Inspect help
    *   Terminal.writeln(Terminal.commands.ls.description); // "List directory contents"
@@ -93,26 +107,25 @@ export async function executeShJs(
     return '';
   }
 
-  // Build callable Terminal.commands — each is an async function with help props
+  // Build callable Terminal.commands — each returns structured data (JS object)
   const terminalCommands: Record<string, TerminalCommand> = {};
   for (const [cmdName, handler] of Object.entries(commands)) {
     const info = commandDescriptions[cmdName];
-    const fn = async (...callArgs: string[]): Promise<string> => {
-      let buffer = '';
-      const captureWrite = (text: string) => { buffer += text; };
+    const fn = async (...callArgs: string[]): Promise<unknown> => {
+      const noop = () => {};
       const ctx = {
         args: callArgs,
         cwd: state.cwd,
-        write: captureWrite,
-        writeError: captureWrite,
+        write: noop,
+        writeError: noop,
         fs: state.fs,
         env: state.env,
         setCwd: (path: string) => { state.cwd = path; if (state.setCwd) state.setCwd(path); },
         prompt: state.prompt,
         promptPassword: state.promptPassword,
       };
-      const result = await handler(ctx);
-      return buffer + result;
+      const raw = await handler(ctx);
+      return unwrapResult(raw).data;
     };
     Object.defineProperties(fn, {
       name:        { value: cmdName,                 configurable: true, enumerable: true },

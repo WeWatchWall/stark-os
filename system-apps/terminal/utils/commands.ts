@@ -11,8 +11,10 @@ export {
   commands,
   commandDescriptions,
   normalizePath,
+  unwrapResult,
   type TerminalFS,
   type CommandContext,
   type CommandHandler,
   type CommandInfo,
+  type CommandResult,
 } from '../../../examples/shared/utils/terminal/commands';

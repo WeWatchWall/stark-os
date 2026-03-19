@@ -44,9 +44,11 @@ export {
   commands as terminalCommands,
   commandDescriptions as terminalCommandDescriptions,
   normalizePath as terminalNormalizePath,
+  unwrapResult as terminalUnwrapResult,
   type TerminalFS,
   type CommandContext,
   type CommandInfo,
+  type CommandResult,
 } from './terminal/commands';
 
 export {

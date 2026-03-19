@@ -96,9 +96,33 @@ export interface CommandContext {
 }
 
 /**
- * Command handler function — all async since OPFS is async
+ * Structured result returned by commands that separate data from display text.
+ *
+ * - `data` — a plain JS object (JSON-serializable) for programmatic consumers
+ * - `text` — the human-readable CLI representation written to the terminal
+ *
+ * Commands may also return a plain string for convenience; the shell treats
+ * a bare string as `{ data: theString, text: theString }`.
  */
-export type CommandHandler = (ctx: CommandContext) => Promise<string>;
+export interface CommandResult {
+  data: unknown;
+  text: string;
+}
+
+/**
+ * Command handler function — all async since OPFS is async.
+ *
+ * Handlers may return either:
+ * - a plain string (backward-compatible, used as both data and display text)
+ * - a `CommandResult` (structured data + display text)
+ */
+export type CommandHandler = (ctx: CommandContext) => Promise<string | CommandResult>;
+
+/** Unwrap a handler return value into a normalised CommandResult. */
+export function unwrapResult(raw: string | CommandResult): CommandResult {
+  if (typeof raw === 'string') return { data: raw, text: raw };
+  return raw;
+}
 
 /**
  * Metadata for a single command (exposed via the Terminal.commands API).
@@ -243,13 +267,35 @@ commands['ls'] = async (ctx) => {
     const isDir = await ctx.fs.isDirectory(resolvedPath);
     if (!isDir) {
       const isF = await ctx.fs.isFile(resolvedPath);
-      if (isF) return `${target}\n`;
+      if (isF) return { data: { entries: [{ name: target, type: 'file' }] }, text: `${target}\n` };
       return `ls: cannot access '${target}': No such file or directory\n`;
     }
 
     const entries = await ctx.fs.readdirWithTypes(resolvedPath);
     const names = entries.map(e => e.name);
     const filtered = showAll ? ['.', '..', ...names] : names;
+
+    // Build structured data
+    const dataEntries: Array<{ name: string; type: string; size?: number; mtime?: string }> = [];
+    for (const name of filtered) {
+      if (name === '.' || name === '..') {
+        dataEntries.push({ name, type: 'directory' });
+        continue;
+      }
+      const entry = entries.find(e => e.name === name)!;
+      const rec: { name: string; type: string; size?: number; mtime?: string } = {
+        name, type: entry.isDirectory() ? 'directory' : 'file',
+      };
+      if (entry.isFile()) {
+        try {
+          const entryPath = resolvedPath === '/' ? `/${name}` : `${resolvedPath}/${name}`;
+          const stat = await ctx.fs.stat(entryPath);
+          rec.size = stat.size;
+          rec.mtime = stat.mtime.toISOString();
+        } catch { /* ignore stat errors */ }
+      }
+      dataEntries.push(rec);
+    }
 
     if (longFormat) {
       const lines: string[] = [];
@@ -273,10 +319,10 @@ commands['ls'] = async (ctx) => {
         }
         lines.push(`${typeChar}${perms}  ${size}  ${date}  ${name}`);
       }
-      return lines.join('\n') + '\n';
+      return { data: { entries: dataEntries }, text: lines.join('\n') + '\n' };
     }
 
-    return filtered.join('  ') + '\n';
+    return { data: { entries: dataEntries }, text: filtered.join('  ') + '\n' };
   } catch {
     return `ls: cannot access '${target}': No such file or directory\n`;
   }
@@ -303,7 +349,7 @@ commands['cd'] = async (ctx) => {
   }
 };
 
-commands['pwd'] = async (ctx) => ctx.cwd + '\n';
+commands['pwd'] = async (ctx) => ({ data: { path: ctx.cwd }, text: ctx.cwd + '\n' });
 
 commands['mkdir'] = async (ctx) => {
   if (ctx.args.length === 0) return 'mkdir: missing operand\n';
@@ -336,7 +382,7 @@ commands['touch'] = async (ctx) => {
 };
 
 commands['cat'] = async (ctx) => {
-  if (ctx.args.length === 0 && ctx.stdin !== undefined) return ctx.stdin;
+  if (ctx.args.length === 0 && ctx.stdin !== undefined) return { data: { content: ctx.stdin }, text: ctx.stdin };
   if (ctx.args.length === 0) return 'cat: missing file operand\n';
   const results: string[] = [];
   for (const target of ctx.args) {
@@ -347,13 +393,15 @@ commands['cat'] = async (ctx) => {
       results.push(`cat: ${target}: No such file or directory\n`);
     }
   }
-  return results.join('');
+  const content = results.join('');
+  return { data: { content }, text: content };
 };
 
 commands['echo'] = async (ctx) => {
   const addNewline = !ctx.args.includes('-n');
   const text = ctx.args.filter(a => a !== '-n').join(' ');
-  return text + (addNewline ? '\n' : '');
+  const output = text + (addNewline ? '\n' : '');
+  return { data: { output: text }, text: output };
 };
 
 commands['rm'] = async (ctx) => {
@@ -459,10 +507,10 @@ commands['wc'] = async (ctx) => {
   } else {
     return 'wc: missing file operand\n';
   }
-  const lineCount = content.split('\n').length;
+  const lines = content.split('\n').length;
   const words = content.split(/\s+/).filter(Boolean).length;
   const chars = content.length;
-  return `  ${lineCount}  ${words}  ${chars}${file ? '  ' + file : ''}\n`;
+  return { data: { lines, words, chars }, text: `  ${lines}  ${words}  ${chars}${file ? '  ' + file : ''}\n` };
 };
 
 commands['grep'] = async (ctx) => {
@@ -485,9 +533,10 @@ commands['grep'] = async (ctx) => {
   let regex: RegExp;
   try { regex = new RegExp(pattern, flags); } catch { return `grep: Invalid pattern '${pattern}'\n`; }
   const lines = content.split('\n');
-  const matches: string[] = [];
-  lines.forEach((line, i) => { if (regex.test(line)) matches.push(showLineNumbers ? `${i + 1}:${line}` : line); });
-  return matches.join('\n') + (matches.length > 0 ? '\n' : '');
+  const matchLines: Array<{ line: string; lineNumber: number }> = [];
+  lines.forEach((line, i) => { if (regex.test(line)) matchLines.push({ line, lineNumber: i + 1 }); });
+  const text = matchLines.map(m => showLineNumbers ? `${m.lineNumber}:${m.line}` : m.line).join('\n') + (matchLines.length > 0 ? '\n' : '');
+  return { data: { matches: matchLines, count: matchLines.length }, text };
 };
 
 commands['sort'] = async (ctx) => {
@@ -546,11 +595,20 @@ commands['tee'] = async (ctx) => {
 // Information Commands
 // ============================================================================
 
-commands['date'] = async () => new Date().toString() + '\n';
+commands['date'] = async () => {
+  const now = new Date();
+  return { data: { iso: now.toISOString(), timestamp: now.getTime() }, text: now.toString() + '\n' };
+};
 
-commands['whoami'] = async (ctx) => (ctx.env['USER'] || 'user') + '\n';
+commands['whoami'] = async (ctx) => {
+  const user = ctx.env['USER'] || 'user';
+  return { data: { user }, text: user + '\n' };
+};
 
-commands['hostname'] = async (ctx) => (ctx.env['HOSTNAME'] || 'stark-os') + '\n';
+commands['hostname'] = async (ctx) => {
+  const hostname = ctx.env['HOSTNAME'] || 'stark-os';
+  return { data: { hostname }, text: hostname + '\n' };
+};
 
 commands['uname'] = async (ctx) => {
   if (ctx.args.includes('-a')) return 'StarkOS 1.0.0 JavaScript browser x86_64 StarkOS\n';
@@ -565,7 +623,10 @@ commands['uptime'] = async () => {
   return `up ${hours}:${mins.toString().padStart(2, '0')}\n`;
 };
 
-commands['env'] = async (ctx) => Object.entries(ctx.env).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
+commands['env'] = async (ctx) => {
+  const text = Object.entries(ctx.env).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
+  return { data: { ...ctx.env }, text };
+};
 
 commands['export'] = async (ctx) => {
   for (const arg of ctx.args) {
@@ -1747,8 +1808,11 @@ commands['stark'] = async (ctx) => {
     return map.get(String(id)) || String(id);
   };
 
+  /** Build a CommandResult with structured data + formatted text. */
+  const dt = (data: unknown, text: string): CommandResult => ({ data, text });
+
   if (!subcmd || subcmd === 'help') {
-    return 'Stark Orchestrator CLI\n\n' +
+    return dt({ commands: ['auth', 'pack', 'node', 'pod', 'service', 'namespace', 'secret', 'volume', 'chaos', 'network', 'config', 'status', 'help'] }, 'Stark Orchestrator CLI\n\n' +
       'Commands:\n' +
       '  stark auth        Authentication (login, logout, whoami, status, setup, add-user)\n' +
       '  stark pack        Pack management (list, versions, info, delete)\n' +
@@ -1762,7 +1826,7 @@ commands['stark'] = async (ctx) => {
       '  stark network     Network management (policies, registry)\n' +
       '  stark config      Show/set CLI configuration\n' +
       '  stark status      Show cluster status\n' +
-      '  stark help        Show this help\n';
+      '  stark help        Show this help\n');
   }
 
   try {
@@ -1776,69 +1840,69 @@ commands['stark'] = async (ctx) => {
               if (ctx.prompt) {
                 ctx.write(`Already logged in as ${creds.email}\n`);
                 const proceed = await ctx.prompt('Do you want to log out and log in again? (y/N) ');
-                if (proceed.toLowerCase() !== 'y') return '';
+                if (proceed.toLowerCase() !== 'y') return dt({ cancelled: true }, '');
               }
               clearApiCredentials();
             }
             let email = options['email'] || options['e'];
             if (!email && ctx.prompt) email = await ctx.prompt('Email: ');
-            if (!email) return 'Usage: stark auth login --email <email> --password <password>\n';
+            if (!email) return dt({ error: 'missing email' }, 'Usage: stark auth login --email <email> --password <password>\n');
             let password = options['password'] || options['p'];
             if (!password && ctx.promptPassword) password = await ctx.promptPassword('Password: ');
-            if (!password) return 'Password is required.\n';
+            if (!password) return dt({ error: 'missing password' }, 'Password is required.\n');
             ctx.write('Authenticating...\n');
             const result = await api.auth.login(String(email), String(password));
             ctx.env['USER'] = result.user.email.split('@')[0];
-            return `✓ Logged in as ${result.user.email}\n`;
+            return dt({ user: result.user }, `✓ Logged in as ${result.user.email}\n`);
           }
           case 'logout':
             api.auth.logout();
             ctx.env['USER'] = 'user';
-            return '✓ Logged out.\n';
+            return dt({ success: true }, '✓ Logged out.\n');
           case 'whoami': {
             const info = api.auth.whoami();
-            if (!info) return 'Not authenticated.\n';
+            if (!info) return dt({ error: 'not authenticated' }, 'Not authenticated.\n');
             let out = `Email: ${info.email}\nUser ID: ${info.userId}\n`;
             if (info.username) out += `Username: ${info.username}\n`;
             if (info.roles && info.roles.length > 0) out += `Roles: ${info.roles.join(', ')}\n`;
-            return out;
+            return dt(info, out);
           }
           case 'status': {
             const s = api.auth.status();
-            return `Authenticated: ${s.authenticated ? 'Yes' : 'No'}\n${s.authenticated && s.email ? `Email: ${s.email}\nExpires: ${s.expiresAt}\n` : ''}`;
+            return dt(s, `Authenticated: ${s.authenticated ? 'Yes' : 'No'}\n${s.authenticated && s.email ? `Email: ${s.email}\nExpires: ${s.expiresAt}\n` : ''}`);
           }
           case 'setup': {
             ctx.write('Checking if setup is needed...\n');
             const statusResult = await api.auth.setupStatus();
-            if (!statusResult.needsSetup) return 'Setup has already been completed.\nTo add new users, login as admin and use `stark auth add-user`.\n';
+            if (!statusResult.needsSetup) return dt({ needsSetup: false }, 'Setup has already been completed.\nTo add new users, login as admin and use `stark auth add-user`.\n');
             ctx.write('No users exist. Setting up initial admin account.\n');
             let email = options['email'] || options['e'];
             if (!email && ctx.prompt) email = await ctx.prompt('Admin Email: ');
-            if (!email || !String(email).includes('@')) return 'Invalid email address.\n';
+            if (!email || !String(email).includes('@')) return dt({ error: 'invalid email' }, 'Invalid email address.\n');
             let password: string | undefined;
             if (ctx.promptPassword) password = await ctx.promptPassword('Password: ');
-            if (!password) return 'Password is required.\n';
-            if (password.length < 8) return 'Password must be at least 8 characters.\n';
+            if (!password) return dt({ error: 'missing password' }, 'Password is required.\n');
+            if (password.length < 8) return dt({ error: 'password too short' }, 'Password must be at least 8 characters.\n');
             if (ctx.promptPassword) {
               const confirm = await ctx.promptPassword('Confirm Password: ');
-              if (confirm !== password) return 'Passwords do not match.\n';
+              if (confirm !== password) return dt({ error: 'password mismatch' }, 'Passwords do not match.\n');
             }
             let displayName = '';
             if (ctx.prompt) displayName = await ctx.prompt('Display Name (optional): ');
             ctx.write('Creating admin account...\n');
             const setupResult = await api.auth.setup(String(email), password, displayName || undefined);
             ctx.env['USER'] = setupResult.user.email.split('@')[0];
-            return `✓ Admin account created and logged in as ${setupResult.user.email}\n`;
+            return dt({ user: setupResult.user }, `✓ Admin account created and logged in as ${setupResult.user.email}\n`);
           }
           case 'add-user': {
-            if (!isApiAuthenticated()) return 'Not authenticated. Run `stark auth login` first.\n';
+            if (!isApiAuthenticated()) return dt({ error: 'not authenticated' }, 'Not authenticated. Run `stark auth login` first.\n');
             let email = options['email'] || options['e'];
             if (!email && ctx.prompt) email = await ctx.prompt('New User Email: ');
-            if (!email || !String(email).includes('@')) return 'Invalid email address.\n';
+            if (!email || !String(email).includes('@')) return dt({ error: 'invalid email' }, 'Invalid email address.\n');
             let password: string | undefined;
             if (ctx.promptPassword) password = await ctx.promptPassword('Password for new user: ');
-            if (!password) return 'Password is required.\n';
-            if (password.length < 8) return 'Password must be at least 8 characters.\n';
+            if (!password) return dt({ error: 'missing password' }, 'Password is required.\n');
+            if (password.length < 8) return dt({ error: 'password too short' }, 'Password must be at least 8 characters.\n');
             let displayName = '';
             if (ctx.prompt) displayName = await ctx.prompt('Display Name (optional): ');
             let roles: string[] = [];
@@ -1855,14 +1919,14 @@ commands['stark'] = async (ctx) => {
             ctx.write('Creating user...\n');
             const addResult = await api.auth.addUser(String(email), password, { displayName: displayName || undefined, roles });
             const newUser = addResult.user;
-            return `✓ User created: ${newUser.email}\nUser ID: ${newUser.id}\nRoles: ${newUser.roles?.join(', ') ?? 'viewer'}\n`;
+            return dt({ user: newUser }, `✓ User created: ${newUser.email}\nUser ID: ${newUser.id}\nRoles: ${newUser.roles?.join(', ') ?? 'viewer'}\n`);
           }
           case 'list-users': case 'users': {
-            if (!isApiAuthenticated()) return 'Not authenticated. Run `stark auth login` first.\n';
+            if (!isApiAuthenticated()) return dt({ error: 'not authenticated' }, 'Not authenticated. Run `stark auth login` first.\n');
             const data = await api.auth.listUsers() as { users?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
             const users = Array.isArray(data) ? data : ((data as { users?: Array<Record<string, unknown>> }).users ?? []);
-            if (users.length === 0) return 'ℹ No users found\n';
-            return fmtTable(
+            if (users.length === 0) return dt({ users: [], total: 0 }, 'ℹ No users found\n');
+            return dt({ users, total: users.length }, fmtTable(
               users.map((u: Record<string, unknown>) => ({
                 email: String(u.email ?? ''),
                 id: String(u.id ?? ''),
@@ -1873,9 +1937,9 @@ commands['stark'] = async (ctx) => {
                 { key: 'id', header: 'User ID', width: 38 },
                 { key: 'roles', header: 'Roles', width: 25 },
               ],
-            );
+            ));
           }
-          default: return `Unknown auth subcommand: ${action}\nAvailable: login, logout, whoami, status, setup, add-user, list-users\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown auth subcommand: ${action}\nAvailable: login, logout, whoami, status, setup, add-user, list-users\n`);
         }
       }
       case 'pack': {
@@ -1885,8 +1949,8 @@ commands['stark'] = async (ctx) => {
             const data = await api.pack.list() as { packs?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
             const packs = Array.isArray(data) ? data : (data.packs ?? []);
             const total = Array.isArray(data) ? packs.length : (data.total ?? packs.length);
-            if (packs.length === 0) return 'ℹ No packs found\n';
-            return `\nPacks (${packs.length} of ${total})\n\n` + fmtTable(
+            if (packs.length === 0) return dt({ packs: [], total: 0 }, 'ℹ No packs found\n');
+            return dt({ packs, total }, `\nPacks (${packs.length} of ${total})\n\n` + fmtTable(
               packs.map((p: Record<string, unknown>) => ({
                 name: String(p.name ?? ''),
                 version: String(p.version ?? ''),
@@ -1901,14 +1965,14 @@ commands['stark'] = async (ctx) => {
                 { key: 'description', header: 'Description', width: 30 },
                 { key: 'created', header: 'Created', width: 15 },
               ],
-            );
+            ));
           }
           case 'versions': {
-            const n = positionals[0]; if (!n) return 'Usage: stark pack versions <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark pack versions <name>\n');
             const data = await api.pack.versions(n) as { versions?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
             const versions = Array.isArray(data) ? data : (data.versions ?? []);
-            if (versions.length === 0) return `ℹ No versions found for pack: ${n}\n`;
-            return `\nVersions of ${n}\n\n` + fmtTable(
+            if (versions.length === 0) return dt({ versions: [], name: n }, `ℹ No versions found for pack: ${n}\n`);
+            return dt({ versions, name: n }, `\nVersions of ${n}\n\n` + fmtTable(
               versions.map((v: Record<string, unknown>, i: number) => ({
                 version: String(v.version ?? ''),
                 created: v.createdAt ? relativeTime(String(v.createdAt)) : '',
@@ -1919,12 +1983,12 @@ commands['stark'] = async (ctx) => {
                 { key: 'created', header: 'Created', width: 20 },
                 { key: 'latest', header: 'Latest', width: 8 },
               ],
-            );
+            ));
           }
           case 'info': {
-            const n = positionals[0]; if (!n) return 'Usage: stark pack info <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark pack info <name>\n');
             const pack = unwrap(await api.pack.info(n), 'pack');
-            return `\nPack: ${pack.name}\n\n` + fmtKeyValue({
+            return dt(pack, `\nPack: ${pack.name}\n\n` + fmtKeyValue({
               'ID': pack.id,
               'Name': pack.name,
               'Version': pack.version,
@@ -1934,10 +1998,10 @@ commands['stark'] = async (ctx) => {
               'Bundle Path': pack.bundlePath,
               'Created': pack.createdAt ? new Date(String(pack.createdAt)).toLocaleString() : '(none)',
               'Updated': pack.updatedAt ? new Date(String(pack.updatedAt)).toLocaleString() : '(none)',
-            });
+            }));
           }
-          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark pack delete <name>\n'; await api.pack.delete(n); return `✓ Pack deleted: ${n}\n`; }
-          default: return `Unknown pack subcommand: ${action}\nAvailable: list, versions, info, delete\n`;
+          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark pack delete <name>\n'); await api.pack.delete(n); return dt({ success: true, name: n }, `✓ Pack deleted: ${n}\n`); }
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown pack subcommand: ${action}\nAvailable: list, versions, info, delete\n`);
         }
       }
       case 'node': {
@@ -1947,8 +2011,8 @@ commands['stark'] = async (ctx) => {
             const data = await api.node.list() as { nodes?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
             const nodes = Array.isArray(data) ? data : (data.nodes ?? []);
             const total = Array.isArray(data) ? nodes.length : (data.total ?? nodes.length);
-            if (nodes.length === 0) return 'ℹ No nodes found\n';
-            return `\nNodes (${nodes.length} of ${total})\n\n` + fmtTable(
+            if (nodes.length === 0) return dt({ nodes: [], total: 0 }, 'ℹ No nodes found\n');
+            return dt({ nodes, total }, `\nNodes (${nodes.length} of ${total})\n\n` + fmtTable(
               nodes.map((n: Record<string, unknown>) => {
                 const alloc = (n.allocated ?? {}) as Record<string, number>;
                 const cap = (n.allocatable ?? {}) as Record<string, number>;
@@ -1974,10 +2038,10 @@ commands['stark'] = async (ctx) => {
                 { key: 'pods', header: 'Pods', width: 10 },
                 { key: 'heartbeat', header: 'Last Seen', width: 15 },
               ],
-            );
+            ));
           }
           case 'status': case 'info': {
-            const n = positionals[0]; if (!n) return 'Usage: stark node status <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark node status <name>\n');
             const node = unwrap(await api.node.status(n), 'node');
             const alloc = (node.allocated ?? {}) as Record<string, number>;
             const cap = (node.allocatable ?? {}) as Record<string, number>;
@@ -2016,11 +2080,11 @@ commands['stark'] = async (ctx) => {
               'Created': node.createdAt ? new Date(String(node.createdAt)).toLocaleString() : '(none)',
               'Updated': node.updatedAt ? new Date(String(node.updatedAt)).toLocaleString() : '(none)',
             });
-            return out;
+            return dt(node, out);
           }
           case 'agent': {
             const [agentSub, ...agentArgs] = rest;
-            if (agentSub !== 'start') return 'Usage: stark node agent start [options]\n';
+            if (agentSub !== 'start') return dt({ error: 'invalid usage' }, 'Usage: stark node agent start [options]\n');
             const { options: agentOpts } = parseOpts(agentArgs);
             const agentName = String(agentOpts['name'] || agentOpts['n'] || `browser-${Date.now()}`);
             const agentUrl = String(agentOpts['url'] || agentOpts['u'] || 'wss://localhost:443/ws');
@@ -2029,7 +2093,7 @@ commands['stark'] = async (ctx) => {
               const browserToken = getBrowserAccessToken();
               if (browserToken) authToken = browserToken;
             }
-            if (!authToken) return '✗ Authentication required. Please provide a token or login first.\n';
+            if (!authToken) return dt({ error: 'authentication required' }, '✗ Authentication required. Please provide a token or login first.\n');
             ctx.write(`ℹ Starting browser node agent: ${agentName}\n`);
             ctx.write(`Orchestrator: ${agentUrl}\n`);
             const agentConfig = {
@@ -2044,28 +2108,28 @@ commands['stark'] = async (ctx) => {
             };
             const agent = createBrowserAgent(agentConfig);
             await agent.start();
-            return '✓ Browser node agent started.\n';
+            return dt({ success: true, name: agentName, url: agentUrl }, '✓ Browser node agent started.\n');
           }
           case 'logs': {
-            const n = positionals[0]; if (!n) return 'Usage: stark node logs <name> [--tail <n>]\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark node logs <name> [--tail <n>]\n');
             const tail = options['tail'] || options['t'];
             const data = await api.node.logs(n, { tail: tail ? Number(tail) : undefined }) as { entries?: Array<Record<string, unknown>> };
             const entries = data.entries ?? [];
-            if (entries.length === 0) return 'ℹ No log entries found for this node\n';
+            if (entries.length === 0) return dt({ entries: [], name: n }, 'ℹ No log entries found for this node\n');
             let out = '';
             for (const e of entries) {
               const ts = String(e.timestamp ?? '').replace('T', ' ').replace('Z', '');
               const lvl = String(e.level ?? 'info').toUpperCase().padEnd(5);
               out += `${ts} ${lvl} ${e.message}\n`;
             }
-            return out;
+            return dt({ entries, name: n }, out);
           }
           case 'delete': case 'rm': {
-            const n = positionals[0]; if (!n) return 'Usage: stark node delete <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark node delete <name>\n');
             await api.node.delete(n);
-            return `✓ Node deleted: ${n}\n`;
+            return dt({ success: true, name: n }, `✓ Node deleted: ${n}\n`);
           }
-          default: return `Unknown node subcommand: ${action}\nAvailable: list, status, agent, logs, delete\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown node subcommand: ${action}\nAvailable: list, status, agent, logs, delete\n`);
         }
       }
       case 'pod': {
@@ -2088,9 +2152,9 @@ commands['stark'] = async (ctx) => {
               return Date.now() - referenceTime < STALE_POD_THRESHOLD_MS;
             });
             const total = Array.isArray(data) ? pods.length : (data.total ?? pods.length);
-            if (pods.length === 0) return 'ℹ No pods found\n';
+            if (pods.length === 0) return dt({ pods: [], total: 0 }, 'ℹ No pods found\n');
             const maps = await getNameMaps();
-            return `\nPods (${pods.length} of ${total})\n\n` + fmtTable(
+            return dt({ pods, total }, `\nPods (${pods.length} of ${total})\n\n` + fmtTable(
               pods.map((p: Record<string, unknown>) => ({
                 id: String(p.id ?? ''),
                 pack: maps.packMap.get(String(p.packId)) || String(p.packId ?? ''),
@@ -2109,10 +2173,10 @@ commands['stark'] = async (ctx) => {
                 { key: 'namespace', header: 'Namespace', width: 12 },
                 { key: 'age', header: 'Age', width: 12 },
               ],
-            );
+            ));
           }
           case 'status': {
-            const id = positionals[0]; if (!id) return 'Usage: stark pod status <podId>\n';
+            const id = positionals[0]; if (!id) return dt({ error: 'missing podId' }, 'Usage: stark pod status <podId>\n');
             const pod = unwrap(await api.pod.status(id), 'pod');
             let out = `\nPod: ${pod.id}\n\n`;
             out += fmtKeyValue({
@@ -2133,11 +2197,11 @@ commands['stark'] = async (ctx) => {
               out += '\nLabels\n';
               for (const [key, value] of Object.entries(labels)) out += `  ${key}: ${value}\n`;
             }
-            return out + '\n';
+            return dt(pod, out + '\n');
           }
           case 'create': case 'run': {
             const pack = positionals[0] || options['pack'];
-            if (!pack) return 'Usage: stark pod create <pack> [options]\n';
+            if (!pack) return dt({ error: 'missing pack' }, 'Usage: stark pod create <pack> [options]\n');
             // Collect repeatable --arg / -a values from raw args
             const podArgs: string[] = [];
             for (let i = 0; i < rest.length; i++) {
@@ -2171,25 +2235,25 @@ commands['stark'] = async (ctx) => {
               ],
             );
             out += `\nℹ Use 'stark pod status <pod-id>' to check service status\n`;
-            return out;
+            return dt({ pod, success: true }, out);
           }
           case 'stop': {
-            const id = positionals[0]; if (!id) return 'Usage: stark pod stop <podId>\n';
+            const id = positionals[0]; if (!id) return dt({ error: 'missing podId' }, 'Usage: stark pod stop <podId>\n');
             await api.pod.stop(id);
-            return `✓ Pod ${id} stopped\n`;
+            return dt({ success: true, id }, `✓ Pod ${id} stopped\n`);
           }
           case 'rollback': {
-            const id = positionals[0]; if (!id) return 'Usage: stark pod rollback <podId>\n';
+            const id = positionals[0]; if (!id) return dt({ error: 'missing podId' }, 'Usage: stark pod rollback <podId>\n');
             const pod = unwrap(await api.pod.rollback(id), 'pod');
-            return `✓ Rolled back to version ${pod.packVersion ?? 'unknown'}\n` +
-              fmtKeyValue({ 'Pod ID': pod.id, 'New Version': pod.packVersion, 'Status': statusBadge(String(pod.status ?? '')) });
+            return dt(pod, `✓ Rolled back to version ${pod.packVersion ?? 'unknown'}\n` +
+              fmtKeyValue({ 'Pod ID': pod.id, 'New Version': pod.packVersion, 'Status': statusBadge(String(pod.status ?? '')) }));
           }
           case 'history': {
-            const id = positionals[0]; if (!id) return 'Usage: stark pod history <podId>\n';
+            const id = positionals[0]; if (!id) return dt({ error: 'missing podId' }, 'Usage: stark pod history <podId>\n');
             const data = await api.pod.history(id) as { history?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
             const history = Array.isArray(data) ? data : (data.history ?? []);
-            if (history.length === 0) return 'ℹ No history entries found\n';
-            return `\nPod History: ${id}\n\n` + fmtTable(
+            if (history.length === 0) return dt({ history: [], id }, 'ℹ No history entries found\n');
+            return dt({ history, id }, `\nPod History: ${id}\n\n` + fmtTable(
               history.map((h: Record<string, unknown>) => ({
                 action: String(h.action ?? ''),
                 status: `${h.previousStatus ?? '-'} → ${h.newStatus ?? '-'}`,
@@ -2204,14 +2268,14 @@ commands['stark'] = async (ctx) => {
                 { key: 'reason', header: 'Reason', width: 20 },
                 { key: 'when', header: 'When', width: 15 },
               ],
-            );
+            ));
           }
           case 'logs': {
-            const id = positionals[0]; if (!id) return 'Usage: stark pod logs <podId> [--tail <n>]\n';
+            const id = positionals[0]; if (!id) return dt({ error: 'missing podId' }, 'Usage: stark pod logs <podId> [--tail <n>]\n');
             const tail = options['tail'] || options['t'];
             const data = await api.pod.logs(id, { tail: tail ? Number(tail) : undefined }) as { entries?: Array<Record<string, unknown>> };
             const entries = data.entries ?? [];
-            if (entries.length === 0) return 'ℹ No log entries found for this pod\n';
+            if (entries.length === 0) return dt({ entries: [], id }, 'ℹ No log entries found for this pod\n');
             let out = '';
             for (const e of entries) {
               const stream = String(e.meta && (e.meta as Record<string, unknown>).stream || 'out');
@@ -2220,9 +2284,9 @@ commands['stark'] = async (ctx) => {
               const tag = stream === 'err' ? '[err]' : '[out]';
               out += `${ts} ${lvl} ${tag} ${e.message}\n`;
             }
-            return out;
+            return dt({ entries, id }, out);
           }
-          default: return `Unknown pod subcommand: ${action}\nAvailable: create, list, status, stop, rollback, history, logs\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown pod subcommand: ${action}\nAvailable: create, list, status, stop, rollback, history, logs\n`);
         }
       }
       case 'service': {
@@ -2232,8 +2296,8 @@ commands['stark'] = async (ctx) => {
             const ns = options['namespace'] || options['n'];
             const data = await api.service.list({ namespace: ns ? String(ns) : undefined }) as { services?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
             const services = Array.isArray(data) ? data : (data.services ?? []);
-            if (services.length === 0) return 'ℹ No services found\n';
-            return `\nServices (${services.length})\n\n` + fmtTable(
+            if (services.length === 0) return dt({ services: [], total: 0 }, 'ℹ No services found\n');
+            return dt({ services, total: services.length }, `\nServices (${services.length})\n\n` + fmtTable(
               services.map((d: Record<string, unknown>) => ({
                 name: String(d.name ?? ''),
                 pack: String(d.packVersion ?? ''),
@@ -2250,14 +2314,14 @@ commands['stark'] = async (ctx) => {
                 { key: 'status', header: 'Status', width: 12 },
                 { key: 'namespace', header: 'Namespace', width: 15 },
               ],
-            );
+            ));
           }
           case 'status': {
-            const n = positionals[0]; if (!n) return 'Usage: stark service status <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark service status <name>\n');
             const svc = unwrap(await api.service.status(n), 'service');
             const svcMode = String(svc.mode ?? 'replica');
             const replicaDisplay = svcMode === 'daemon' ? 'N/A (daemon)' : svcMode === 'dynamic' ? 'N/A (dynamic)' : String(svc.replicas);
-            return `\nService: ${svc.name}\n\n` + fmtKeyValue({
+            return dt(svc, `\nService: ${svc.name}\n\n` + fmtKeyValue({
               'ID': svc.id,
               'Status': statusBadge(String(svc.status ?? '')),
               'Message': svc.statusMessage ?? '(none)',
@@ -2271,11 +2335,11 @@ commands['stark'] = async (ctx) => {
               'Updated': svc.updatedReplicas,
               'Created': svc.createdAt ? new Date(String(svc.createdAt)).toLocaleString() : '(none)',
               'Updated At': svc.updatedAt ? new Date(String(svc.updatedAt)).toLocaleString() : '(none)',
-            });
+            }));
           }
           case 'create': {
             const pack = positionals[0] || options['pack'];
-            if (!pack) return 'Usage: stark service create <pack> [options]\n';
+            if (!pack) return dt({ error: 'missing pack' }, 'Usage: stark service create <pack> [options]\n');
             // Collect repeatable --arg / -a values from raw args
             const svcArgs: string[] = [];
             for (let i = 0; i < rest.length; i++) {
@@ -2304,9 +2368,9 @@ commands['stark'] = async (ctx) => {
             });
             out += `\nℹ The service controller will create pods automatically.\n`;
             out += `ℹ Use 'stark service status ${service.name ?? pack}' to check progress.\n`;
-            return out;
+            return dt({ service, success: true }, out);
           }
-          default: return `Unknown service subcommand: ${action}\nAvailable: create, list, status\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown service subcommand: ${action}\nAvailable: create, list, status\n`);
         }
       }
       case 'namespace': case 'ns': {
@@ -2316,8 +2380,8 @@ commands['stark'] = async (ctx) => {
             const data = await api.namespace.list() as { namespaces?: Array<Record<string, unknown>>; total?: number } | Array<Record<string, unknown>>;
             const namespaces = Array.isArray(data) ? data : (data.namespaces ?? []);
             const total = Array.isArray(data) ? namespaces.length : (data.total ?? namespaces.length);
-            if (namespaces.length === 0) return 'ℹ No namespaces found\n';
-            return `\nNamespaces (${namespaces.length} of ${total})\n\n` + fmtTable(
+            if (namespaces.length === 0) return dt({ namespaces: [], total: 0 }, 'ℹ No namespaces found\n');
+            return dt({ namespaces, total }, `\nNamespaces (${namespaces.length} of ${total})\n\n` + fmtTable(
               namespaces.map((ns: Record<string, unknown>) => ({
                 name: String(ns.name ?? ''),
                 phase: statusBadge(String(ns.phase ?? '')),
@@ -2333,10 +2397,10 @@ commands['stark'] = async (ctx) => {
                 { key: 'maxMemory', header: 'Max Memory', width: 12 },
                 { key: 'age', header: 'Age', width: 15 },
               ],
-            );
+            ));
           }
           case 'get': {
-            const n = positionals[0]; if (!n) return 'Usage: stark namespace get <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark namespace get <name>\n');
             const ns = unwrap(await api.namespace.get(n), 'namespace');
             let out = `\nNamespace: ${ns.name}\n\n`;
             out += 'General\n';
@@ -2363,26 +2427,26 @@ commands['stark'] = async (ctx) => {
               out += '\nLabels\n';
               for (const [key, value] of Object.entries(labels)) out += `  ${key}: ${value}\n`;
             }
-            return out;
+            return dt(ns, out);
           }
           case 'create': {
-            const n = positionals[0]; if (!n) return 'Usage: stark namespace create <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark namespace create <name>\n');
             const ns = unwrap(await api.namespace.create(n), 'namespace');
-            return `✓ Namespace created: ${ns.name ?? n}\n` + fmtKeyValue({
+            return dt(ns, `✓ Namespace created: ${ns.name ?? n}\n` + fmtKeyValue({
               'ID': ns.id,
               'Name': ns.name,
               'Phase': statusBadge(String(ns.phase ?? '')),
               'Created': ns.createdAt ? new Date(String(ns.createdAt)).toLocaleString() : '(none)',
-            });
+            }));
           }
-          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return 'Usage: stark namespace delete <name>\n'; await api.namespace.delete(n); return `✓ Namespace deleted: ${n}\n`; }
-          case 'current': return `ℹ Current namespace: ${api.namespace.current()}\n`;
+          case 'delete': case 'rm': { const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark namespace delete <name>\n'); await api.namespace.delete(n); return dt({ success: true, name: n }, `✓ Namespace deleted: ${n}\n`); }
+          case 'current': return dt({ namespace: api.namespace.current() }, `ℹ Current namespace: ${api.namespace.current()}\n`);
           case 'use': {
-            const n = positionals[0]; if (!n) return 'Usage: stark namespace use <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark namespace use <name>\n');
             api.namespace.use(n);
-            return `✓ Default namespace set to: ${n}\n`;
+            return dt({ success: true, namespace: n }, `✓ Default namespace set to: ${n}\n`);
           }
-          default: return `Unknown namespace subcommand: ${action}\nAvailable: create, list, get, delete, current, use\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown namespace subcommand: ${action}\nAvailable: create, list, get, delete, current, use\n`);
         }
       }
       case 'secret': {
@@ -2392,8 +2456,8 @@ commands['stark'] = async (ctx) => {
             const ns = options['namespace'] || options['n'];
             const data = await api.secret.list({ namespace: ns ? String(ns) : undefined }) as { secrets?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
             const secrets = Array.isArray(data) ? data : (data.secrets ?? []);
-            if (secrets.length === 0) return 'ℹ No secrets found\n';
-            return `\nSecrets (${secrets.length})\n\n` + fmtTable(
+            if (secrets.length === 0) return dt({ secrets: [], total: 0 }, 'ℹ No secrets found\n');
+            return dt({ secrets, total: secrets.length }, `\nSecrets (${secrets.length})\n\n` + fmtTable(
               secrets.map((s: Record<string, unknown>) => ({
                 name: String(s.name ?? ''),
                 type: String(s.type ?? ''),
@@ -2408,10 +2472,10 @@ commands['stark'] = async (ctx) => {
                 { key: 'version', header: 'Ver', width: 6 },
                 { key: 'namespace', header: 'Namespace', width: 15 },
               ],
-            );
+            ));
           }
           case 'get': {
-            const n = positionals[0]; if (!n) return 'Usage: stark secret get <name>\n';
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark secret get <name>\n');
             const ns = String(options['namespace'] || options['n'] || 'default');
             const secret = unwrap(await api.secret.get(n, ns), 'secret');
             let out = `\nSecret: ${secret.name}\n\n`;
@@ -2427,9 +2491,9 @@ commands['stark'] = async (ctx) => {
               'Updated': secret.updatedAt ? new Date(String(secret.updatedAt)).toLocaleString() : '(none)',
             });
             out += '\n⚠ Secret values are encrypted and never displayed.\n';
-            return out;
+            return dt(secret, out);
           }
-          default: return `Unknown secret subcommand: ${action}\nAvailable: list, get\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown secret subcommand: ${action}\nAvailable: list, get\n`);
         }
       }
       case 'volume': {
@@ -2439,9 +2503,9 @@ commands['stark'] = async (ctx) => {
             const node = options['node'] || options['n'];
             const data = await api.volume.list({ nodeNameOrId: node ? String(node) : undefined }) as { volumes?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
             const volumes = Array.isArray(data) ? data : (data.volumes ?? []);
-            if (volumes.length === 0) return 'ℹ No volumes found\n';
+            if (volumes.length === 0) return dt({ volumes: [], total: 0 }, 'ℹ No volumes found\n');
             const volMaps = await getNameMaps();
-            return `\nVolumes (${volumes.length})\n\n` + fmtTable(
+            return dt({ volumes, total: volumes.length }, `\nVolumes (${volumes.length})\n\n` + fmtTable(
               volumes.map((v: Record<string, unknown>) => ({
                 name: String(v.name ?? ''),
                 node: v.nodeId ? (volMaps.nodeMap.get(String(v.nodeId)) || String(v.nodeId)) : '',
@@ -2452,24 +2516,24 @@ commands['stark'] = async (ctx) => {
                 { key: 'node', header: 'Node', width: 25 },
                 { key: 'age', header: 'Age', width: 15 },
               ],
-            );
+            ));
           }
           case 'create': {
             const n = positionals[0] || options['name'];
             const node = options['node'] || options['n'];
-            if (!n || !node) return 'Usage: stark volume create <name> --node <nodeNameOrId>\n';
+            if (!n || !node) return dt({ error: 'missing name or node' }, 'Usage: stark volume create <name> --node <nodeNameOrId>\n');
             const vol = unwrap(await api.volume.create(String(n), String(node)), 'volume');
-            return `✓ Volume '${vol.name ?? n}' created\n\n` + fmtKeyValue({
+            return dt(vol, `✓ Volume '${vol.name ?? n}' created\n\n` + fmtKeyValue({
               'ID': vol.id,
               'Name': vol.name,
               'Node': vol.nodeId ? await resolveName(vol.nodeId, 'node') : String(node),
               'Created': vol.createdAt ? new Date(String(vol.createdAt)).toLocaleString() : '(none)',
-            });
+            }));
           }
           case 'download': {
             const n = positionals[0] || options['name'];
             const node = options['node'] || options['n'];
-            if (!n || !node) return 'Usage: stark volume download <name> --node <nodeNameOrId>\n';
+            if (!n || !node) return dt({ error: 'missing name or node' }, 'Usage: stark volume download <name> --node <nodeNameOrId>\n');
             ctx.write(`ℹ Downloading volume '${n}' from node ${node}\n`);
             const zipData = await api.volume.downloadAsZip(String(n), String(node));
             // Save the zip to OPFS
@@ -2479,12 +2543,12 @@ commands['stark'] = async (ctx) => {
             const parentDir = outPath.substring(0, outPath.lastIndexOf('/'));
             if (parentDir) try { await ctx.fs.mkdir(parentDir, true); } catch { /* ok */ }
             await ctx.fs.writeFile(outPath, zipData);
-            return `✓ Volume '${n}' downloaded to ${outPath} (${zipData.byteLength} bytes)\n`;
+            return dt({ success: true, name: n, path: outPath, size: zipData.byteLength }, `✓ Volume '${n}' downloaded to ${outPath} (${zipData.byteLength} bytes)\n`);
           }
           case 'sync': {
             ctx.write('Fetching volumes from orchestrator...\n');
             const volData = await api.volume.list() as Array<Record<string, unknown>> | undefined;
-            if (!volData || !Array.isArray(volData) || volData.length === 0) return 'No volumes found.\n';
+            if (!volData || !Array.isArray(volData) || volData.length === 0) return dt({ error: 'no volumes' }, 'No volumes found.\n');
             let synced = 0;
             for (const vol of volData) {
               const name = vol.name as string;
@@ -2492,9 +2556,9 @@ commands['stark'] = async (ctx) => {
                 try { await ctx.fs.mkdir(`/volumes/${name}`, true); synced++; } catch { /* dir may exist */ }
               }
             }
-            return `✓ Synced ${synced} volume directories into /volumes/.\n`;
+            return dt({ success: true, synced }, `✓ Synced ${synced} volume directories into /volumes/.\n`);
           }
-          default: return `Unknown volume subcommand: ${action}\nAvailable: list, create, download, sync\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown volume subcommand: ${action}\nAvailable: list, create, download, sync\n`);
         }
       }
       case 'chaos': {
@@ -2518,13 +2582,13 @@ commands['stark'] = async (ctx) => {
                 'Active Partitions': String(stats.partitionsActive ?? 0),
               });
             }
-            return out;
+            return dt(status, out);
           }
-          case 'enable': { await api.chaos.enable(); return '✓ Chaos mode enabled\n⚠ Chaos testing can disrupt service. Use with caution.\n'; }
-          case 'disable': { await api.chaos.disable(); return '✓ Chaos mode disabled\n'; }
+          case 'enable': { await api.chaos.enable(); return dt({ success: true, enabled: true }, '✓ Chaos mode enabled\n⚠ Chaos testing can disrupt service. Use with caution.\n'); }
+          case 'disable': { await api.chaos.disable(); return dt({ success: true, enabled: false }, '✓ Chaos mode disabled\n'); }
           case 'scenarios': {
             const scenarios = await api.chaos.scenarios() as Array<Record<string, unknown>>;
-            if (!Array.isArray(scenarios) || scenarios.length === 0) return 'ℹ No scenarios available\n';
+            if (!Array.isArray(scenarios) || scenarios.length === 0) return dt({ scenarios: [] }, 'ℹ No scenarios available\n');
             let out = '\n🎭 Available Chaos Scenarios\n\n';
             for (const scenario of scenarios) {
               out += `  ${scenario.id}\n`;
@@ -2538,13 +2602,13 @@ commands['stark'] = async (ctx) => {
               }
               out += '\n';
             }
-            return out;
+            return dt({ scenarios }, out);
           }
           case 'connections': {
             const result = await api.chaos.connections() as { count?: number; connections?: Array<Record<string, unknown>> };
             const conns = result.connections ?? [];
-            if (conns.length === 0) return 'ℹ No active connections\n';
-            return `\n🔌 Active Connections (${result.count ?? conns.length})\n\n` + fmtTable(
+            if (conns.length === 0) return dt({ connections: [], count: 0 }, 'ℹ No active connections\n');
+            return dt({ connections: conns, count: result.count ?? conns.length }, `\n🔌 Active Connections (${result.count ?? conns.length})\n\n` + fmtTable(
               conns.map((c: Record<string, unknown>) => ({
                 ID: String(c.id ?? '').slice(0, 12) + '...',
                 Nodes: Array.isArray(c.nodeIds) ? c.nodeIds.join(', ') : '-',
@@ -2553,46 +2617,46 @@ commands['stark'] = async (ctx) => {
                 Auth: c.isAuthenticated ? '✓' : '✗',
                 Connected: c.connectedAt ? relativeTime(String(c.connectedAt)) : '',
               })),
-            );
+            ));
           }
           case 'nodes': {
             const result = await api.chaos.nodes() as { count?: number; nodes?: Array<Record<string, unknown>> };
             const nodes = result.nodes ?? [];
-            if (nodes.length === 0) return 'ℹ No nodes connected\n';
-            return `\n🖥️  Connected Nodes (${result.count ?? nodes.length})\n\n` + fmtTable(
+            if (nodes.length === 0) return dt({ nodes: [], count: 0 }, 'ℹ No nodes connected\n');
+            return dt({ nodes, count: result.count ?? nodes.length }, `\n🖥️  Connected Nodes (${result.count ?? nodes.length})\n\n` + fmtTable(
               nodes.map((n: Record<string, unknown>) => ({
                 'Node ID': String(n.nodeId ?? ''),
                 'Connection ID': String(n.connectionId ?? '').slice(0, 12) + '...',
                 User: String(n.userId || '-'),
                 Connected: n.connectedAt ? relativeTime(String(n.connectedAt)) : '',
               })),
-            );
+            ));
           }
-          case 'events': return JSON.stringify(await api.chaos.events(), null, 2) + '\n';
-          case 'reset': { await api.chaos.reset(); return '✓ Chaos state reset\n'; }
-          default: return `Unknown chaos subcommand: ${action}\nAvailable: status, enable, disable, scenarios, connections, nodes, events, reset\n`;
+          case 'events': { const evts = await api.chaos.events(); return dt(evts, JSON.stringify(evts, null, 2) + '\n'); }
+          case 'reset': { await api.chaos.reset(); return dt({ success: true }, '✓ Chaos state reset\n'); }
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown chaos subcommand: ${action}\nAvailable: status, enable, disable, scenarios, connections, nodes, events, reset\n`);
         }
       }
       case 'network': {
         switch (action) {
           case 'policies': case 'list': {
             const data = await api.network.policies() as Record<string, unknown>;
-            return JSON.stringify(data, null, 2) + '\n';
+            return dt(data, JSON.stringify(data, null, 2) + '\n');
           }
           case 'registry': {
             const data = await api.network.registry() as Record<string, unknown>;
-            return JSON.stringify(data, null, 2) + '\n';
+            return dt(data, JSON.stringify(data, null, 2) + '\n');
           }
-          default: return `Unknown network subcommand: ${action}\nAvailable: policies, registry\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown network subcommand: ${action}\nAvailable: policies, registry\n`);
         }
       }
       case 'server-config': {
         switch (action) {
           case 'get': {
             const data = await api.serverConfig.get() as Record<string, unknown>;
-            return JSON.stringify(data, null, 2) + '\n';
+            return dt(data, JSON.stringify(data, null, 2) + '\n');
           }
-          default: return `Unknown server-config subcommand: ${action}\nAvailable: get\n`;
+          default: return dt({ error: `unknown subcommand: ${action}` }, `Unknown server-config subcommand: ${action}\nAvailable: get\n`);
         }
       }
       case 'config': {
@@ -2602,23 +2666,24 @@ commands['stark'] = async (ctx) => {
           const value = cfgPos[1] || rest[1];
           if (!key || !value) {
             const allowedKeys = ['apiUrl', 'supabaseUrl', 'supabaseAnonKey', 'defaultNamespace'];
-            return `Usage: stark config set <key> <value>\n  Keys: ${allowedKeys.join(', ')}\n`;
+            return dt({ error: 'missing key or value', allowedKeys }, `Usage: stark config set <key> <value>\n  Keys: ${allowedKeys.join(', ')}\n`);
           }
           api.config.set(String(key), String(value));
-          return `✓ Config ${key} set to ${value}\n`;
+          return dt({ success: true, key: String(key), value: String(value) }, `✓ Config ${key} set to ${value}\n`);
         }
-        return JSON.stringify(api.config.get(), null, 2) + '\n';
+        const cfgData = api.config.get();
+        return dt(cfgData, JSON.stringify(cfgData, null, 2) + '\n');
       }
       case 'status': {
         const s = api.auth.status();
         const apiUrl = resolveApiUrl();
-        return `Authenticated: ${s.authenticated ? 'Yes' : 'No'}\nAPI: ${apiUrl}\n`;
+        return dt({ authenticated: s.authenticated, apiUrl }, `Authenticated: ${s.authenticated ? 'Yes' : 'No'}\nAPI: ${apiUrl}\n`);
       }
       default:
-        return `Unknown command: ${subcmd}\nRun 'stark help' for available commands.\n`;
+        return dt({ error: `unknown command: ${subcmd}` }, `Unknown command: ${subcmd}\nRun 'stark help' for available commands.\n`);
     }
   } catch (err) {
-    return `stark: ${err instanceof Error ? err.message : 'Network error — is the orchestrator running?'}\n`;
+    return dt({ error: err instanceof Error ? err.message : 'Network error' }, `stark: ${err instanceof Error ? err.message : 'Network error — is the orchestrator running?'}\n`);
   }
 };
 

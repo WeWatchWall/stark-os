@@ -497,7 +497,6 @@ commands['sh.js'] = async (ctx) => {
   if (!file) return 'sh.js: missing script operand\n';
   const scriptPath = normalizePath(file, ctx.cwd);
   const scriptArgs = ctx.args.slice(1);
-  const write = (text: string) => ctx.write(text);
   const { executeShJs } = await import('./shjs');
   await executeShJs(scriptPath, scriptArgs, {
     cwd: ctx.cwd,
@@ -506,7 +505,7 @@ commands['sh.js'] = async (ctx) => {
     setCwd: ctx.setCwd,
     prompt: ctx.prompt,
     promptPassword: ctx.promptPassword,
-  }, write);
+  }, ctx.write);
   return '';
 };
 

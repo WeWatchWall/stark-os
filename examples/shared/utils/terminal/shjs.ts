@@ -127,7 +127,7 @@ export async function executeShJs(
   };
 
   try {
-    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     await new AsyncFunction('Terminal', scriptCode)(terminalAPI);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

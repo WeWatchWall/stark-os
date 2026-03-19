@@ -39,7 +39,8 @@
       class="services-table"
     >
       <template #groupheader="{ data }">
-        <div class="group-header">
+        <div class="group-header" @click="toggleGroup(data.namespace)">
+          <i :class="['pi', expandedGroups.includes(data.namespace) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
           <span class="ns-icon">📁</span>
           <span class="ns-name">{{ data.namespace }}</span>
           <Tag :value="`${namespaceCounts[data.namespace] ?? 0} service${(namespaceCounts[data.namespace] ?? 0) !== 1 ? 's' : ''}`" severity="info" />
@@ -201,6 +202,15 @@ const namespaceCounts = computed(() => {
 
 /* ── Helpers ── */
 
+function toggleGroup(groupKey: string) {
+  const idx = expandedGroups.value.indexOf(groupKey);
+  if (idx >= 0) {
+    expandedGroups.value = expandedGroups.value.filter((k) => k !== groupKey);
+  } else {
+    expandedGroups.value = [...expandedGroups.value, groupKey];
+  }
+}
+
 function statusSeverity(status: string): string {
   switch (status) {
     case 'active': return 'success';
@@ -357,6 +367,18 @@ onBeforeUnmount(() => {
   padding: 6px 12px;
   background: linear-gradient(90deg, rgba(34, 197, 94, 0.08) 0%, transparent 100%);
   border-left: 3px solid #22c55e;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.12) 0%, transparent 100%);
+}
+
+.chevron-icon {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex-shrink: 0;
 }
 
 .ns-icon {

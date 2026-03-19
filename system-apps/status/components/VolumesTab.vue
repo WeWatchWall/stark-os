@@ -62,7 +62,8 @@
         class="volumes-table"
       >
         <template #groupheader="{ data }">
-          <div class="group-header">
+          <div class="group-header" @click="toggleGroup(data.groupKey)">
+            <i :class="['pi', expandedGroups.includes(data.groupKey) ? 'pi-chevron-down' : 'pi-chevron-right', 'chevron-icon']" />
             <span class="group-icon">⎈</span>
             <span class="group-name">{{ data.nodeName }}</span>
             <Tag :value="`${groupCounts[data.groupKey] ?? 0} volume${(groupCounts[data.groupKey] ?? 0) !== 1 ? 's' : ''}`" severity="secondary" />
@@ -179,6 +180,15 @@ const groupCounts = computed(() => {
 });
 
 /* ── Data loading ── */
+
+function toggleGroup(groupKey: string) {
+  const idx = expandedGroups.value.indexOf(groupKey);
+  if (idx >= 0) {
+    expandedGroups.value = expandedGroups.value.filter((k) => k !== groupKey);
+  } else {
+    expandedGroups.value = [...expandedGroups.value, groupKey];
+  }
+}
 
 async function refresh() {
   refreshing.value = true;
@@ -408,6 +418,18 @@ onBeforeUnmount(() => {
   padding: 6px 12px;
   background: linear-gradient(90deg, rgba(99, 102, 241, 0.08) 0%, transparent 100%);
   border-left: 3px solid #6366f1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.12) 0%, transparent 100%);
+}
+
+.chevron-icon {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex-shrink: 0;
 }
 
 .group-icon {

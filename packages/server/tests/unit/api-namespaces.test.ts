@@ -20,6 +20,7 @@ import type {
 // Mock the supabase modules before importing the handlers
 vi.mock('../../src/supabase/namespaces.js', () => ({
   getNamespaceQueries: vi.fn(),
+  getNamespaceQueriesAdmin: vi.fn(),
 }));
 
 // Import after mocking
@@ -30,7 +31,7 @@ import {
   updateNamespace,
   deleteNamespace,
 } from '../../src/api/namespaces.js';
-import { getNamespaceQueries } from '../../src/supabase/namespaces.js';
+import { getNamespaceQueries, getNamespaceQueriesAdmin } from '../../src/supabase/namespaces.js';
 
 /**
  * Create a mock Express request
@@ -109,7 +110,16 @@ describe('Namespace API Handlers', () => {
     countNamespaces: ReturnType<typeof vi.fn>;
     updateNamespace: ReturnType<typeof vi.fn>;
     deleteNamespace: ReturnType<typeof vi.fn>;
+    deleteNamespaceByName: ReturnType<typeof vi.fn>;
     namespaceExists: ReturnType<typeof vi.fn>;
+    markForDeletion: ReturnType<typeof vi.fn>;
+  };
+
+  let mockNamespaceQueriesAdmin: {
+    createNamespace: ReturnType<typeof vi.fn>;
+    updateNamespace: ReturnType<typeof vi.fn>;
+    deleteNamespace: ReturnType<typeof vi.fn>;
+    deleteNamespaceByName: ReturnType<typeof vi.fn>;
     markForDeletion: ReturnType<typeof vi.fn>;
   };
 
@@ -125,11 +135,21 @@ describe('Namespace API Handlers', () => {
       countNamespaces: vi.fn(),
       updateNamespace: vi.fn(),
       deleteNamespace: vi.fn(),
+      deleteNamespaceByName: vi.fn(),
       namespaceExists: vi.fn(),
       markForDeletion: vi.fn(),
     };
 
+    mockNamespaceQueriesAdmin = {
+      createNamespace: vi.fn(),
+      updateNamespace: vi.fn(),
+      deleteNamespace: vi.fn(),
+      deleteNamespaceByName: vi.fn(),
+      markForDeletion: vi.fn(),
+    };
+
     vi.mocked(getNamespaceQueries).mockReturnValue(mockNamespaceQueries as any);
+    vi.mocked(getNamespaceQueriesAdmin).mockReturnValue(mockNamespaceQueriesAdmin as any);
   });
 
   afterEach(() => {
@@ -349,7 +369,7 @@ describe('Namespace API Handlers', () => {
 
     it('should return 201 and create namespace successfully', async () => {
       mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
-      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: sampleNamespace, error: null });
+      mockNamespaceQueriesAdmin.createNamespace.mockResolvedValue({ data: sampleNamespace, error: null });
 
       const req = createMockRequest({
         body: { name: 'test-namespace' },
@@ -371,7 +391,7 @@ describe('Namespace API Handlers', () => {
         },
       });
 
-      expect(mockNamespaceQueries.createNamespace).toHaveBeenCalledWith(
+      expect(mockNamespaceQueriesAdmin.createNamespace).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'test-namespace',
           createdBy: 'dev-user-id',
@@ -387,7 +407,7 @@ describe('Namespace API Handlers', () => {
       };
 
       mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
-      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: namespaceWithOptions, error: null });
+      mockNamespaceQueriesAdmin.createNamespace.mockResolvedValue({ data: namespaceWithOptions, error: null });
 
       const req = createMockRequest({
         body: {
@@ -402,7 +422,7 @@ describe('Namespace API Handlers', () => {
       await createNamespace(req, res);
 
       expect(res._status).toBe(201);
-      expect(mockNamespaceQueries.createNamespace).toHaveBeenCalledWith(
+      expect(mockNamespaceQueriesAdmin.createNamespace).toHaveBeenCalledWith(
         expect.objectContaining({
           labels: { team: 'backend', env: 'dev' },
           resourceQuota: { hard: { pods: 20, cpu: 8000 } },
@@ -464,7 +484,7 @@ describe('Namespace API Handlers', () => {
 
     it('should allow non-admin user to create their username-derived namespace', async () => {
       mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
-      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice' }, error: null });
+      mockNamespaceQueriesAdmin.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice' }, error: null });
 
       const req = createMockRequest({
         body: { name: 'alice' },
@@ -491,7 +511,7 @@ describe('Namespace API Handlers', () => {
 
     it('should allow admin user to create any namespace', async () => {
       mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
-      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: sampleNamespace, error: null });
+      mockNamespaceQueriesAdmin.createNamespace.mockResolvedValue({ data: sampleNamespace, error: null });
 
       const req = createMockRequest({
         body: { name: 'test-namespace' },
@@ -539,7 +559,7 @@ describe('Namespace API Handlers', () => {
 
     it('should allow non-admin user to create a sub-namespace under their username-derived namespace', async () => {
       mockNamespaceQueries.namespaceExists.mockResolvedValue({ data: false, error: null });
-      mockNamespaceQueries.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice/my-project' }, error: null });
+      mockNamespaceQueriesAdmin.createNamespace.mockResolvedValue({ data: { ...sampleNamespace, name: 'alice/my-project' }, error: null });
 
       const req = createMockRequest({
         body: { name: 'alice/my-project' },
@@ -847,7 +867,7 @@ describe('Namespace API Handlers', () => {
         data: sampleNamespace,
         error: null,
       });
-      mockNamespaceQueries.updateNamespace.mockResolvedValue({
+      mockNamespaceQueriesAdmin.updateNamespace.mockResolvedValue({
         data: updatedNamespace,
         error: null,
       });
@@ -880,7 +900,7 @@ describe('Namespace API Handlers', () => {
         data: sampleNamespace,
         error: null,
       });
-      mockNamespaceQueries.updateNamespace.mockResolvedValue({
+      mockNamespaceQueriesAdmin.updateNamespace.mockResolvedValue({
         data: updatedNamespace,
         error: null,
       });
@@ -895,7 +915,7 @@ describe('Namespace API Handlers', () => {
       await updateNamespace(req, res);
 
       expect(res._status).toBe(200);
-      expect(mockNamespaceQueries.updateNamespace).toHaveBeenCalledWith(
+      expect(mockNamespaceQueriesAdmin.updateNamespace).toHaveBeenCalledWith(
         sampleNamespace.id,
         expect.objectContaining({ resourceQuota: newQuota })
       );
@@ -979,7 +999,7 @@ describe('Namespace API Handlers', () => {
         data: namespaceWithPods,
         error: null,
       });
-      mockNamespaceQueries.markForDeletion.mockResolvedValue({
+      mockNamespaceQueriesAdmin.markForDeletion.mockResolvedValue({
         data: { ...namespaceWithPods, phase: 'terminating' },
         error: null,
       });
@@ -1007,7 +1027,7 @@ describe('Namespace API Handlers', () => {
         data: sampleNamespace, // resourceUsage.pods = 0
         error: null,
       });
-      mockNamespaceQueries.deleteNamespace.mockResolvedValue({
+      mockNamespaceQueriesAdmin.deleteNamespace.mockResolvedValue({
         data: true,
         error: null,
       });

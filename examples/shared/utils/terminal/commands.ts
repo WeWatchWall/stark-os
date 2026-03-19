@@ -1849,7 +1849,7 @@ commands['stark'] = async (ctx) => {
       '  stark namespace   Namespace isolation & quotas\n' +
       '                      create, list, get, delete, use, current\n' +
       '  stark secret      Encrypted secret management\n' +
-      '                      list, get\n' +
+      '                      create, list, get, delete\n' +
       '  stark volume      Persistent volume management\n' +
       '                      create, list, download, sync\n' +
       '  stark chaos       Chaos testing & fault injection\n' +
@@ -1900,7 +1900,7 @@ commands['stark'] = async (ctx) => {
             ctx.env['USER'] = 'user';
             return dt({ success: true }, '✓ Logged out.\n');
           case 'whoami': {
-            const info = api.auth.whoami();
+            const info = await api.auth.whoami();
             if (!info) return dt({ error: 'not authenticated' }, 'Not authenticated.\n');
             let out = `Email: ${info.email}\nUser ID: ${info.userId}\n`;
             if (info.username) out += `Username: ${info.username}\n`;
@@ -2613,6 +2613,45 @@ commands['stark'] = async (ctx) => {
       case 'secret': {
         const { positionals, options } = parseOpts(rest);
         switch (action) {
+          case 'create': {
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark secret create <name> --from-literal key=value [--namespace/-n <ns>] [--type opaque|tls|docker-registry] [--inject env|volume] [--prefix <prefix>] [--mount-path <path>]\n');
+            const ns = String(options['namespace'] || options['n'] || 'default');
+            const secretType = String(options['type'] || 'opaque');
+            const injectMode = String(options['inject'] || 'env');
+
+            // Gather --from-literal key=value pairs from remaining positionals
+            const data: Record<string, string> = {};
+            const literals = positionals.slice(1);
+            // Also check --from-literal in options
+            const fromLiteral = options['from-literal'];
+            if (fromLiteral && typeof fromLiteral === 'string') literals.push(fromLiteral);
+            for (const lit of literals) {
+              const eqIdx = String(lit).indexOf('=');
+              if (eqIdx < 1) continue;
+              data[String(lit).substring(0, eqIdx)] = String(lit).substring(eqIdx + 1);
+            }
+
+            if (Object.keys(data).length === 0) return dt({ error: 'missing data' }, 'At least one key=value pair is required.\nUsage: stark secret create <name> key1=value1 key2=value2 [--namespace/-n <ns>]\n');
+
+            // Build injection config
+            const injection: Record<string, unknown> = { mode: injectMode };
+            if (injectMode === 'env' && options['prefix']) injection.prefix = String(options['prefix']);
+            if (injectMode === 'volume' && options['mount-path']) injection.mountPath = String(options['mount-path']);
+
+            const result = unwrap(await api.secret.create({ name: n, namespace: ns, type: secretType, data, injection }), 'secret');
+            return dt(result, `✓ Secret created: ${result.name ?? n}\n` + fmtKeyValue({
+              'ID': result.id,
+              'Name': result.name,
+              'Type': result.type,
+              'Namespace': result.namespace ?? ns,
+            }) + '\n⚠ Secret values are encrypted and never displayed.\n');
+          }
+          case 'delete': case 'rm': {
+            const n = positionals[0]; if (!n) return dt({ error: 'missing name' }, 'Usage: stark secret delete <name> [--namespace/-n <ns>]\n');
+            const ns = String(options['namespace'] || options['n'] || 'default');
+            await api.secret.delete(n, ns);
+            return dt({ success: true, name: n }, `✓ Secret deleted: ${n}\n`);
+          }
           case 'list': case 'ls': {
             const ns = options['namespace'] || options['n'];
             const data = await api.secret.list({ namespace: ns ? String(ns) : undefined }) as { secrets?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
@@ -2658,15 +2697,23 @@ commands['stark'] = async (ctx) => {
             const helpText =
               'stark secret — Encrypted secret management\n\n' +
               'Actions:\n' +
+              '  create        Create a new secret\n' +
+              '                  stark secret create <name> key1=value1 [key2=value2...]\n' +
+              '                  [--namespace/-n <ns>] [--type opaque|tls|docker-registry]\n' +
+              '                  [--inject env|volume] [--prefix <prefix>] [--mount-path <path>]\n' +
               '  list / ls     List secrets in a namespace\n' +
               '                  [--namespace/-n <ns>]\n' +
               '  get           Show secret metadata (values are never displayed)\n' +
               '                  stark secret get <name> [--namespace/-n <ns>]\n' +
+              '  delete / rm   Delete a secret\n' +
+              '                  stark secret delete <name> [--namespace/-n <ns>]\n' +
               '\n⚠ Secret values are encrypted at rest and never shown in the CLI.\n' +
               '\nExamples:\n' +
+              '  stark secret create db-creds username=admin password=secret\n' +
               '  stark secret ls\n' +
-              '  stark secret get db-credentials --namespace prod\n';
-            if (!action || action === 'help') return dt({ actions: ['list', 'get'] }, helpText);
+              '  stark secret get db-credentials --namespace prod\n' +
+              '  stark secret delete old-creds\n';
+            if (!action || action === 'help') return dt({ actions: ['create', 'list', 'get', 'delete'] }, helpText);
             return dt({ error: `unknown subcommand: ${action}` }, `Unknown secret action: ${action}\n\n${helpText}`);
           }
         }

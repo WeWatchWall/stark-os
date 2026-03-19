@@ -17,6 +17,9 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
 /**
  * Encryption algorithm — AES-256-GCM
@@ -64,26 +67,64 @@ function deriveKey(masterKey: string): Buffer {
 let _masterKey: Buffer | null = null;
 
 /**
+ * Path to the persisted master key file.
+ * Stored alongside server config in ~/.stark/ with restrictive permissions.
+ */
+const MASTER_KEY_PATH = join(homedir(), '.stark', 'master.key');
+
+/**
  * Initialize the master encryption key.
  *
  * Call once at orchestrator startup. The key can come from:
  * - Environment variable STARK_MASTER_KEY
- * - A file on disk (future)
+ * - A file on disk (~/.stark/master.key)
  * - A KMS call (future)
  *
- * If no key is provided, generates a random one (ephemeral — secrets
- * won't survive restarts; suitable for development).
+ * If no key is provided and none is persisted, generates a random one
+ * and persists it to ~/.stark/master.key so secrets survive restarts.
+ *
+ * Idempotent: if the key is already initialized and no explicit key
+ * parameter is passed, this is a no-op.
  *
  * @param key — raw master key string. If omitted, reads STARK_MASTER_KEY
- *              from environment or generates a random ephemeral key.
+ *              from environment, then ~/.stark/master.key, or generates
+ *              and persists a new random key.
  */
 export function initMasterKey(key?: string): void {
+  // Idempotent: if already initialized and no explicit override, skip
+  if (_masterKey && !key) return;
+
   const source = key ?? process.env.STARK_MASTER_KEY;
   if (source) {
     _masterKey = deriveKey(source);
-  } else {
-    // Ephemeral key — development only
-    _masterKey = randomBytes(32);
+    return;
+  }
+
+  // Try to load a previously persisted key from disk
+  try {
+    if (existsSync(MASTER_KEY_PATH)) {
+      const persisted = readFileSync(MASTER_KEY_PATH, 'utf8').trim();
+      if (persisted) {
+        _masterKey = deriveKey(persisted);
+        return;
+      }
+    }
+  } catch {
+    // Ignore read errors — fall through to generate a new key
+  }
+
+  // Generate a new random key and persist it to disk
+  const newKeyHex = randomBytes(32).toString('hex');
+  _masterKey = deriveKey(newKeyHex);
+
+  try {
+    const starkDir = join(homedir(), '.stark');
+    mkdirSync(starkDir, { recursive: true, mode: 0o700 });
+    writeFileSync(MASTER_KEY_PATH, newKeyHex, { mode: 0o600 });
+    chmodSync(MASTER_KEY_PATH, 0o600);
+  } catch {
+    // Non-fatal — key works for this process lifetime even if we
+    // cannot persist. Secrets won't survive restart in this case.
   }
 }
 

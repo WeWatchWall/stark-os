@@ -1022,6 +1022,52 @@ export async function checkUsernameAvailability(req: Request, res: Response): Pr
   }
 }
 
+/**
+ * GET /auth/whoami - Get current authenticated user info from JWT token
+ */
+export async function whoami(req: Request, res: Response): Promise<void> {
+  const correlationId = generateCorrelationId();
+  const requestLogger = logger.withCorrelationId(correlationId);
+
+  try {
+    // Extract Bearer token
+    const authHeader = req.headers['authorization'] as string | undefined;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      sendError(res, 'AUTHENTICATION_REQUIRED', 'Authentication required', 401);
+      return;
+    }
+
+    const token = authHeader.slice(7).trim();
+    if (!token) {
+      sendError(res, 'AUTHENTICATION_REQUIRED', 'Authentication required', 401);
+      return;
+    }
+
+    // Verify token and get user
+    const result = await verifyToken(token);
+    if (result.error || !result.data) {
+      sendError(res, 'UNAUTHORIZED', result.error?.message ?? 'Invalid token', 401);
+      return;
+    }
+
+    const user = result.data;
+    requestLogger.debug('Whoami request', { userId: user.id });
+
+    sendSuccess(res, {
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        displayName: user.displayName,
+        roles: user.roles,
+      },
+    }, 200);
+  } catch (error) {
+    requestLogger.error('Error during whoami', error instanceof Error ? error : undefined);
+    sendError(res, 'INTERNAL_ERROR', 'An unexpected error occurred', 500);
+  }
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -1041,6 +1087,7 @@ export function createAuthRouter(): Router {
   router.get('/users', listUsers);
   router.post('/users', createUser);
   router.get('/check-username', checkUsernameAvailability);
+  router.get('/whoami', whoami);
 
   return router;
 }

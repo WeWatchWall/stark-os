@@ -16,7 +16,7 @@ import {
   generateCorrelationId,
 } from '@stark-o/shared';
 import { getSecretQueries } from '../supabase/secrets.js';
-import { encryptSecretData, initMasterKey } from '@stark-o/core';
+import { encryptSecretData, decryptSecretData, initMasterKey } from '@stark-o/core';
 import {
   authMiddleware,
   abilityMiddleware,
@@ -171,7 +171,7 @@ async function createSecret(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * GET /api/secrets — List secrets (metadata only)
+ * GET /api/secrets — List secrets (metadata + key count)
  */
 async function listSecrets(req: Request, res: Response): Promise<void> {
   const authReq = req as AuthenticatedRequest;
@@ -187,14 +187,39 @@ async function listSecrets(req: Request, res: Response): Promise<void> {
     const type = req.query.type as SecretType | undefined;
 
     const queries = getSecretQueries();
-    const result = await queries.listSecrets({ namespace, type });
+    const result = await queries.listSecretsFull({ namespace, type });
 
     if (result.error) {
       sendError(res, 'INTERNAL_ERROR', 'Failed to list secrets', 500);
       return;
     }
 
-    sendSuccess(res, { secrets: result.data ?? [] });
+    initMasterKey();
+
+    // Map to list items with accurate keyCount
+    const secrets = (result.data ?? []).map((s) => {
+      let keyCount = 0;
+      try {
+        const data = decryptSecretData(s.encryptedData, s.iv, s.authTag);
+        keyCount = Object.keys(data).length;
+      } catch {
+        // If decryption fails, keyCount stays 0
+      }
+      return {
+        id: s.id,
+        name: s.name,
+        namespace: s.namespace,
+        type: s.type,
+        injection: s.injection,
+        keyCount,
+        version: s.version,
+        createdBy: s.createdBy,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      };
+    });
+
+    sendSuccess(res, { secrets });
   } catch (err) {
     logger.error('Error listing secrets', err instanceof Error ? err : undefined);
     sendError(res, 'INTERNAL_ERROR', 'Internal server error', 500);
@@ -229,8 +254,18 @@ async function getSecretByName(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Return metadata only
+    // Return metadata with key names (but not values)
     const secret = result.data;
+    let keyCount = 0;
+    let keyNames: string[] = [];
+    try {
+      initMasterKey();
+      const data = decryptSecretData(secret.encryptedData, secret.iv, secret.authTag);
+      keyNames = Object.keys(data);
+      keyCount = keyNames.length;
+    } catch {
+      // If decryption fails, return empty key info
+    }
     sendSuccess(res, {
       secret: {
         id: secret.id,
@@ -238,6 +273,8 @@ async function getSecretByName(req: Request, res: Response): Promise<void> {
         namespace: secret.namespace,
         type: secret.type,
         injection: secret.injection,
+        keyCount,
+        keyNames,
         version: secret.version,
         createdBy: secret.createdBy,
         createdAt: secret.createdAt,
@@ -296,7 +333,19 @@ async function updateSecretByName(req: Request, res: Response): Promise<void> {
 
     if (input.data) {
       initMasterKey();
-      const encrypted = encryptSecretData(input.data);
+      // Merge incoming data with existing: decrypt current, overlay new keys
+      let merged = input.data;
+      try {
+        const current = decryptSecretData(
+          existing.data.encryptedData,
+          existing.data.iv,
+          existing.data.authTag,
+        );
+        merged = { ...current, ...input.data };
+      } catch {
+        // If decryption of existing fails, just use the new data as-is
+      }
+      const encrypted = encryptSecretData(merged);
       dbUpdate.encryptedData = encrypted.ciphertext;
       dbUpdate.iv = encrypted.iv;
       dbUpdate.authTag = encrypted.authTag;

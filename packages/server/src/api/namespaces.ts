@@ -22,7 +22,7 @@ import {
   generateCorrelationId,
 } from '@stark-o/shared';
 import type { User } from '@stark-o/shared';
-import { getNamespaceQueries } from '../supabase/namespaces.js';
+import { getNamespaceQueries, getNamespaceQueriesAdmin } from '../supabase/namespaces.js';
 import {
   authMiddleware,
   abilityMiddleware,
@@ -237,10 +237,11 @@ export async function createNamespaceHandler(req: Request, res: Response): Promi
       return;
     }
 
-    // Create namespace
+    // Create namespace (use service-role client to bypass RLS)
     requestLogger.debug('Creating namespace record', { name: input.name });
 
-    const createResult = await namespaceQueries.createNamespace({
+    const adminQueries = getNamespaceQueriesAdmin();
+    const createResult = await adminQueries.createNamespace({
       ...input,
       createdBy: userId,
     });
@@ -555,13 +556,14 @@ export async function updateNamespaceHandler(req: Request, res: Response): Promi
       return;
     }
 
-    // Update namespace
+    // Update namespace (use service-role client to bypass RLS)
     requestLogger.debug('Updating namespace', {
       namespaceId: id,
       name: existsResult.data.name,
     });
 
-    const updateResult = await namespaceQueries.updateNamespace(id, input);
+    const adminQueries = getNamespaceQueriesAdmin();
+    const updateResult = await adminQueries.updateNamespace(id, input);
 
     if (updateResult.error) {
       requestLogger.error('Failed to update namespace', undefined, {
@@ -670,7 +672,8 @@ export async function deleteNamespaceHandler(req: Request, res: Response): Promi
         podCount: existsResult.data.resourceUsage.pods,
       });
 
-      const markResult = await namespaceQueries.markForDeletion(id);
+      const adminQueries = getNamespaceQueriesAdmin();
+      const markResult = await adminQueries.markForDeletion(id);
 
       if (markResult.error) {
         requestLogger.error('Failed to mark namespace for deletion', undefined, {
@@ -695,13 +698,14 @@ export async function deleteNamespaceHandler(req: Request, res: Response): Promi
       return;
     }
 
-    // Delete namespace immediately if empty
+    // Delete namespace immediately if empty (use service-role client to bypass RLS)
     requestLogger.debug('Deleting namespace', {
       namespaceId: id,
       name: existsResult.data.name,
     });
 
-    const deleteResult = await namespaceQueries.deleteNamespace(id);
+    const adminQueriesForDelete = getNamespaceQueriesAdmin();
+    const deleteResult = await adminQueriesForDelete.deleteNamespace(id);
 
     if (deleteResult.error) {
       requestLogger.error('Failed to delete namespace', undefined, {
@@ -799,7 +803,8 @@ export async function deleteNamespaceByNameHandler(req: Request, res: Response):
         podCount: existsResult.data.resourceUsage.pods,
       });
 
-      const markResult = await namespaceQueries.markForDeletion(existsResult.data.id);
+      const adminQueries = getNamespaceQueriesAdmin();
+      const markResult = await adminQueries.markForDeletion(existsResult.data.id);
 
       if (markResult.error) {
         requestLogger.error('Failed to mark namespace for deletion', undefined, {
@@ -824,10 +829,11 @@ export async function deleteNamespaceByNameHandler(req: Request, res: Response):
       return;
     }
 
-    // Delete namespace immediately if empty
+    // Delete namespace immediately if empty (use service-role client to bypass RLS)
     requestLogger.debug('Deleting namespace by name', { name });
 
-    const deleteResult = await namespaceQueries.deleteNamespaceByName(name);
+    const adminQueriesForDelete = getNamespaceQueriesAdmin();
+    const deleteResult = await adminQueriesForDelete.deleteNamespaceByName(name);
 
     if (deleteResult.error) {
       requestLogger.error('Failed to delete namespace', undefined, {

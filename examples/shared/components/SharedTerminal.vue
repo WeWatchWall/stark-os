@@ -128,6 +128,7 @@ onMounted(async () => {
       TERM: 'xterm-256color',
       PATH: '/usr/bin:/bin',
     },
+    setCwd: (path: string) => { state.cwd = path; },
   };
 
   // Try to load actual user name from browser-cli credentials

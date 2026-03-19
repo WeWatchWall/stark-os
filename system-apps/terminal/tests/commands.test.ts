@@ -890,3 +890,156 @@ describe('stark command improvements', () => {
     expect(result).toBeTruthy();
   });
 });
+
+// ============================================================================
+// .sh.js Script Execution Tests
+// ============================================================================
+
+describe('.sh.js script execution', () => {
+  let fs: TerminalFS;
+  let state: ShellState;
+  let output: string[];
+  const write = (t: string) => output.push(t);
+
+  beforeEach(async () => {
+    fs = createMemoryFS();
+    await fs.mkdir('/home');
+    await fs.mkdir('/tmp');
+    output = [];
+    state = {
+      cwd: '/home',
+      fs,
+      env: { USER: 'testuser', HOME: '/home' },
+      prompt: async () => 'test-input',
+      promptPassword: async () => 'secret',
+    };
+  });
+
+  it('sh.js command should require a script operand', async () => {
+    const ctx = await createContextWithFS({ fs });
+    const result = await commands['sh.js']!(ctx);
+    expect(result).toBe('sh.js: missing script operand\n');
+  });
+
+  it('sh.js command should execute a simple script', async () => {
+    await fs.writeFile('/home/test.sh.js', 'Terminal.writeln("hello from script");');
+    const ctx = await createContextWithFS({
+      fs,
+      args: ['test.sh.js'],
+      write,
+    });
+    await commands['sh.js']!(ctx);
+    expect(output.join('')).toContain('hello from script');
+  });
+
+  it('sh.js command should report missing script file', async () => {
+    const ctx = await createContextWithFS({
+      fs,
+      args: ['nonexistent.sh.js'],
+      write,
+    });
+    await commands['sh.js']!(ctx);
+    expect(output.join('')).toContain('No such file or directory');
+  });
+
+  it('should execute .sh.js via direct path in shell', async () => {
+    await fs.writeFile('/home/hello.sh.js', 'Terminal.writeln("direct exec");');
+    await executePlan(parseCommandLine('./hello.sh.js'), state, write);
+    expect(output.join('')).toContain('direct exec');
+  });
+
+  it('should execute .sh.js via absolute path in shell', async () => {
+    await fs.writeFile('/home/hello.sh.js', 'Terminal.writeln("abs path");');
+    await executePlan(parseCommandLine('/home/hello.sh.js'), state, write);
+    expect(output.join('')).toContain('abs path');
+  });
+
+  it('Terminal.run should capture output without writing to terminal', async () => {
+    await fs.writeFile('/home/run.sh.js',
+      'const result = await Terminal.run("echo captured");\n' +
+      'Terminal.writeln("got: " + result.trim());'
+    );
+    await executePlan(parseCommandLine('./run.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('got: captured');
+  });
+
+  it('Terminal.args should pass arguments to script', async () => {
+    await fs.writeFile('/home/args.sh.js',
+      'Terminal.writeln("args: " + Terminal.args.join(","));'
+    );
+    await executePlan(parseCommandLine('./args.sh.js foo bar'), state, write);
+    expect(output.join('')).toContain('args: foo,bar');
+  });
+
+  it('Terminal.cwd should return current working directory', async () => {
+    await fs.writeFile('/home/cwd.sh.js',
+      'Terminal.writeln("cwd: " + Terminal.cwd());'
+    );
+    await executePlan(parseCommandLine('./cwd.sh.js'), state, write);
+    expect(output.join('')).toContain('cwd: /home');
+  });
+
+  it('Terminal.cd should change working directory', async () => {
+    await fs.writeFile('/home/cd.sh.js',
+      'await Terminal.cd("/tmp");\nTerminal.writeln("now: " + Terminal.cwd());'
+    );
+    await executePlan(parseCommandLine('./cd.sh.js'), state, write);
+    expect(output.join('')).toContain('now: /tmp');
+    expect(state.cwd).toBe('/tmp');
+  });
+
+  it('Terminal.env and Terminal.setEnv should work', async () => {
+    await fs.writeFile('/home/env.sh.js',
+      'Terminal.setEnv("FOO", "bar");\n' +
+      'const e = Terminal.env();\n' +
+      'Terminal.writeln("FOO=" + e.FOO);'
+    );
+    await executePlan(parseCommandLine('./env.sh.js'), state, write);
+    expect(output.join('')).toContain('FOO=bar');
+    expect(state.env['FOO']).toBe('bar');
+  });
+
+  it('Terminal.readFile and Terminal.writeFile should work', async () => {
+    await fs.writeFile('/home/fileio.sh.js',
+      'await Terminal.writeFile("out.txt", "hello file");\n' +
+      'const content = await Terminal.readFile("out.txt");\n' +
+      'Terminal.writeln("read: " + content);'
+    );
+    await executePlan(parseCommandLine('./fileio.sh.js'), state, write);
+    expect(output.join('')).toContain('read: hello file');
+  });
+
+  it('Terminal.readdir should list directory entries', async () => {
+    await fs.writeFile('/home/a.txt', 'a');
+    await fs.writeFile('/home/b.txt', 'b');
+    await fs.writeFile('/home/dir.sh.js',
+      'const files = await Terminal.readdir(".");\n' +
+      'Terminal.writeln("files: " + files.sort().join(","));'
+    );
+    await executePlan(parseCommandLine('./dir.sh.js'), state, write);
+    expect(output.join('')).toContain('a.txt');
+    expect(output.join('')).toContain('b.txt');
+  });
+
+  it('script errors should be caught and printed in red', async () => {
+    await fs.writeFile('/home/error.sh.js', 'throw new Error("boom");');
+    await executePlan(parseCommandLine('./error.sh.js'), state, write);
+    const combined = output.join('');
+    expect(combined).toContain('sh.js error: boom');
+    expect(combined).toContain('\x1B[31m'); // red ANSI
+  });
+
+  it('help should mention .sh.js files', async () => {
+    const ctx = await createContextWithFS();
+    const result = await commands['help']!(ctx);
+    expect(result).toContain('.sh.js');
+    expect(result).toContain('Terminal API');
+  });
+
+  it('.sh.js should work in a pipeline (output piped to next command)', async () => {
+    await fs.writeFile('/home/pipe.sh.js', 'Terminal.write("pipe output");');
+    await executePlan(parseCommandLine('./pipe.sh.js | cat'), state, write);
+    expect(output.join('')).toContain('pipe output');
+  });
+});

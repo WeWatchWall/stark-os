@@ -488,7 +488,26 @@ commands['help'] = async () => {
   }
   result += '\nFilesystem is backed by OPFS. Volumes are visible at /volumes/<name>.\n';
   result += 'Pipe with |, run in background with &, chain with &&\n';
+  result += '.sh.js files: run with `sh.js <file>` or `./file.sh.js` — gets Terminal API\n';
   return result;
+};
+
+commands['sh.js'] = async (ctx) => {
+  const file = ctx.args[0];
+  if (!file) return 'sh.js: missing script operand\n';
+  const scriptPath = normalizePath(file, ctx.cwd);
+  const scriptArgs = ctx.args.slice(1);
+  const write = (text: string) => ctx.write(text);
+  const { executeShJs } = await import('./shjs');
+  await executeShJs(scriptPath, scriptArgs, {
+    cwd: ctx.cwd,
+    fs: ctx.fs,
+    env: ctx.env,
+    setCwd: ctx.setCwd,
+    prompt: ctx.prompt,
+    promptPassword: ctx.promptPassword,
+  }, write);
+  return '';
 };
 
 // ============================================================================

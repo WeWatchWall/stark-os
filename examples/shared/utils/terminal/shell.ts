@@ -141,6 +141,8 @@ export interface ShellState {
   cwd: string;
   fs: TerminalFS;
   env: Record<string, string>;
+  /** Optional callback to update the external cwd (e.g. Vue reactive state) */
+  setCwd?: (path: string) => void;
   /** Optional prompt function for interactive commands */
   prompt?: (message: string) => Promise<string>;
   /** Optional hidden prompt function for passwords */
@@ -180,14 +182,31 @@ async function executePipeline(
     if (cmd.tokens.length === 0) continue;
     const [commandName, ...args] = cmd.tokens;
     const handler = commands[commandName!];
-    if (!handler) { write(`${commandName}: command not found\n`); throw new Error(`Command not found: ${commandName}`); }
+
+    if (!handler) {
+      // Check if it's a direct .sh.js script invocation (./foo.sh.js or /path/to/foo.sh.js)
+      if (commandName!.endsWith('.sh.js')) {
+        const scriptPath = normalizePath(commandName!, state.cwd);
+        const exists = await state.fs.exists(scriptPath);
+        if (exists) {
+          const { executeShJs } = await import('./shjs');
+          let output = '';
+          const scriptWrite = isLast ? write : (text: string) => { output += text; };
+          await executeShJs(scriptPath, args, state, scriptWrite);
+          if (!isLast) { stdin = output; }
+          continue;
+        }
+      }
+      write(`${commandName}: command not found\n`);
+      throw new Error(`Command not found: ${commandName}`);
+    }
 
     const ctx: CommandContext = {
       args, cwd: state.cwd,
       write: isLast ? write : () => {},
       writeError: write, stdin,
       fs: state.fs, env: state.env,
-      setCwd: (path: string) => { state.cwd = path; },
+      setCwd: (path: string) => { state.cwd = path; if (state.setCwd) state.setCwd(path); },
       prompt: state.prompt,
       promptPassword: state.promptPassword,
     };

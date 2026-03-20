@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 // esbuild handles the circular dependencies in noclip/ that Rollup cannot
 // resolve when inlineDynamicImports is enabled.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const gameOutput = resolve(__dirname, 'game/main.mjs');
+const gameOutput = resolve(__dirname, 'game/main.js');
 if (!existsSync(gameOutput)) {
   console.log('[monkeyball] Building game with esbuild...');
   execSync('node build-game.mjs', { cwd: __dirname, stdio: 'inherit' });

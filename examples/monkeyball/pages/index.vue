@@ -490,6 +490,12 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 
+// Import the pre-built game as a raw string so Rollup never parses it.
+// The game is bundled as IIFE by esbuild (build-game.mjs) which wraps
+// everything in a function scope, eliminating circular-dependency TDZ errors.
+// @ts-expect-error Vite ?raw import
+import gameCode from '~/game/main.js?raw';
+
 function setupControlMode(): void {
     const field = document.getElementById('control-mode-field');
         const select = document.getElementById('control-mode');
@@ -582,10 +588,10 @@ onMounted(async () => {
   // Set up mobile control mode UI (gyro/touch detection)
   setupControlMode();
 
-  // Dynamically import the pre-built game module after DOM is ready.
-  // The game is pre-bundled with esbuild (via build-game.mjs) to handle
-  // circular dependencies in the noclip rendering code.
-  await import('~/game/main.mjs');
+  // Execute the pre-built game IIFE in global scope.
+  // Indirect eval (0, eval)() runs outside strict mode / module scope,
+  // so the IIFE's function-scoped variables never hit TDZ issues.
+  (0, eval)(gameCode);
 });
 </script>
 

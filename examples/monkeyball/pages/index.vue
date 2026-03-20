@@ -1084,12 +1084,6 @@ body.gameplay-active {
 
 .chat-line {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.chat-line {
-  display: flex;
   flex-wrap: wrap;
   gap: 4px;
   font-weight: 600;

@@ -10,7 +10,7 @@
     "dev": "npm run build:game && nuxt dev",
     "build": "npm run build:game && nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "node build-game.mjs && nuxt prepare"
   },
   "dependencies": {
     "@stark-o/browser-runtime": "link:../../packages/browser-runtime",

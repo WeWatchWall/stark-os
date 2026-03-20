@@ -1,4 +1,19 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { execSync } from 'child_process';
+import { existsSync } from 'fs';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+
+// Pre-build the WebMonkeyBall game with esbuild before Vite resolves imports.
+// esbuild handles the circular dependencies in noclip/ that Rollup cannot
+// resolve when inlineDynamicImports is enabled.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const gameOutput = resolve(__dirname, 'game/main.mjs');
+if (!existsSync(gameOutput)) {
+  console.log('[monkeyball] Building game with esbuild...');
+  execSync('node build-game.mjs', { cwd: __dirname, stdio: 'inherit' });
+}
+
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: false },

@@ -1,0 +1,27 @@
+{
+  "name": "monkeyball-example",
+  "version": "0.0.1",
+  "description": "Super Monkey Ball web game powered by WebMonkeyBall",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:game": "node build-game.mjs",
+    "prebuild": "cd ../.. && pnpm -r run build",
+    "dev": "npm run build:game && nuxt dev",
+    "build": "npm run build:game && nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "node build-game.mjs && nuxt prepare"
+  },
+  "dependencies": {
+    "@stark-o/browser-runtime": "link:../../packages/browser-runtime",
+    "@stark-o/shared": "link:../../packages/shared",
+    "smb-web": "github:sndrec/WebMonkeyBall",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.4",
+    "nuxt": "^3.15.0",
+    "vite": "^6.0.0",
+    "vue-router": "^4.5.0"
+  }
+}

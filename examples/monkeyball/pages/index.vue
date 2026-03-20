@@ -585,6 +585,19 @@ onMounted(async () => {
   // Set lobby URL for multiplayer
   (window as any).LOBBY_URL = 'https://webmonkeyball-lobby.sndrec32exe.workers.dev';
 
+  // Redirect relative fetch() calls to the game content CDN.
+  // The game loads stage data, models, textures, and audio from relative
+  // paths like ./smb1_content/... and ./audio/... which don't exist in the
+  // about:srcdoc iframe context. Proxy them to the hosted game server.
+  const CONTENT_BASE = 'https://monkeyball-online.pages.dev';
+  const origFetch = window.fetch.bind(window);
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    if (typeof input === 'string' && input.startsWith('./')) {
+      input = `${CONTENT_BASE}/${input.slice(2)}`;
+    }
+    return origFetch(input, init);
+  } as typeof window.fetch;
+
   // Set up mobile control mode UI (gyro/touch detection)
   setupControlMode();
 

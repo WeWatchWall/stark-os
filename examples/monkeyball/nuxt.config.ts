@@ -39,10 +39,6 @@ export default defineNuxtConfig({
     appManifest: false
   },
 
-  build: {
-    transpile: ['smb-web']
-  },
-
   vite: {
     build: {
       minify: true,

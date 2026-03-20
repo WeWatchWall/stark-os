@@ -582,8 +582,10 @@ onMounted(async () => {
   // Set up mobile control mode UI (gyro/touch detection)
   setupControlMode();
 
-  // Dynamically import the game module after DOM is ready
-  await import('smb-web/src/main.js');
+  // Dynamically import the pre-built game module after DOM is ready.
+  // The game is pre-bundled with esbuild (via build-game.mjs) to handle
+  // circular dependencies in the noclip rendering code.
+  await import('~/game/main.mjs');
 });
 </script>
 

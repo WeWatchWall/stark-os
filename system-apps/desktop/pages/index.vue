@@ -32,7 +32,8 @@
     >
       <template v-if="slot">
         <div class="icon-wrapper" :style="{ color: getColor(slot) }">
-          <div class="icon-svg" v-html="getSvg(slot)"></div>
+          <img v-if="shortcutIcons[slot.name]" :src="shortcutIcons[slot.name]" class="shortcut-icon-img" />
+          <div v-else class="icon-svg" v-html="getSvg(slot)"></div>
         </div>
         <input
           v-if="renaming.active && renaming.name === slot.name"
@@ -45,7 +46,7 @@
           @click.stop
           @dblclick.stop
         />
-        <span v-else class="icon-label" :title="slot.name">{{ slot.name }}</span>
+        <span v-else class="icon-label" :title="slot.name">{{ displayLabel(slot) }}</span>
       </template>
     </div>
 
@@ -120,6 +121,10 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
         New File
       </div>
+      <div class="ctx-item" @click="ctxAddShortcut">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        Add Shortcut
+      </div>
       <div class="ctx-item" @click="ctxNewFolder">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" class="ctx-icon"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
         New Folder
@@ -159,13 +164,22 @@
       @installed="onPackInstalled"
       @update:visible="installPackDialog.show = $event"
     />
+
+    <!-- Add Shortcut dialog -->
+    <AddShortcutDialog
+      :visible="shortcutDialog.show"
+      :target-dir="DESKTOP_PATH"
+      @created="onShortcutCreated"
+      @cancel="shortcutDialog.show = false"
+      @update:visible="shortcutDialog.show = $event"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 // Types need explicit imports; util functions are auto-imported by the shared Nuxt layer
-import type { IntentStore, IntentPackInfo } from '../../../examples/shared/utils';
+import type { IntentStore, IntentPackInfo, ShortcutData } from '../../../examples/shared/utils';
 // fileops is NOT barrel-exported (heavy JSZip dep) — import directly
 import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensureTrash, emptyTrash, downloadItems, renameItem, moveItems, copyItems, buildClipboardText, parseClipboard, extractSourceDir, conflictMessage, TRASH_PATH, extractZip } from '../../../examples/shared/utils/lib/fileops';
 
@@ -239,6 +253,12 @@ const installPackDialog = reactive({
   fileName: '',
   filePath: '',
 });
+
+/** Add Shortcut dialog */
+const shortcutDialog = reactive({ show: false });
+
+/** Cached shortcut icon base64 data URIs keyed by file name. */
+const shortcutIcons = reactive<Record<string, string>>({});
 
 // ── Grid slot computation ──
 
@@ -367,6 +387,11 @@ function getColor(item: DesktopItem): string {
   return getIconColor(item.name, item.isDirectory);
 }
 
+/** Display name: hide .lnk extension except during rename. */
+function displayLabel(item: DesktopItem): string {
+  return displayNameForShortcut(item.name);
+}
+
 // ── OPFS root handle ──
 
 let opfsRoot: FileSystemDirectoryHandle | null = null;
@@ -395,9 +420,26 @@ async function readDesktopDir(): Promise<void> {
     }
 
     items.value = entries;
+
+    // Load shortcut icons in background
+    loadShortcutIcons(entries);
   } catch (err) {
     console.warn('Desktop: failed to read /home/desktop:', err);
     items.value = [{ name: 'trash', isDirectory: true }];
+  }
+}
+
+/** Read .lnk files and cache their icon base64 data for display. */
+async function loadShortcutIcons(entries: DesktopItem[]): Promise<void> {
+  const lnkFiles = entries.filter((e) => !e.isDirectory && isShortcutFile(e.name));
+  for (const f of lnkFiles) {
+    const filePath = DESKTOP_PATH + '/' + f.name;
+    const data = await readShortcutFile(filePath);
+    if (data?.iconBase64) {
+      shortcutIcons[f.name] = data.iconBase64;
+    } else {
+      delete shortcutIcons[f.name];
+    }
   }
 }
 
@@ -653,6 +695,14 @@ function onDblClick(index: number): void {
     launchPack('files', [TRASH_PATH]);
   } else if (item.isDirectory) {
     launchPack('files', ['/home/desktop/' + item.name]);
+  } else if (isShortcutFile(item.name)) {
+    // Launch pod from shortcut data
+    const filePath = normalizePath('/home/desktop/' + item.name);
+    readShortcutFile(filePath).then((data) => {
+      if (data) {
+        launchShortcut(data);
+      }
+    });
   } else if (item.name.toLowerCase().endsWith('.zip')) {
     // Open zip archive in files app for browsing
     launchPack('files', ['/home/desktop/' + item.name + '/root']);
@@ -926,6 +976,16 @@ function ctxUpload(): void {
   fileInput.value?.click();
 }
 
+function ctxAddShortcut(): void {
+  ctxMenu.show = false;
+  shortcutDialog.show = true;
+}
+
+async function onShortcutCreated(): Promise<void> {
+  shortcutDialog.show = false;
+  await readDesktopDir();
+}
+
 async function onFilesSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   if (!input.files || input.files.length === 0 || !opfsRoot) return;
@@ -1049,10 +1109,11 @@ function openSelectedItems(): void {
   if (now - lastLaunchTime < 1000) return;
   lastLaunchTime = now;
 
-  // Separate trash, directories, and files
+  // Separate trash, directories, shortcuts, and files
   const hasTrash = selected.some((i) => i.name === 'trash');
   const dirs = selected.filter((i) => i.isDirectory && i.name !== 'trash');
-  const files = selected.filter((i) => !i.isDirectory && i.name !== 'trash');
+  const shortcuts = selected.filter((i) => !i.isDirectory && isShortcutFile(i.name));
+  const files = selected.filter((i) => !i.isDirectory && i.name !== 'trash' && !isShortcutFile(i.name));
 
   if (hasTrash) {
     launchPack('files', [TRASH_PATH]);
@@ -1061,6 +1122,14 @@ function openSelectedItems(): void {
   // Directories: open each with the files app directly
   for (const dir of dirs) {
     launchPack('files', ['/home/desktop/' + dir.name]);
+  }
+
+  // Shortcuts: launch each via shortcut data
+  for (const sc of shortcuts) {
+    const filePath = normalizePath('/home/desktop/' + sc.name);
+    readShortcutFile(filePath).then((data) => {
+      if (data) launchShortcut(data);
+    });
   }
 
   if (files.length > 0) {
@@ -1077,7 +1146,7 @@ function openSelectedItems(): void {
 function onKeyDown(event: KeyboardEvent): void {
   // Don't intercept keys while a rename input or dialog is active
   if (renaming.active) return;
-  if (owDialog.show || installPackDialog.show) return;
+  if (owDialog.show || installPackDialog.show || shortcutDialog.show) return;
 
   if (event.key === 'Enter') {
     openSelectedItems();
@@ -1241,6 +1310,14 @@ onBeforeUnmount(() => {
 .icon-svg :deep(svg) {
   width: 100%;
   height: 100%;
+}
+
+.shortcut-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  border-radius: 4px;
 }
 
 .icon-label {

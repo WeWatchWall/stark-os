@@ -23,6 +23,7 @@ export {
   ICON_CTX_COPY,
   ICON_CTX_CUT,
   ICON_CTX_PASTE,
+  ICON_SHORTCUT,
   type IconCategory,
 } from './lib/icons';
 
@@ -85,10 +86,15 @@ export {
   loadPackList,
   openFilesWithIntent,
   handleOpenWithSelection,
+  isShortcutFile,
+  displayNameForShortcut,
+  readShortcutFile,
+  launchShortcut,
   type IntentMapping,
   type IntentStore,
   type IntentPackInfo,
   type OpenWithNeeded,
+  type ShortcutData,
 } from './lib/intents';
 
 export {

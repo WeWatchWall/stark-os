@@ -90,6 +90,7 @@
           <span v-else class="sc-icon-placeholder">No icon</span>
         </div>
       </div>
+      <div v-if="iconError" class="sc-icon-error">{{ iconError }}</div>
 
       <!-- Actions -->
       <div class="sc-actions">
@@ -158,6 +159,7 @@ const args = ref<string[]>(['']);
 const iconUrl = ref('');
 const iconBase64 = ref('');
 const iconPreviewSrc = ref('');
+const iconError = ref('');
 const refreshingApps = ref(false);
 const internalApps = ref<AppEntry[]>([]);
 const iconFileInput = ref<HTMLInputElement | null>(null);
@@ -185,6 +187,7 @@ watch(() => props.visible, (val) => {
     iconUrl.value = '';
     iconBase64.value = '';
     iconPreviewSrc.value = '';
+    iconError.value = '';
     loadApps();
   }
 });
@@ -233,11 +236,11 @@ function addArg(): void {
 
 function removeArg(i: number): void {
   args.value.splice(i, 1);
-  if (args.value.length === 0) args.value.push('');
 }
 
 function onIconUrlChange(): void {
   iconBase64.value = '';
+  iconError.value = '';
   if (iconUrl.value.trim()) {
     iconPreviewSrc.value = iconUrl.value.trim();
   } else {
@@ -281,7 +284,7 @@ async function confirm(): Promise<void> {
       const blob = await resp.blob();
       finalIconBase64 = await blobToDataUrl(blob);
     } catch {
-      // If fetch fails, icon will simply be absent from the shortcut
+      iconError.value = 'Failed to fetch icon from URL. The shortcut will be saved without an icon.';
     }
   }
 
@@ -625,6 +628,12 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 .sc-icon-placeholder {
   font-size: 0.65rem;
   color: #475569;
+}
+.sc-icon-error {
+  padding: 2px 16px 4px;
+  font-size: 0.72rem;
+  color: #f87171;
+  flex-shrink: 0;
 }
 
 /* Actions */

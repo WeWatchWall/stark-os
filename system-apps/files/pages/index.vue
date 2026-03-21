@@ -1133,9 +1133,7 @@ async function onShortcutCreated(): Promise<void> {
 /** Read .lnk files and cache their icon base64 data for display. */
 async function loadShortcutIcons(entries: FileItem[], dirPath: string): Promise<void> {
   // Clear previous icons
-  for (const key of Object.keys(shortcutIcons)) {
-    delete shortcutIcons[key];
-  }
+  Object.keys(shortcutIcons).forEach((k) => delete shortcutIcons[k]);
   const lnkFiles = entries.filter((e) => !e.isDirectory && isShortcutFile(e.name));
   for (const f of lnkFiles) {
     const filePath = dirPath.replace(/\/+$/, '') + '/' + f.name;

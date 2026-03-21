@@ -379,10 +379,6 @@ const ctxMenuStyle = computed(() => {
 
 function getSvg(item: DesktopItem): string {
   if (item.name === 'trash') return ICON_TRASH;
-  // Shortcut files with a custom icon use <img> — fallback to shortcut SVG
-  if (isShortcutFile(item.name) && !shortcutIcons[item.name]) {
-    return getIconSvg(item.name, item.isDirectory);
-  }
   return getIconSvg(item.name, item.isDirectory);
 }
 

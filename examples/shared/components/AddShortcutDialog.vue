@@ -294,6 +294,8 @@ async function confirm(): Promise<void> {
     description: pack.description,
     args: args.value.filter((a) => a.trim().length > 0),
     iconBase64: finalIconBase64 || undefined,
+    packId: pack.id,
+    labels: pack.metadata?.labels?.length ? pack.metadata.labels : undefined,
     volumeMounts: vols.length > 0 ? vols : undefined,
   };
 

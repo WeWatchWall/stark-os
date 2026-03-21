@@ -327,3 +327,69 @@ export async function handleOpenWithSelection(
   await launchPack(packName, filePaths, volumeMounts);
   return updated;
 }
+
+/* ── Shortcut (.lnk) support ── */
+
+/** JSON structure stored inside a .lnk file. */
+export interface ShortcutData {
+  /** Pack name to launch. */
+  packName: string;
+  /** Pack runtime tag (node | browser | universal). */
+  runtimeTag: 'node' | 'browser' | 'universal';
+  /** Optional pack description. */
+  description?: string;
+  /** Arguments to pass to the pod. */
+  args: string[];
+  /** Base64-encoded icon image (data URI). */
+  iconBase64?: string;
+  /** External icon URL. */
+  iconUrl?: string;
+  /** Optional volume mounts from pack labels. */
+  volumeMounts?: Array<{ name: string; mountPath: string }>;
+  /** Optional dynamic service ID. */
+  serviceId?: string;
+}
+
+/** Check whether a filename is a .lnk shortcut. */
+export function isShortcutFile(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.lnk');
+}
+
+/** Strip .lnk extension for display purposes (case-insensitive). */
+export function displayNameForShortcut(filename: string): string {
+  if (isShortcutFile(filename)) {
+    return filename.slice(0, -4);
+  }
+  return filename;
+}
+
+/**
+ * Read and parse the JSON from a .lnk file in OPFS.
+ * Returns null if the file cannot be read or parsed.
+ */
+export async function readShortcutFile(filePath: string): Promise<ShortcutData | null> {
+  try {
+    const root = await getStarkOpfsRoot();
+    if (!root) return null;
+    const fh = await getFileHandle(root, filePath);
+    const file = await fh.getFile();
+    const text = await file.text();
+    return JSON.parse(text) as ShortcutData;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Launch a pod from shortcut data.
+ */
+export async function launchShortcut(data: ShortcutData): Promise<void> {
+  const api = createStarkAPI();
+  const browserNodeId = getBrowserNodeId();
+  const opts: Record<string, unknown> = {};
+  if (data.args && data.args.length > 0) opts.args = data.args;
+  if (browserNodeId) opts.nodeId = browserNodeId;
+  if (data.volumeMounts && data.volumeMounts.length > 0) opts.volumeMounts = data.volumeMounts;
+  if (data.serviceId) opts.serviceId = data.serviceId;
+  await api.pod.create(data.packName, opts);
+}

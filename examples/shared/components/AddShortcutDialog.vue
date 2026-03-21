@@ -281,7 +281,7 @@ async function confirm(): Promise<void> {
       const blob = await resp.blob();
       finalIconBase64 = await blobToDataUrl(blob);
     } catch {
-      // If fetch fails, store the URL as-is
+      // If fetch fails, icon will simply be absent from the shortcut
     }
   }
 
@@ -291,7 +291,6 @@ async function confirm(): Promise<void> {
     description: pack.description,
     args: args.value.filter((a) => a.trim().length > 0),
     iconBase64: finalIconBase64 || undefined,
-    iconUrl: !finalIconBase64 && iconUrl.value.trim() ? iconUrl.value.trim() : undefined,
     volumeMounts: vols.length > 0 ? vols : undefined,
   };
 

@@ -340,10 +340,8 @@ export interface ShortcutData {
   description?: string;
   /** Arguments to pass to the pod. */
   args: string[];
-  /** Base64-encoded icon image (data URI). */
+  /** Base64-encoded icon image (data URI). Always stored as base64 — never a URL. */
   iconBase64?: string;
-  /** External icon URL. */
-  iconUrl?: string;
   /** Optional volume mounts from pack labels. */
   volumeMounts?: Array<{ name: string; mountPath: string }>;
   /** Optional dynamic service ID. */

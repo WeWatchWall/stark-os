@@ -332,12 +332,15 @@ function onBgColorChange(e: Event) {
 
 function reloadSlideUnit(snapshot: any) {
   if (!univer) return;
-  // Dispose old unit and recreate
+  // Dispose the previous slide unit before creating a new one.
+  // dispose() may throw if the unit was already cleaned up or if internal
+  // Univer state is inconsistent — this is safe to ignore because we are
+  // immediately replacing it with a fresh unit from the snapshot.
   try {
     if (slideUnit) {
       slideUnit.dispose?.();
     }
-  } catch { /* ignore */ }
+  } catch { /* already disposed or internal state mismatch — safe to proceed */ }
   slideUnit = univer.createUnit(UniverInstanceType.UNIVER_SLIDE, snapshot);
   refreshSlidesList();
 }

@@ -90,13 +90,7 @@ async function loadFile(path: string) {
     const file = await fh.getFile();
     const text = await file.text();
     const data = JSON.parse(text);
-    // Close existing document and create new one
-    const existing = univerAPI.getActiveDocument();
-    if (existing) {
-      univerAPI.createUniverDoc(data);
-    } else {
-      univerAPI.createUniverDoc(data);
-    }
+    univerAPI.createUniverDoc(data);
     currentFilePath.value = normalizePath(path);
     dirty = false;
     saveStatus.value = 'saved';

@@ -274,14 +274,19 @@ export class PackQueries {
   }
 
   /**
-   * Lists all versions of a pack by name
+   * Lists all versions of a pack by name, optionally scoped to resource namespace
    */
-  async listPackVersions(name: string): Promise<PackResult<PackVersionSummary[]>> {
-    const { data, error } = await this.client
+  async listPackVersions(name: string, resourceNamespace?: string): Promise<PackResult<PackVersionSummary[]>> {
+    let query = this.client
       .from('packs')
       .select('id, version, runtime_tag, created_at')
-      .eq('name', name)
-      .order('created_at', { ascending: false });
+      .eq('name', name);
+
+    if (resourceNamespace !== undefined) {
+      query = query.eq('resource_namespace', resourceNamespace);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       return { data: null, error };
@@ -341,21 +346,33 @@ export class PackQueries {
   }
 
   /**
-   * Deletes all versions of a pack by name
+   * Deletes all versions of a pack by name, optionally scoped to resource namespace
    */
-  async deletePackByName(name: string): Promise<PackResult<{ deletedCount: number }>> {
+  async deletePackByName(name: string, resourceNamespace?: string): Promise<PackResult<{ deletedCount: number }>> {
     // First count the versions
-    const { data: versions } = await this.client
+    let countQuery = this.client
       .from('packs')
       .select('id')
       .eq('name', name);
 
+    if (resourceNamespace !== undefined) {
+      countQuery = countQuery.eq('resource_namespace', resourceNamespace);
+    }
+
+    const { data: versions } = await countQuery;
+
     const count = versions?.length ?? 0;
 
-    const { error } = await this.client
+    let deleteQuery = this.client
       .from('packs')
       .delete()
       .eq('name', name);
+
+    if (resourceNamespace !== undefined) {
+      deleteQuery = deleteQuery.eq('resource_namespace', resourceNamespace);
+    }
+
+    const { error } = await deleteQuery;
 
     if (error) {
       return { data: null, error };
@@ -520,8 +537,8 @@ export const getLatestPackVersion = (name: string) =>
 export const listPacks = (options?: Parameters<PackQueries['listPacks']>[0]) =>
   getPackQueries().listPacks(options);
 
-export const listPackVersions = (name: string) =>
-  getPackQueries().listPackVersions(name);
+export const listPackVersions = (name: string, resourceNamespace?: string) =>
+  getPackQueries().listPackVersions(name, resourceNamespace);
 
 export const updatePack = (id: string, input: UpdatePackInput) =>
   getPackQueries().updatePack(id, input);
@@ -529,8 +546,8 @@ export const updatePack = (id: string, input: UpdatePackInput) =>
 export const deletePack = (id: string) =>
   getPackQueries().deletePack(id);
 
-export const deletePackByName = (name: string) =>
-  getPackQueries().deletePackByName(name);
+export const deletePackByName = (name: string, resourceNamespace?: string) =>
+  getPackQueries().deletePackByName(name, resourceNamespace);
 
 export const packExists = (name: string, version: string, resourceNamespace?: string) =>
   getPackQueries().packExists(name, version, resourceNamespace);

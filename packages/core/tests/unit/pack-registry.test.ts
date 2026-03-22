@@ -327,6 +327,31 @@ describe('PackRegistry', () => {
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('FORBIDDEN');
     });
+
+    it('should only delete versions in the specified resource namespace', () => {
+      registry.register(
+        { name: 'ns-pack', version: '1.0.0', runtimeTag: 'node', resourceNamespace: 'ns-a' },
+        'owner1'
+      );
+      registry.register(
+        { name: 'ns-pack', version: '2.0.0', runtimeTag: 'node', resourceNamespace: 'ns-b' },
+        'owner1'
+      );
+
+      const result = registry.deleteAllVersions('ns-pack', 'owner1', 'ns-a');
+
+      expect(result.success).toBe(true);
+      expect(result.data?.deletedCount).toBe(1);
+      // ns-b version should still exist
+      expect(registry.exists('ns-pack')).toBe(true);
+    });
+
+    it('should return NOT_FOUND when namespace has no versions', () => {
+      const result = registry.deleteAllVersions('multi-ver', 'owner1', 'nonexistent-ns');
+
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('NOT_FOUND');
+    });
   });
 
   describe('getById', () => {

@@ -157,12 +157,12 @@ export function removePack(id: string): boolean {
 }
 
 /**
- * Remove all versions of a pack by name
+ * Remove all versions of a pack by name, optionally scoped to a resource namespace
  */
-export function removePackByName(name: string): number {
+export function removePackByName(name: string, resourceNamespace?: string): number {
   let count = 0;
   for (const [id, pack] of clusterState.packs) {
-    if (pack.name === name) {
+    if (pack.name === name && (resourceNamespace === undefined || pack.resourceNamespace === resourceNamespace)) {
       clusterState.packs.delete(id);
       count++;
     }

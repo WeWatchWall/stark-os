@@ -693,10 +693,13 @@ async function deletePackByName(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Resolve resource namespace: use user's personal namespace as default for writes
+    const resourceNamespace = resolveWriteNamespace(req.query.namespace as string | undefined, req);
+
     const packQueriesAdmin = getPackQueriesAdmin();
 
-    // Check that at least one version exists and user owns them
-    const versionsResult = await packQueriesAdmin.listPackVersions(name);
+    // Check that at least one version exists in the namespace and user owns them
+    const versionsResult = await packQueriesAdmin.listPackVersions(name, resourceNamespace);
     if (versionsResult.error || !versionsResult.data || versionsResult.data.length === 0) {
       sendError(res, 'NOT_FOUND', `Pack '${name}' not found`, 404);
       return;
@@ -717,12 +720,13 @@ async function deletePackByName(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Delete all versions of the pack
-    const deleteResult = await packQueriesAdmin.deletePackByName(name);
+    // Delete all versions of the pack within the namespace
+    const deleteResult = await packQueriesAdmin.deletePackByName(name, resourceNamespace);
 
     if (deleteResult.error) {
       logger.error('Failed to delete pack versions from database', undefined, {
         packName: name,
+        resourceNamespace,
         error: deleteResult.error,
       });
       sendError(res, 'INTERNAL_ERROR', 'Failed to delete pack', 500);
@@ -730,7 +734,7 @@ async function deletePackByName(req: Request, res: Response): Promise<void> {
     }
 
     const deletedCount = deleteResult.data?.deletedCount ?? 0;
-    logger.info('All pack versions deleted successfully', { packName: name, deletedCount, userId });
+    logger.info('All pack versions deleted successfully', { packName: name, deletedCount, userId, resourceNamespace });
     sendSuccess(res, { deleted: true, deletedCount });
   } catch (error) {
     logger.error('Error deleting pack by name', error instanceof Error ? error : undefined, {

@@ -392,13 +392,15 @@ export class PackRegistry {
    * Delete all versions of a pack
    * @param packName - Pack name
    * @param requesterId - User requesting deletion (for authorization)
+   * @param resourceNamespace - Optional resource namespace to scope deletion
    * @returns Number of versions deleted or error
    */
   deleteAllVersions(
     packName: string,
-    requesterId: string
+    requesterId: string,
+    resourceNamespace?: string
   ): PackOperationResult<{ deletedCount: number }> {
-    logger.debug('Attempting to delete all pack versions', { packName, requesterId });
+    logger.debug('Attempting to delete all pack versions', { packName, requesterId, resourceNamespace });
 
     // Check if pack exists
     if (!packExists(packName)) {
@@ -414,7 +416,21 @@ export class PackRegistry {
     }
 
     // Check ownership of all versions (should be same owner)
-    const versions = findPackVersions(packName);
+    let versions = findPackVersions(packName);
+    if (resourceNamespace !== undefined) {
+      versions = versions.filter((p) => p.resourceNamespace === resourceNamespace);
+    }
+    if (versions.length === 0) {
+      logger.warn('Delete all versions failed: no versions in namespace', { packName, requesterId, resourceNamespace });
+      return {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: `Pack ${packName} not found in namespace ${resourceNamespace}`,
+          details: { packName, resourceNamespace },
+        },
+      };
+    }
     const nonOwned = versions.find((p) => p.ownerId !== requesterId);
     if (nonOwned) {
       logger.warn('Delete all versions forbidden: not owner of all versions', {
@@ -433,12 +449,13 @@ export class PackRegistry {
       };
     }
 
-    const deletedCount = storeRemovePackByName(packName);
+    const deletedCount = storeRemovePackByName(packName, resourceNamespace);
 
     logger.info('All pack versions deleted successfully', {
       packName,
       deletedCount,
       requesterId,
+      resourceNamespace,
     });
 
     return {

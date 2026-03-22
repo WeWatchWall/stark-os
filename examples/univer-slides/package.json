@@ -13,16 +13,16 @@
   },
   "dependencies": {
     "vue": "^3.5.0",
-    "@univerjs/core": "^0.15.5",
-    "@univerjs/design": "^0.15.5",
-    "@univerjs/docs": "^0.15.5",
-    "@univerjs/docs-ui": "^0.15.5",
-    "@univerjs/drawing": "^0.15.5",
-    "@univerjs/engine-formula": "^0.15.5",
-    "@univerjs/engine-render": "^0.15.5",
-    "@univerjs/slides": "^0.15.5",
-    "@univerjs/slides-ui": "^0.15.5",
-    "@univerjs/ui": "^0.15.5"
+    "@univerjs/core": "^0.18.0",
+    "@univerjs/design": "^0.18.0",
+    "@univerjs/docs": "^0.18.0",
+    "@univerjs/docs-ui": "^0.18.0",
+    "@univerjs/drawing": "^0.18.0",
+    "@univerjs/engine-formula": "^0.18.0",
+    "@univerjs/engine-render": "^0.18.0",
+    "@univerjs/slides": "^0.18.0",
+    "@univerjs/slides-ui": "^0.18.0",
+    "@univerjs/ui": "^0.18.0"
   },
   "devDependencies": {
     "nuxt": "^3.15.0",

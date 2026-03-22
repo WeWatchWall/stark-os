@@ -703,7 +703,7 @@ async function deletePackByName(req: Request, res: Response): Promise<void> {
     }
 
     // Verify ownership via the first version's full record
-    const firstVersion = versionsResult.data[0];
+    const firstVersion = versionsResult.data[0]!;
     const existingResult = await packQueriesAdmin.getPackById(firstVersion.id);
     if (existingResult.error || !existingResult.data) {
       sendError(res, 'NOT_FOUND', 'Pack not found', 404);

@@ -702,7 +702,9 @@ async function deletePackByName(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Verify ownership via the first version's full record
+    // Verify ownership via the first version's full record.
+    // All versions of a pack share the same owner (enforced at registration time by the
+    // unique constraint on name+version+namespace and the ownerId set from the authenticated user).
     const firstVersion = versionsResult.data[0];
     const existingResult = await packQueriesAdmin.getPackById(firstVersion.id);
     if (existingResult.error || !existingResult.data) {

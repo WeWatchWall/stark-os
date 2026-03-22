@@ -24,6 +24,7 @@ import {
   listPackVersions,
   updatePack,
   deletePack,
+  deletePackByName,
 } from '../../src/api/packs.js';
 import { getPackQueries, getPackQueriesAdmin } from '../../src/supabase/packs.js';
 
@@ -87,6 +88,7 @@ describe('Pack API Handlers', () => {
     listPackVersions: ReturnType<typeof vi.fn>;
     updatePack: ReturnType<typeof vi.fn>;
     deletePack: ReturnType<typeof vi.fn>;
+    deletePackByName: ReturnType<typeof vi.fn>;
     packExists: ReturnType<typeof vi.fn>;
   };
 
@@ -101,6 +103,7 @@ describe('Pack API Handlers', () => {
       listPackVersions: vi.fn(),
       updatePack: vi.fn(),
       deletePack: vi.fn(),
+      deletePackByName: vi.fn(),
       packExists: vi.fn(),
     };
 
@@ -787,6 +790,113 @@ describe('Pack API Handlers', () => {
       expect(res._status).toBe(200);
       expect(res._json).toEqual({ success: true, data: { deleted: true } });
       expect(mockPackQueries.deletePack).toHaveBeenCalledWith(samplePack.id);
+    });
+  });
+
+  describe('DELETE /api/packs/name/:name - deletePackByName', () => {
+    it('should return 401 when not authenticated', async () => {
+      const req = createMockRequest({
+        params: { name: 'test-pack' },
+        headers: {},
+      });
+      const res = createMockResponse();
+
+      await deletePackByName(req, res);
+
+      expect(res._status).toBe(401);
+    });
+
+    it('should return 404 when pack name not found', async () => {
+      mockPackQueries.listPackVersions.mockResolvedValue({
+        data: [],
+        error: null,
+      });
+
+      const req = createMockRequest({
+        params: { name: 'nonexistent-pack' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      const res = createMockResponse();
+
+      await deletePackByName(req, res);
+
+      expect(res._status).toBe(404);
+    });
+
+    it('should return 403 when user does not own pack', async () => {
+      mockPackQueries.listPackVersions.mockResolvedValue({
+        data: [{ id: samplePack.id, version: '1.0.0', runtimeTag: 'node', createdAt: new Date() }],
+        error: null,
+      });
+      mockPackQueries.getPackById.mockResolvedValue({
+        data: { ...samplePack, ownerId: 'other-user' },
+        error: null,
+      });
+
+      const req = createMockRequest({
+        params: { name: 'test-pack' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      const res = createMockResponse();
+
+      await deletePackByName(req, res);
+
+      expect(res._status).toBe(403);
+    });
+
+    it('should delete all versions of a pack successfully', async () => {
+      mockPackQueries.listPackVersions.mockResolvedValue({
+        data: [
+          { id: samplePack.id, version: '1.0.0', runtimeTag: 'node', createdAt: new Date() },
+          { id: '22222222-2222-4222-8222-222222222222', version: '2.0.0', runtimeTag: 'node', createdAt: new Date() },
+        ],
+        error: null,
+      });
+      mockPackQueries.getPackById.mockResolvedValue({
+        data: samplePack,
+        error: null,
+      });
+      mockPackQueries.deletePackByName.mockResolvedValue({
+        data: { deletedCount: 2 },
+        error: null,
+      });
+
+      const req = createMockRequest({
+        params: { name: 'test-pack' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      const res = createMockResponse();
+
+      await deletePackByName(req, res);
+
+      expect(res._status).toBe(200);
+      expect(res._json).toEqual({ success: true, data: { deleted: true, deletedCount: 2 } });
+      expect(mockPackQueries.deletePackByName).toHaveBeenCalledWith('test-pack');
+    });
+
+    it('should handle database error during deletion', async () => {
+      mockPackQueries.listPackVersions.mockResolvedValue({
+        data: [{ id: samplePack.id, version: '1.0.0', runtimeTag: 'node', createdAt: new Date() }],
+        error: null,
+      });
+      mockPackQueries.getPackById.mockResolvedValue({
+        data: samplePack,
+        error: null,
+      });
+      mockPackQueries.deletePackByName.mockResolvedValue({
+        data: null,
+        error: { code: 'INTERNAL', message: 'Database error' },
+      });
+
+      const req = createMockRequest({
+        params: { name: 'test-pack' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      const res = createMockResponse();
+
+      await deletePackByName(req, res);
+
+      expect(res._status).toBe(500);
     });
   });
 });

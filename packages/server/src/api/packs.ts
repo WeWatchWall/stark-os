@@ -675,6 +675,72 @@ async function deletePack(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * DELETE /api/packs/name/:name - Delete all versions of a pack by name
+ */
+async function deletePackByName(req: Request, res: Response): Promise<void> {
+  try {
+    const name = req.params.name;
+
+    // Check authentication
+    const userId = getUserId(req);
+    if (!userId) {
+      sendError(res, 'UNAUTHORIZED', 'Authentication required', 401);
+      return;
+    }
+
+    if (!name) {
+      sendError(res, 'VALIDATION_ERROR', 'Pack name is required', 400);
+      return;
+    }
+
+    const packQueriesAdmin = getPackQueriesAdmin();
+
+    // Check that at least one version exists and user owns them
+    const versionsResult = await packQueriesAdmin.listPackVersions(name);
+    if (versionsResult.error || !versionsResult.data || versionsResult.data.length === 0) {
+      sendError(res, 'NOT_FOUND', `Pack '${name}' not found`, 404);
+      return;
+    }
+
+    // Verify ownership via the first version's full record.
+    // All versions of a pack share the same owner (enforced at registration time by the
+    // unique constraint on name+version+namespace and the ownerId set from the authenticated user).
+    const firstVersion = versionsResult.data[0]!;
+    const existingResult = await packQueriesAdmin.getPackById(firstVersion.id);
+    if (existingResult.error || !existingResult.data) {
+      sendError(res, 'NOT_FOUND', 'Pack not found', 404);
+      return;
+    }
+
+    if (existingResult.data.ownerId !== userId) {
+      sendError(res, 'FORBIDDEN', 'You do not have permission to delete this pack', 403);
+      return;
+    }
+
+    // Delete all versions of the pack
+    const deleteResult = await packQueriesAdmin.deletePackByName(name);
+
+    if (deleteResult.error) {
+      logger.error('Failed to delete pack versions from database', undefined, {
+        packName: name,
+        error: deleteResult.error,
+      });
+      sendError(res, 'INTERNAL_ERROR', 'Failed to delete pack', 500);
+      return;
+    }
+
+    const deletedCount = deleteResult.data?.deletedCount ?? 0;
+    logger.info('All pack versions deleted successfully', { packName: name, deletedCount, userId });
+    sendSuccess(res, { deleted: true, deletedCount });
+  } catch (error) {
+    logger.error('Error deleting pack by name', error instanceof Error ? error : undefined, {
+      packName: req.params.name,
+    });
+    sendError(res, 'INTERNAL_ERROR', 'An unexpected error occurred', 500);
+  }
+}
+
+/**
  * Creates the packs router
  */
 export function createPacksRouter(): Router {
@@ -695,6 +761,9 @@ export function createPacksRouter(): Router {
   // PATCH /api/packs/:id - Update pack (requires update permission)
   router.patch('/:id([0-9a-f-]{36})', authMiddleware, abilityMiddleware, canUpdatePack, updatePack);
 
+  // DELETE /api/packs/name/:name - Delete all versions of a pack by name (requires delete permission)
+  router.delete('/name/:name', authMiddleware, abilityMiddleware, canDeletePack, deletePackByName);
+
   // DELETE /api/packs/:id - Delete pack (requires delete permission)
   router.delete('/:id([0-9a-f-]{36})', authMiddleware, abilityMiddleware, canDeletePack, deletePack);
 
@@ -712,4 +781,5 @@ export {
   listPackVersions,
   updatePack,
   deletePack,
+  deletePackByName,
 };

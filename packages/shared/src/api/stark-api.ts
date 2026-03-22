@@ -348,8 +348,11 @@ export function createStarkAPI(config?: StarkAPIConfig): StarkAPI {
         return handleResponse<unknown>(await apiGet(`/api/packs/${packId}`));
       },
       async delete(nameOrId: string) {
-        const packId = await resolvePackId(nameOrId, apiGet);
-        await handleDeleteResponse(await apiDelete(`/api/packs/${packId}`));
+        if (UUID_PATTERN.test(nameOrId)) {
+          await handleDeleteResponse(await apiDelete(`/api/packs/${nameOrId}`));
+        } else {
+          await handleDeleteResponse(await apiDelete(`/api/packs/name/${encodeURIComponent(nameOrId)}`));
+        }
       },
       async register(input: Record<string, unknown>) { return handleResponse<unknown>(await apiPost('/api/packs', input)); },
     },

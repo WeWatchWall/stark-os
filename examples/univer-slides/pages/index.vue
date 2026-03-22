@@ -67,26 +67,6 @@
             </svg>
             <span>Save As</span>
           </button>
-          <div class="tb-sep"></div>
-          <button class="tb-btn" title="Add Slide" @click="addSlide">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span>Add Slide</span>
-          </button>
-          <button class="tb-btn" :disabled="slidesList.length <= 1" title="Delete Current Slide" @click="removeSlide(activeSlideIndex)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-            </svg>
-            <span>Delete Slide</span>
-          </button>
-          <button class="tb-btn" :disabled="activeSlideIndex <= 0" title="Move Slide Up" @click="moveSlide(activeSlideIndex, activeSlideIndex - 1)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-          </button>
-          <button class="tb-btn" :disabled="activeSlideIndex >= slidesList.length - 1" title="Move Slide Down" @click="moveSlide(activeSlideIndex, activeSlideIndex + 1)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <div class="tb-sep"></div>
-          <label class="tb-label">Background:</label>
-          <input type="color" class="tb-color" :value="currentSlideBg" @input="onBgColorChange" title="Slide Background Color" />
         </div>
         <div class="toolbar-right">
           <span class="file-status" :class="saveStatus">{{ saveStatusText }}</span>
@@ -195,11 +175,6 @@ const saveDefaultName = computed(() => {
     return parts[parts.length - 1] || 'presentation.unislide';
   }
   return 'presentation.unislide';
-});
-
-const currentSlideBg = computed(() => {
-  if (slidesList.value.length === 0) return '#FFFFFF';
-  return slidesList.value[activeSlideIndex.value]?.bg ?? '#FFFFFF';
 });
 
 /* ── Slide Data Management ── */
@@ -314,20 +289,6 @@ function moveSlide(fromIdx: number, toIdx: number) {
   activeSlideIndex.value = toIdx;
   dirty = true;
   saveStatus.value = 'modified';
-}
-
-function onBgColorChange(e: Event) {
-  if (!slideUnit) return;
-  const color = (e.target as HTMLInputElement).value;
-  const snapshot = JSON.parse(JSON.stringify(slideUnit.getSnapshot()));
-  const order: string[] = snapshot.body?.pageOrder || Object.keys(snapshot.body?.pages || {});
-  const slideId = order[activeSlideIndex.value];
-  if (slideId && snapshot.body.pages[slideId]) {
-    snapshot.body.pages[slideId].pageBackgroundFill = { rgb: color };
-    reloadSlideUnit(snapshot);
-    dirty = true;
-    saveStatus.value = 'modified';
-  }
 }
 
 function reloadSlideUnit(snapshot: any) {
@@ -693,22 +654,6 @@ onBeforeUnmount(() => {
   background: #d1d5db;
   margin: 0 4px;
   flex-shrink: 0;
-}
-
-.tb-label {
-  font-size: 12px;
-  color: #6b7280;
-  white-space: nowrap;
-}
-
-.tb-color {
-  width: 28px;
-  height: 24px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  padding: 0;
-  cursor: pointer;
-  background: none;
 }
 
 .file-status {

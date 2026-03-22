@@ -121,7 +121,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { Univer, LocaleType, UniverInstanceType, mergeLocales } from '@univerjs/core';
-import { defaultTheme } from '@univerjs/design';
+import { defaultTheme } from '@univerjs/themes';
 import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
 import { UniverUIPlugin } from '@univerjs/ui';
 import uiEnUS from '@univerjs/ui/lib/locale/en-US';

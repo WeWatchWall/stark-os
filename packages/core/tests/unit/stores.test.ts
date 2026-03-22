@@ -853,6 +853,29 @@ describe('Pack Store', () => {
       expect(packExists('my-pack')).toBe(false);
       expect(packExists('other-pack')).toBe(true);
     });
+
+    it('should only remove packs in the specified resource namespace', () => {
+      registerPack({ name: 'my-pack', version: '1.0.0', runtimeTag: 'node', ownerId: 'user1', bundlePath: '/p1.js', resourceNamespace: 'ns-a' });
+      registerPack({ name: 'my-pack', version: '1.0.0', runtimeTag: 'node', ownerId: 'user1', bundlePath: '/p2.js', resourceNamespace: 'ns-b' });
+
+      const count = removePackByName('my-pack', 'ns-a');
+
+      expect(count).toBe(1);
+      // The pack in ns-b should still exist
+      const remaining = [...clusterState.packs.values()].filter(p => p.name === 'my-pack');
+      expect(remaining.length).toBe(1);
+      expect(remaining[0].resourceNamespace).toBe('ns-b');
+    });
+
+    it('should remove all namespaces when no resourceNamespace is specified', () => {
+      registerPack({ name: 'my-pack', version: '1.0.0', runtimeTag: 'node', ownerId: 'user1', bundlePath: '/p1.js', resourceNamespace: 'ns-a' });
+      registerPack({ name: 'my-pack', version: '1.0.0', runtimeTag: 'node', ownerId: 'user1', bundlePath: '/p2.js', resourceNamespace: 'ns-b' });
+
+      const count = removePackByName('my-pack');
+
+      expect(count).toBe(2);
+      expect(packExists('my-pack')).toBe(false);
+    });
   });
 
   describe('Computed properties', () => {

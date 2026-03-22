@@ -871,7 +871,38 @@ describe('Pack API Handlers', () => {
 
       expect(res._status).toBe(200);
       expect(res._json).toEqual({ success: true, data: { deleted: true, deletedCount: 2 } });
-      expect(mockPackQueries.deletePackByName).toHaveBeenCalledWith('test-pack');
+      expect(mockPackQueries.listPackVersions).toHaveBeenCalledWith('test-pack', 'default');
+      expect(mockPackQueries.deletePackByName).toHaveBeenCalledWith('test-pack', 'default');
+    });
+
+    it('should scope deletion to the explicit namespace query parameter', async () => {
+      mockPackQueries.listPackVersions.mockResolvedValue({
+        data: [
+          { id: samplePack.id, version: '1.0.0', runtimeTag: 'node', createdAt: new Date() },
+        ],
+        error: null,
+      });
+      mockPackQueries.getPackById.mockResolvedValue({
+        data: samplePack,
+        error: null,
+      });
+      mockPackQueries.deletePackByName.mockResolvedValue({
+        data: { deletedCount: 1 },
+        error: null,
+      });
+
+      const req = createMockRequest({
+        params: { name: 'test-pack' },
+        query: { namespace: 'custom-ns' },
+        headers: { authorization: 'Bearer test-token' },
+      });
+      const res = createMockResponse();
+
+      await deletePackByName(req, res);
+
+      expect(res._status).toBe(200);
+      expect(mockPackQueries.listPackVersions).toHaveBeenCalledWith('test-pack', 'custom-ns');
+      expect(mockPackQueries.deletePackByName).toHaveBeenCalledWith('test-pack', 'custom-ns');
     });
 
     it('should handle database error during deletion', async () => {

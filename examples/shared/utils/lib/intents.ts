@@ -140,9 +140,6 @@ const BUILTIN_DEFAULTS: Record<string, string> = {
 
   // Document
   unidoc: 'univer-docs',
-
-  // Presentation
-  unislide: 'univer-slides',
 };
 
 /* ── Persistence ── */

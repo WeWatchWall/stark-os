@@ -31,6 +31,9 @@ import { createUniver, defaultTheme, LocaleType } from '@univerjs/presets';
 import { UniverDocsCorePreset } from '@univerjs/presets/preset-docs-core';
 import docsCoreEnUS from '@univerjs/presets/preset-docs-core/locales/en-US';
 import '@univerjs/presets/lib/styles/preset-docs-core.css';
+// The docs-core preset omits the UI facade import, so createMenu() is unavailable.
+// Import it explicitly so the Facade API menu extensions work.
+import '@univerjs/ui/lib/facade';
 
 const SAVE_INTERVAL = 5000;
 

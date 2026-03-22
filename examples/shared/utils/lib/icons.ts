@@ -114,8 +114,6 @@ const EXT_MAP: Record<string, IconCategory> = {
   unisheet: 'spreadsheet',
   // Document (Univer)
   unidoc: 'text',
-  // Presentation (Univer)
-  unislide: 'app',
   // App
   exe: 'app', dmg: 'app', appimage: 'app', deb: 'app', rpm: 'app',
   // Shortcut

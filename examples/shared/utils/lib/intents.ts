@@ -136,6 +136,10 @@ const BUILTIN_DEFAULTS: Record<string, string> = {
   xls: 'univer-sheets',
   xlsx: 'univer-sheets',
   ods: 'univer-sheets',
+  unisheet: 'univer-sheets',
+
+  // Document
+  unidoc: 'univer-docs',
 };
 
 /* ── Persistence ── */

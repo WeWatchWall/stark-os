@@ -493,8 +493,11 @@ async function loadArrangement(): Promise<void> {
     }
 
     // Restore visited modes
+    const validModes: IconMode[] = ['desktop', 'portrait', 'landscape'];
     if (Array.isArray(data.visited)) {
-      for (const m of data.visited) visitedModes.add(m as IconMode);
+      for (const m of data.visited) {
+        if (validModes.includes(m as IconMode)) visitedModes.add(m as IconMode);
+      }
     } else if (sparseDesktop.value.length > 0) {
       // Backward compat: if we had an arrangement, assume desktop was visited
       visitedModes.add('desktop');

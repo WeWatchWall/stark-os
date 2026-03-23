@@ -187,6 +187,7 @@ import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensu
 const LONG_PRESS_MS = 300;
 const GHOST_OFFSET_PX = 30;
 const REFRESH_INTERVAL_MS = 5000;
+const MOBILE_BREAKPOINT = 768;
 
 // ── Desktop item type ──
 
@@ -273,7 +274,7 @@ const currentMode = computed<IconMode>(() => {
   const w = containerWidth.value;
   const h = containerHeight.value;
   if (w === 0 || h === 0) return 'desktop'; // default before measurement
-  if (w > 768) return 'desktop';
+  if (w > MOBILE_BREAKPOINT) return 'desktop';
   return h >= w ? 'portrait' : 'landscape';
 });
 
@@ -1255,16 +1256,20 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 // ── Mode-change watcher: handle first-visit dense layout ──
 
+/** If `mode` hasn't been visited, create a dense (upper-left) arrangement for it. */
+function initModeIfNeeded(mode: IconMode): void {
+  if (visitedModes.has(mode)) return;
+  // First visit: dense layout (compact names placed sequentially = upper-left)
+  const dense = compactArrangement.value.length > 0
+    ? [...compactArrangement.value]
+    : items.value.map(i => i.name);
+  sparseArrangement.value = dense;
+  visitedModes.add(mode);
+  saveArrangement();
+}
+
 watch(currentMode, (newMode) => {
-  if (!visitedModes.has(newMode)) {
-    // First visit: dense layout (compact names placed sequentially = upper-left)
-    const dense = compactArrangement.value.length > 0
-      ? [...compactArrangement.value]
-      : items.value.map(i => i.name);
-    sparseArrangement.value = dense;
-    visitedModes.add(newMode);
-    saveArrangement();
-  }
+  initModeIfNeeded(newMode);
 });
 
 // ── Lifecycle ──
@@ -1285,15 +1290,7 @@ onMounted(async () => {
     containerHeight.value = gridContainer.value.clientHeight;
 
     // Mark the initial mode as visited (watcher only fires on changes)
-    const initialMode = currentMode.value;
-    if (!visitedModes.has(initialMode)) {
-      const dense = compactArrangement.value.length > 0
-        ? [...compactArrangement.value]
-        : items.value.map(i => i.name);
-      sparseArrangement.value = dense;
-      visitedModes.add(initialMode);
-      saveArrangement();
-    }
+    initModeIfNeeded(currentMode.value);
 
     resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {

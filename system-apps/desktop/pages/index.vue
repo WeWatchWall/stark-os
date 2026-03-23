@@ -322,62 +322,49 @@ const totalSlots = computed(() => {
   return Math.max(items.value.length, cols * rows);
 });
 
-/** Whether the grid is too small for the sparse layout (e.g. on mobile). */
-const isCompact = computed(() => {
-  // Before ResizeObserver fires, don't compact to avoid a flash
-  if (containerWidth.value === 0 || containerHeight.value === 0) return false;
-  return sparseArrangement.value.length > totalSlots.value;
-});
-
-/** Grid slots: sparse positions when space allows, compacted when tight. */
+/**
+ * Grid slots: always sparse — preserve positions within the grid and
+ * relocate any displaced items (beyond the grid boundary or new items)
+ * to the first available positions.  This lets the user create gaps by
+ * dragging even after a resize or mode switch shrinks the grid.
+ */
 const displaySlots = computed<Array<DesktopItem | null>>(() => {
   const byName = new Map(items.value.map(item => [item.name, item]));
   const slots = totalSlots.value;
   const out: Array<DesktopItem | null> = new Array(slots).fill(null);
 
-  if (isCompact.value) {
-    // Compact mode: use compact arrangement, place items sequentially
-    const order = compactArrangement.value;
-    const placed = new Set<string>();
-    let pos = 0;
-    for (const name of order) {
-      if (pos >= slots) break;
-      if (byName.has(name)) {
-        out[pos++] = byName.get(name)!;
-        placed.add(name);
-      }
-    }
-    for (const item of items.value) {
-      if (pos >= slots) break;
-      if (!placed.has(item.name)) { out[pos++] = item; }
-    }
-  } else {
-    // Sparse mode: use sparse arrangement, preserve positions
-    const order = sparseArrangement.value;
-    const arrangedNames: string[] = [];
-    for (const name of order) {
-      if (name && byName.has(name)) arrangedNames.push(name);
-    }
-    const inArrangement = new Set(arrangedNames);
-    for (const item of items.value) {
-      if (!inArrangement.has(item.name)) arrangedNames.push(item.name);
-    }
+  const order = sparseArrangement.value;
 
-    const placed = new Set<string>();
-    for (let i = 0; i < order.length; i++) {
-      const name = order[i];
-      if (name && byName.has(name)) {
-        out[i] = byName.get(name)!;
-        placed.add(name);
-      }
+  // 1. Place items at their sparse positions (within grid bounds only)
+  const placed = new Set<string>();
+  for (let i = 0; i < Math.min(order.length, slots); i++) {
+    const name = order[i];
+    if (name && byName.has(name)) {
+      out[i] = byName.get(name)!;
+      placed.add(name);
     }
-    let nextNull = 0;
-    for (const name of arrangedNames) {
-      if (!placed.has(name)) {
-        while (nextNull < slots && out[nextNull] !== null) nextNull++;
-        if (nextNull < slots) { out[nextNull] = byName.get(name)!; nextNull++; }
-      }
+  }
+
+  // 2. Collect displaced items (beyond grid boundary) + brand-new items
+  const unplaced: string[] = [];
+  for (let i = slots; i < order.length; i++) {
+    const name = order[i];
+    if (name && byName.has(name) && !placed.has(name)) {
+      unplaced.push(name);
+      placed.add(name);
     }
+  }
+  for (const item of items.value) {
+    if (!placed.has(item.name)) {
+      unplaced.push(item.name);
+    }
+  }
+
+  // 3. Pack displaced / new items into the first available null slots
+  let nextNull = 0;
+  for (const name of unplaced) {
+    while (nextNull < slots && out[nextNull] !== null) nextNull++;
+    if (nextNull < slots) { out[nextNull] = byName.get(name)!; nextNull++; }
   }
 
   return out;
@@ -562,12 +549,10 @@ function reorderItems(from: number, to: number): void {
   newOrder[from] = newOrder[to]; // swap (target may be null or another item)
   newOrder[to] = movedName;
 
-  if (isCompact.value) {
-    // Save as compact (dense list of names, no nulls)
-    compactArrangement.value = newOrder.filter((n): n is string => n !== null);
-  } else {
-    sparseArrangement.value = newOrder;
-  }
+  // Always save as sparse — gaps (nulls) are preserved
+  sparseArrangement.value = newOrder;
+  // Keep compact in sync for future mode initializations
+  compactArrangement.value = newOrder.filter((n): n is string => n !== null);
   saveArrangement();
 }
 

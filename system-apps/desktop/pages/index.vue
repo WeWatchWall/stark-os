@@ -198,11 +198,17 @@ interface DesktopItem {
 // ── Arrangement config path ──
 const ARRANGEMENT_PATH = '/home/.stark/desktop';
 
+// ── Icon layout modes ──
+type IconMode = 'desktop' | 'portrait' | 'landscape';
+
 // ── State ──
 
 const gridContainer = ref<HTMLDivElement | null>(null);
 const items = ref<DesktopItem[]>([]);
-const sparseArrangement = ref<(string | null)[]>([]);
+const sparseDesktop = ref<(string | null)[]>([]);
+const sparsePortrait = ref<(string | null)[]>([]);
+const sparseLandscape = ref<(string | null)[]>([]);
+const visitedModes = reactive(new Set<IconMode>());
 const compactArrangement = ref<string[]>([]);
 const dragSourceIndex = ref<number | null>(null);
 const dropTargetIndex = ref<number | null>(null);
@@ -261,6 +267,33 @@ const shortcutDialog = reactive({ show: false });
 const shortcutIcons = reactive<Record<string, string>>({});
 
 // ── Grid slot computation ──
+
+/** Current icon layout mode based on container dimensions. */
+const currentMode = computed<IconMode>(() => {
+  const w = containerWidth.value;
+  const h = containerHeight.value;
+  if (w === 0 || h === 0) return 'desktop'; // default before measurement
+  if (w > 768) return 'desktop';
+  return h >= w ? 'portrait' : 'landscape';
+});
+
+/** Writable computed that delegates to the per-mode sparse ref. */
+const sparseArrangement = computed({
+  get(): (string | null)[] {
+    switch (currentMode.value) {
+      case 'desktop':   return sparseDesktop.value;
+      case 'portrait':  return sparsePortrait.value;
+      case 'landscape': return sparseLandscape.value;
+    }
+  },
+  set(val: (string | null)[]) {
+    switch (currentMode.value) {
+      case 'desktop':   sparseDesktop.value = val; break;
+      case 'portrait':  sparsePortrait.value = val; break;
+      case 'landscape': sparseLandscape.value = val; break;
+    }
+  },
+});
 
 /** Number of grid slots that fit in the visible container (floored to avoid scrollbar). */
 const totalSlots = computed(() => {
@@ -451,22 +484,46 @@ async function loadArrangement(): Promise<void> {
     const text = await file.text();
     const data = JSON.parse(text);
 
-    if (Array.isArray(data.sparse)) {
-      sparseArrangement.value = data.sparse;
-    } else if (Array.isArray(data.order)) {
-      // Backward compat with old single-array format
-      sparseArrangement.value = data.order;
+    // New per-mode format
+    if (Array.isArray(data.sparse_desktop)) {
+      sparseDesktop.value = data.sparse_desktop;
+    }
+    if (Array.isArray(data.sparse_portrait)) {
+      sparsePortrait.value = data.sparse_portrait;
+    }
+    if (Array.isArray(data.sparse_landscape)) {
+      sparseLandscape.value = data.sparse_landscape;
+    }
+
+    // Backward compat: old single sparse → desktop
+    if (!data.sparse_desktop) {
+      if (Array.isArray(data.sparse)) {
+        sparseDesktop.value = data.sparse;
+      } else if (Array.isArray(data.order)) {
+        sparseDesktop.value = data.order;
+      }
+    }
+
+    // Restore visited modes
+    if (Array.isArray(data.visited)) {
+      for (const m of data.visited) visitedModes.add(m as IconMode);
+    } else if (sparseDesktop.value.length > 0) {
+      // Backward compat: if we had an arrangement, assume desktop was visited
+      visitedModes.add('desktop');
     }
 
     if (Array.isArray(data.compact)) {
       compactArrangement.value = data.compact;
     } else {
-      // Derive compact from sparse (item names in order, no gaps)
-      compactArrangement.value = sparseArrangement.value.filter((n): n is string => n !== null);
+      // Derive compact from whatever sparse we have
+      const sparse = sparseDesktop.value;
+      compactArrangement.value = sparse.filter((n): n is string => n !== null);
     }
   } catch {
     // No arrangement file yet — that's fine
-    sparseArrangement.value = [];
+    sparseDesktop.value = [];
+    sparsePortrait.value = [];
+    sparseLandscape.value = [];
     compactArrangement.value = [];
   }
 }
@@ -480,8 +537,11 @@ async function saveArrangement(): Promise<void> {
     const fh = await getFileHandle(opfsRoot, ARRANGEMENT_PATH, true);
     const writable = await fh.createWritable();
     const data = JSON.stringify({
-      sparse: sparseArrangement.value,
+      sparse_desktop: sparseDesktop.value,
+      sparse_portrait: sparsePortrait.value,
+      sparse_landscape: sparseLandscape.value,
       compact: compactArrangement.value,
+      visited: [...visitedModes],
     }, null, 2);
     await writable.write(new TextEncoder().encode(data));
     await writable.close();
@@ -671,7 +731,14 @@ function onTouchEnd(index: number): void {
 
   // Single tap to open folder on mobile (debounce prevents double-open)
   if (!isTouchDragging) {
-    onDblClick(index);
+    const item = displaySlots.value[index];
+    if (item) {
+      onDblClick(index);
+    } else {
+      // Tapping an empty slot deselects everything
+      selectedNames.clear();
+      ctxMenu.show = false;
+    }
   }
 
   touchDragGhost.value = null;
@@ -719,8 +786,13 @@ function onDblClick(index: number): void {
 
 function onItemClick(index: number, event: MouseEvent): void {
   const item = displaySlots.value[index];
-  if (!item) return;
   ctxMenu.show = false;
+
+  if (!item) {
+    // Clicking an empty slot deselects everything
+    selectedNames.clear();
+    return;
+  }
 
   if (event.ctrlKey || event.metaKey) {
     // Toggle selection
@@ -1181,6 +1253,20 @@ function onKeyDown(event: KeyboardEvent): void {
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
+// ── Mode-change watcher: handle first-visit dense layout ──
+
+watch(currentMode, (newMode) => {
+  if (!visitedModes.has(newMode)) {
+    // First visit: dense layout (compact names placed sequentially = upper-left)
+    const dense = compactArrangement.value.length > 0
+      ? [...compactArrangement.value]
+      : items.value.map(i => i.name);
+    sparseArrangement.value = dense;
+    visitedModes.add(newMode);
+    saveArrangement();
+  }
+});
+
 // ── Lifecycle ──
 
 onMounted(async () => {
@@ -1197,6 +1283,18 @@ onMounted(async () => {
   if (gridContainer.value) {
     containerWidth.value = gridContainer.value.clientWidth;
     containerHeight.value = gridContainer.value.clientHeight;
+
+    // Mark the initial mode as visited (watcher only fires on changes)
+    const initialMode = currentMode.value;
+    if (!visitedModes.has(initialMode)) {
+      const dense = compactArrangement.value.length > 0
+        ? [...compactArrangement.value]
+        : items.value.map(i => i.name);
+      sparseArrangement.value = dense;
+      visitedModes.add(initialMode);
+      saveArrangement();
+    }
+
     resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         containerWidth.value = entry.contentRect.width;

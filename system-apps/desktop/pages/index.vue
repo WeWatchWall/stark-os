@@ -187,6 +187,7 @@ import { zipItems, moveToTrash, createEmptyFile, createFolder, uploadFiles, ensu
 const LONG_PRESS_MS = 300;
 const GHOST_OFFSET_PX = 30;
 const REFRESH_INTERVAL_MS = 5000;
+const MOBILE_BREAKPOINT = 768;
 
 // ── Desktop item type ──
 
@@ -198,11 +199,17 @@ interface DesktopItem {
 // ── Arrangement config path ──
 const ARRANGEMENT_PATH = '/home/.stark/desktop';
 
+// ── Icon layout modes ──
+type IconMode = 'desktop' | 'portrait' | 'landscape';
+
 // ── State ──
 
 const gridContainer = ref<HTMLDivElement | null>(null);
 const items = ref<DesktopItem[]>([]);
-const sparseArrangement = ref<(string | null)[]>([]);
+const sparseDesktop = ref<(string | null)[]>([]);
+const sparsePortrait = ref<(string | null)[]>([]);
+const sparseLandscape = ref<(string | null)[]>([]);
+const visitedModes = reactive(new Set<IconMode>());
 const compactArrangement = ref<string[]>([]);
 const dragSourceIndex = ref<number | null>(null);
 const dropTargetIndex = ref<number | null>(null);
@@ -262,6 +269,33 @@ const shortcutIcons = reactive<Record<string, string>>({});
 
 // ── Grid slot computation ──
 
+/** Current icon layout mode based on container dimensions. */
+const currentMode = computed<IconMode>(() => {
+  const w = containerWidth.value;
+  const h = containerHeight.value;
+  if (w === 0 || h === 0) return 'desktop'; // default before measurement
+  if (w > MOBILE_BREAKPOINT) return 'desktop';
+  return h >= w ? 'portrait' : 'landscape';
+});
+
+/** Writable computed that delegates to the per-mode sparse ref. */
+const sparseArrangement = computed({
+  get(): (string | null)[] {
+    switch (currentMode.value) {
+      case 'desktop':   return sparseDesktop.value;
+      case 'portrait':  return sparsePortrait.value;
+      case 'landscape': return sparseLandscape.value;
+    }
+  },
+  set(val: (string | null)[]) {
+    switch (currentMode.value) {
+      case 'desktop':   sparseDesktop.value = val; break;
+      case 'portrait':  sparsePortrait.value = val; break;
+      case 'landscape': sparseLandscape.value = val; break;
+    }
+  },
+});
+
 /** Number of grid slots that fit in the visible container (floored to avoid scrollbar). */
 const totalSlots = computed(() => {
   const w = containerWidth.value;
@@ -288,62 +322,49 @@ const totalSlots = computed(() => {
   return Math.max(items.value.length, cols * rows);
 });
 
-/** Whether the grid is too small for the sparse layout (e.g. on mobile). */
-const isCompact = computed(() => {
-  // Before ResizeObserver fires, don't compact to avoid a flash
-  if (containerWidth.value === 0 || containerHeight.value === 0) return false;
-  return sparseArrangement.value.length > totalSlots.value;
-});
-
-/** Grid slots: sparse positions when space allows, compacted when tight. */
+/**
+ * Grid slots: always sparse — preserve positions within the grid and
+ * relocate any displaced items (beyond the grid boundary or new items)
+ * to the first available positions.  This lets the user create gaps by
+ * dragging even after a resize or mode switch shrinks the grid.
+ */
 const displaySlots = computed<Array<DesktopItem | null>>(() => {
   const byName = new Map(items.value.map(item => [item.name, item]));
   const slots = totalSlots.value;
   const out: Array<DesktopItem | null> = new Array(slots).fill(null);
 
-  if (isCompact.value) {
-    // Compact mode: use compact arrangement, place items sequentially
-    const order = compactArrangement.value;
-    const placed = new Set<string>();
-    let pos = 0;
-    for (const name of order) {
-      if (pos >= slots) break;
-      if (byName.has(name)) {
-        out[pos++] = byName.get(name)!;
-        placed.add(name);
-      }
-    }
-    for (const item of items.value) {
-      if (pos >= slots) break;
-      if (!placed.has(item.name)) { out[pos++] = item; }
-    }
-  } else {
-    // Sparse mode: use sparse arrangement, preserve positions
-    const order = sparseArrangement.value;
-    const arrangedNames: string[] = [];
-    for (const name of order) {
-      if (name && byName.has(name)) arrangedNames.push(name);
-    }
-    const inArrangement = new Set(arrangedNames);
-    for (const item of items.value) {
-      if (!inArrangement.has(item.name)) arrangedNames.push(item.name);
-    }
+  const order = sparseArrangement.value;
 
-    const placed = new Set<string>();
-    for (let i = 0; i < order.length; i++) {
-      const name = order[i];
-      if (name && byName.has(name)) {
-        out[i] = byName.get(name)!;
-        placed.add(name);
-      }
+  // 1. Place items at their sparse positions (within grid bounds only)
+  const placed = new Set<string>();
+  for (let i = 0; i < Math.min(order.length, slots); i++) {
+    const name = order[i];
+    if (name && byName.has(name)) {
+      out[i] = byName.get(name)!;
+      placed.add(name);
     }
-    let nextNull = 0;
-    for (const name of arrangedNames) {
-      if (!placed.has(name)) {
-        while (nextNull < slots && out[nextNull] !== null) nextNull++;
-        if (nextNull < slots) { out[nextNull] = byName.get(name)!; nextNull++; }
-      }
+  }
+
+  // 2. Collect displaced items (beyond grid boundary) + brand-new items
+  const unplaced: string[] = [];
+  for (let i = slots; i < order.length; i++) {
+    const name = order[i];
+    if (name && byName.has(name) && !placed.has(name)) {
+      unplaced.push(name);
+      placed.add(name);
     }
+  }
+  for (const item of items.value) {
+    if (!placed.has(item.name)) {
+      unplaced.push(item.name);
+    }
+  }
+
+  // 3. Pack displaced / new items into the first available null slots
+  let nextNull = 0;
+  for (const name of unplaced) {
+    while (nextNull < slots && out[nextNull] !== null) nextNull++;
+    if (nextNull < slots) { out[nextNull] = byName.get(name)!; nextNull++; }
   }
 
   return out;
@@ -451,22 +472,49 @@ async function loadArrangement(): Promise<void> {
     const text = await file.text();
     const data = JSON.parse(text);
 
-    if (Array.isArray(data.sparse)) {
-      sparseArrangement.value = data.sparse;
-    } else if (Array.isArray(data.order)) {
-      // Backward compat with old single-array format
-      sparseArrangement.value = data.order;
+    // New per-mode format
+    if (Array.isArray(data.sparse_desktop)) {
+      sparseDesktop.value = data.sparse_desktop;
+    }
+    if (Array.isArray(data.sparse_portrait)) {
+      sparsePortrait.value = data.sparse_portrait;
+    }
+    if (Array.isArray(data.sparse_landscape)) {
+      sparseLandscape.value = data.sparse_landscape;
+    }
+
+    // Backward compat: old single sparse → desktop
+    if (!data.sparse_desktop) {
+      if (Array.isArray(data.sparse)) {
+        sparseDesktop.value = data.sparse;
+      } else if (Array.isArray(data.order)) {
+        sparseDesktop.value = data.order;
+      }
+    }
+
+    // Restore visited modes
+    const validModes: IconMode[] = ['desktop', 'portrait', 'landscape'];
+    if (Array.isArray(data.visited)) {
+      for (const m of data.visited) {
+        if (validModes.includes(m as IconMode)) visitedModes.add(m as IconMode);
+      }
+    } else if (sparseDesktop.value.length > 0) {
+      // Backward compat: if we had an arrangement, assume desktop was visited
+      visitedModes.add('desktop');
     }
 
     if (Array.isArray(data.compact)) {
       compactArrangement.value = data.compact;
     } else {
-      // Derive compact from sparse (item names in order, no gaps)
-      compactArrangement.value = sparseArrangement.value.filter((n): n is string => n !== null);
+      // Derive compact from whatever sparse we have
+      const sparse = sparseDesktop.value;
+      compactArrangement.value = sparse.filter((n): n is string => n !== null);
     }
   } catch {
     // No arrangement file yet — that's fine
-    sparseArrangement.value = [];
+    sparseDesktop.value = [];
+    sparsePortrait.value = [];
+    sparseLandscape.value = [];
     compactArrangement.value = [];
   }
 }
@@ -480,8 +528,11 @@ async function saveArrangement(): Promise<void> {
     const fh = await getFileHandle(opfsRoot, ARRANGEMENT_PATH, true);
     const writable = await fh.createWritable();
     const data = JSON.stringify({
-      sparse: sparseArrangement.value,
+      sparse_desktop: sparseDesktop.value,
+      sparse_portrait: sparsePortrait.value,
+      sparse_landscape: sparseLandscape.value,
       compact: compactArrangement.value,
+      visited: [...visitedModes],
     }, null, 2);
     await writable.write(new TextEncoder().encode(data));
     await writable.close();
@@ -501,12 +552,10 @@ function reorderItems(from: number, to: number): void {
   newOrder[from] = newOrder[to]; // swap (target may be null or another item)
   newOrder[to] = movedName;
 
-  if (isCompact.value) {
-    // Save as compact (dense list of names, no nulls)
-    compactArrangement.value = newOrder.filter((n): n is string => n !== null);
-  } else {
-    sparseArrangement.value = newOrder;
-  }
+  // Always save as sparse — gaps (nulls) are preserved
+  sparseArrangement.value = newOrder;
+  // Keep compact in sync for future mode initializations
+  compactArrangement.value = newOrder.filter((n): n is string => n !== null);
   saveArrangement();
 }
 
@@ -671,7 +720,14 @@ function onTouchEnd(index: number): void {
 
   // Single tap to open folder on mobile (debounce prevents double-open)
   if (!isTouchDragging) {
-    onDblClick(index);
+    const item = displaySlots.value[index];
+    if (item) {
+      onDblClick(index);
+    } else {
+      // Tapping an empty slot deselects everything
+      selectedNames.clear();
+      ctxMenu.show = false;
+    }
   }
 
   touchDragGhost.value = null;
@@ -719,8 +775,13 @@ function onDblClick(index: number): void {
 
 function onItemClick(index: number, event: MouseEvent): void {
   const item = displaySlots.value[index];
-  if (!item) return;
   ctxMenu.show = false;
+
+  if (!item) {
+    // Clicking an empty slot deselects everything
+    selectedNames.clear();
+    return;
+  }
 
   if (event.ctrlKey || event.metaKey) {
     // Toggle selection
@@ -1181,6 +1242,24 @@ function onKeyDown(event: KeyboardEvent): void {
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
+// ── Mode-change watcher: handle first-visit dense layout ──
+
+/** If `mode` hasn't been visited, create a dense (upper-left) arrangement for it. */
+function initModeIfNeeded(mode: IconMode): void {
+  if (visitedModes.has(mode)) return;
+  // First visit: dense layout (compact names placed sequentially = upper-left)
+  const dense = compactArrangement.value.length > 0
+    ? [...compactArrangement.value]
+    : items.value.map(i => i.name);
+  sparseArrangement.value = dense;
+  visitedModes.add(mode);
+  saveArrangement();
+}
+
+watch(currentMode, (newMode) => {
+  initModeIfNeeded(newMode);
+});
+
 // ── Lifecycle ──
 
 onMounted(async () => {
@@ -1197,6 +1276,10 @@ onMounted(async () => {
   if (gridContainer.value) {
     containerWidth.value = gridContainer.value.clientWidth;
     containerHeight.value = gridContainer.value.clientHeight;
+
+    // Mark the initial mode as visited (watcher only fires on changes)
+    initModeIfNeeded(currentMode.value);
+
     resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         containerWidth.value = entry.contentRect.width;

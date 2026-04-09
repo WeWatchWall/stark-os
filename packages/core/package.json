@@ -19,12 +19,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@vue/reactivity": "^3.5.0",
-    "@stark-o/shared": "workspace:*"
+    "@stark-o/shared": "workspace:*",
+    "@vue/reactivity": "^3.5.32"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
-    "typescript": "^5.5.0"
+    "@types/node": "^20.19.39",
+    "typescript": "^5.9.3"
   },
   "files": [
     "dist"

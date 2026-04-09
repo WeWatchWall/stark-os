@@ -39,16 +39,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@roamhq/wrtc": "^0.9.1",
     "@stark-o/core": "workspace:*",
     "@stark-o/shared": "workspace:*",
-    "@roamhq/wrtc": "^0.9.1",
-    "axios": "^1.13.5",
-    "ws": "^8.18.0"
+    "axios": "^1.15.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
-    "@types/ws": "^8.5.10",
-    "typescript": "^5.5.0"
+    "@types/node": "^20.19.39",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
   },
   "files": [
     "dist"

@@ -194,6 +194,22 @@ export class SupabaseAuthProvider implements AuthProvider {
         };
       }
 
+      // Set roles in app_metadata (server-controlled, used by RLS via JWT).
+      // This is required because migration 040 reads roles from app_metadata
+      // rather than user_metadata to prevent privilege escalation.
+      const roles = input.roles ?? ['viewer'];
+      const appMetaResult = await this.adminClient.auth.admin.updateUserById(authUser.id, {
+        app_metadata: { roles },
+      });
+
+      if (appMetaResult.error) {
+        // Non-fatal: log but continue - the user row still has correct roles
+        // and a subsequent login after admin fixes will work
+        console.error(
+          `Failed to set app_metadata roles for user ${authUser.id}: ${appMetaResult.error.message}`
+        );
+      }
+
       // Fetch the user profile from public.users table
       const fetchResult = await this.adminClient
         .from('users')
@@ -211,7 +227,7 @@ export class SupabaseAuthProvider implements AuthProvider {
             email: input.email,
             username: input.username,
             display_name: input.displayName ?? input.username,
-            roles: input.roles ?? ['viewer'],
+            roles,
           })
           .select()
           .single();
@@ -237,7 +253,18 @@ export class SupabaseAuthProvider implements AuthProvider {
         return { data: session, error: null };
       }
 
-      const user = rowToUser(fetchResult.data as UserRow);
+      // If the trigger created the profile with default roles but we need different roles,
+      // update the profile to match the requested roles.
+      const existingRow = fetchResult.data as UserRow;
+      if (JSON.stringify(existingRow.roles) !== JSON.stringify(roles)) {
+        await this.adminClient
+          .from('users')
+          .update({ roles })
+          .eq('id', authUser.id);
+        existingRow.roles = roles;
+      }
+
+      const user = rowToUser(existingRow);
       const session = createUserSession(
         user,
         authSession.access_token,
@@ -732,8 +759,12 @@ export class UserQueries {
 
   /**
    * Update user roles (admin operation)
+   *
+   * Updates both the public.users table and Supabase Auth app_metadata
+   * so that the JWT reflects the new roles for RLS policies.
    */
   async updateUserRoles(userId: string, roles: UserRole[]): Promise<AuthResult<User>> {
+    // Update the public.users table
     const result = await this.client
       .from('users')
       .update({ roles })
@@ -743,6 +774,25 @@ export class UserQueries {
 
     if (result.error !== null) {
       return { data: null, error: result.error };
+    }
+
+    // Sync roles to app_metadata so future JWTs include the updated roles.
+    // Uses service_role client which has auth.admin privileges.
+    const appMetaResult = await this.client.auth.admin.updateUserById(userId, {
+      app_metadata: { roles },
+    });
+
+    if (appMetaResult.error) {
+      // Return error since the role update is incomplete without app_metadata sync
+      return {
+        data: null,
+        error: {
+          message: `Roles updated in users table but failed to sync to auth app_metadata: ${appMetaResult.error.message}`,
+          details: appMetaResult.error.message,
+          hint: 'The user must re-login after an admin manually sets app_metadata.roles',
+          code: 'APP_METADATA_SYNC_FAILED',
+        } as unknown as import('@supabase/supabase-js').PostgrestError,
+      };
     }
 
     return { data: rowToUser(result.data as UserRow), error: null };

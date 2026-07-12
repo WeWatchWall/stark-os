@@ -20,7 +20,7 @@ import type {
   PodSchedulingConfig,
   VolumeMount,
 } from '@stark-o/shared';
-import { getSupabaseClient, getSupabaseServiceClient } from './client.js';
+import { getSupabaseServiceClient } from './client.js';
 
 /**
  * Database row type for services table
@@ -509,10 +509,10 @@ export class ServiceQueries {
 }
 
 /**
- * Get service queries with authenticated client
+ * Get service queries with service role client
  */
 export function getServiceQueries(): ServiceQueries {
-  return new ServiceQueries(getSupabaseClient());
+  return new ServiceQueries(getSupabaseServiceClient());
 }
 
 /**

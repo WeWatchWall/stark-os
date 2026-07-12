@@ -23,7 +23,7 @@ import type {
 } from '@stark-o/shared';
 import type { Toleration } from '@stark-o/shared';
 import type { NodeAffinity, PodAffinity, PodAntiAffinity } from '@stark-o/shared';
-import { getSupabaseClient, getSupabaseServiceClient } from './client.js';
+import { getSupabaseServiceClient } from './client.js';
 
 /**
  * Database row type for pods table
@@ -185,7 +185,7 @@ export class PodQueries {
   private client: SupabaseClient;
 
   constructor(client?: SupabaseClient) {
-    this.client = client ?? getSupabaseClient();
+    this.client = client ?? getSupabaseServiceClient();
   }
 
   /**

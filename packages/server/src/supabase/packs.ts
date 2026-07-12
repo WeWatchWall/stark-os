@@ -17,7 +17,7 @@ import type {
   PackNamespace,
   Capability,
 } from '@stark-o/shared';
-import { getSupabaseClient, getSupabaseServiceClient } from './client.js';
+import { getSupabaseServiceClient } from './client.js';
 
 /**
  * Database row type for packs table
@@ -114,7 +114,7 @@ export class PackQueries {
   private client: SupabaseClient;
 
   constructor(client?: SupabaseClient) {
-    this.client = client ?? getSupabaseClient();
+    this.client = client ?? getSupabaseServiceClient();
   }
 
   /**

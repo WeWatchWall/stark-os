@@ -19,7 +19,7 @@ import type {
   Annotations,
 } from '@stark-o/shared';
 import { DEFAULT_RESOURCE_USAGE } from '@stark-o/shared';
-import { getSupabaseClient, getSupabaseServiceClient } from './client.js';
+import { getSupabaseServiceClient } from './client.js';
 
 /**
  * Database row type for namespaces table
@@ -101,7 +101,7 @@ export class NamespaceQueries {
   private client: SupabaseClient;
 
   constructor(client?: SupabaseClient) {
-    this.client = client ?? getSupabaseClient();
+    this.client = client ?? getSupabaseServiceClient();
   }
 
   /**
@@ -473,11 +473,11 @@ let _namespaceQueries: NamespaceQueries | null = null;
 let _namespaceQueriesAdmin: NamespaceQueries | null = null;
 
 /**
- * Gets or creates a NamespaceQueries instance with anon key
+ * Gets or creates a NamespaceQueries instance with service role key
  */
 export function getNamespaceQueries(): NamespaceQueries {
   if (!_namespaceQueries) {
-    _namespaceQueries = new NamespaceQueries(getSupabaseClient());
+    _namespaceQueries = new NamespaceQueries(getSupabaseServiceClient());
   }
   return _namespaceQueries;
 }

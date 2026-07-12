@@ -8,7 +8,7 @@
 import { Router, Request, Response } from 'express';
 import type { ServiceStatus, CreateServiceInput, ServiceVisibility } from '@stark-o/shared';
 import { validateCreateServiceInput, validateUpdateServiceInput, createServiceLogger, generateCorrelationId, VALID_SERVICE_VISIBILITY_VALUES } from '@stark-o/shared';
-import { getServiceQueriesAdmin, getServiceQueries } from '../supabase/services.js';
+import { getServiceQueriesAdmin } from '../supabase/services.js';
 import { getPackQueriesAdmin } from '../supabase/packs.js';
 import { getVolumeQueries } from '../supabase/volumes.js';
 import { getConnectionManager } from '../services/connection-service.js';
@@ -262,7 +262,7 @@ async function listServices(req: Request, res: Response): Promise<void> {
   try {
     const { namespace, status, packId, page, pageSize } = req.query;
 
-    const serviceQueries = getServiceQueries();
+    const serviceQueries = getServiceQueriesAdmin();
     const result = await serviceQueries.listServices({
       namespace: namespace as string | undefined,
       status: status as ServiceStatus | undefined,
@@ -302,7 +302,7 @@ async function getServiceById(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    const serviceQueries = getServiceQueries();
+    const serviceQueries = getServiceQueriesAdmin();
     const result = await serviceQueries.getServiceById(id);
 
     if (result.error) {
@@ -346,7 +346,7 @@ async function getServiceByName(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    const serviceQueries = getServiceQueries();
+    const serviceQueries = getServiceQueriesAdmin();
     const result = await serviceQueries.getServiceByName(name, namespace);
 
     if (result.error) {

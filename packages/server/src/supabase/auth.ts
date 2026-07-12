@@ -256,12 +256,18 @@ export class SupabaseAuthProvider implements AuthProvider {
       // If the trigger created the profile with default roles but we need different roles,
       // update the profile to match the requested roles.
       const existingRow = fetchResult.data as UserRow;
-      if (JSON.stringify(existingRow.roles) !== JSON.stringify(roles)) {
-        await this.adminClient
+      const rolesMatch = roles.length === existingRow.roles.length &&
+        roles.every((r) => existingRow.roles.includes(r));
+      if (!rolesMatch) {
+        const updateResult = await this.adminClient
           .from('users')
           .update({ roles })
           .eq('id', authUser.id);
-        existingRow.roles = roles;
+        if (updateResult.error === null) {
+          existingRow.roles = roles;
+        }
+        // If update fails, we proceed with the trigger's default roles;
+        // app_metadata was already set correctly above.
       }
 
       const user = rowToUser(existingRow);
@@ -783,7 +789,8 @@ export class UserQueries {
     });
 
     if (appMetaResult.error) {
-      // Return error since the role update is incomplete without app_metadata sync
+      // Return error since the role update is incomplete without app_metadata sync.
+      // Construct a PostgrestError-compatible object for the return type.
       return {
         data: null,
         error: {
@@ -791,7 +798,7 @@ export class UserQueries {
           details: appMetaResult.error.message,
           hint: 'The user must re-login after an admin manually sets app_metadata.roles',
           code: 'APP_METADATA_SYNC_FAILED',
-        } as unknown as import('@supabase/supabase-js').PostgrestError,
+        } as PostgrestError,
       };
     }
 

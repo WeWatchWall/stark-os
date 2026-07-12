@@ -264,6 +264,8 @@ export class SupabaseAuthProvider implements AuthProvider {
           .update({ roles })
           .eq('id', authUser.id);
         if (updateResult.error === null) {
+          // Safe to mutate in-memory: we just wrote this exact value to the DB
+          // and no concurrent writes can change it before we return.
           existingRow.roles = roles;
         }
         // If update fails, we proceed with the trigger's default roles;

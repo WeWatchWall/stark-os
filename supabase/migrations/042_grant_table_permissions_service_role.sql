@@ -25,9 +25,3 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
     GRANT ALL ON SEQUENCES TO service_role;
 
--- Also cover the supabase_admin role which may run migrations in some setups
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
-    GRANT ALL ON TABLES TO service_role;
-
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
-    GRANT ALL ON SEQUENCES TO service_role;

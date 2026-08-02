@@ -386,9 +386,9 @@ export async function register(req: Request, res: Response): Promise<void> {
 
     // Determine roles:
     // - Admins can specify any valid roles
-    // - Anonymous registration only allows non-admin roles (defaults to 'viewer')
+    // - Anonymous registration only allows 'viewer' role (node registration must use dedicated node-auth flow)
     const validRoles = ['admin', 'node', 'viewer'] as const;
-    const nonAdminRoles = ['node', 'viewer'] as const;
+    const nonAdminRoles = ['viewer'] as const;
     type UserRole = typeof validRoles[number];
     
     let userRoles: UserRole[];

@@ -7,6 +7,12 @@ export default defineConfig({
     'process.env': '{}',
     'process.env.NODE_ENV': JSON.stringify('production'),
   },
+  esbuild: {
+    // Keep identifiers intact to avoid name collisions when consumer re-bundles
+    minifyIdentifiers: false,
+    minifySyntax: true,
+    minifyWhitespace: true,
+  },
   build: {
     lib: {
       // Main library entry point
@@ -22,6 +28,7 @@ export default defineConfig({
       fileName: () => 'index.js',
     },
     outDir: 'dist',
+    minify: 'esbuild',
     rollupOptions: {
       // External deps for main index - but pack-worker will be fully bundled
       external: (id, importer) => {
